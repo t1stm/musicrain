@@ -2,7 +2,7 @@
 
 # musicrain
 
-Gaida's web player. A SvelteKit app built to static files, talking to the Gaida API over `/Audio`. It plays from the local library, YouTube and Deezer, keeps a queue, holds playlists and accounts, and can put several listeners in a room on the same track at the same position — inside about 50 ms of each other, network aside.
+musicrain is a self-hosted music player for the web. A SvelteKit app built to static files, talking to the Gaida backend in [this repository](../README.md) over `/Audio`. It plays from the local library, YouTube and Deezer, keeps a queue, holds playlists and accounts, and can put several listeners in a room on the same track at the same position — inside about 50 ms of each other, network aside.
 
 The same build runs in three places: as an ordinary site, as an installable PWA, and embedded in a Discord voice channel as an Activity. Nothing branches on that beyond URL rewriting; see [Running as a Discord Activity](#running-as-a-discord-activity) below.
 
