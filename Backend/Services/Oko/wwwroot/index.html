@@ -34,7 +34,10 @@
     .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
     .dot.down { background: var(--bad); }
     .dot.unknown { background: var(--dim); }
-    main { padding: 20px 24px 40px; min-width: 0; }
+    nav .pages { border-top: 1px solid var(--line); margin: 12px 0 0; padding-top: 10px; }
+    nav .pages button { padding-left: 31px; }
+    main { padding: 20px 24px 96px; min-width: 0; }
+    .pagehead h2 { margin: 0 0 4px; font-size: 20px; }
     header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
     header h2 { margin: 0; font-size: 20px; }
     header .url { color: var(--dim); font-family: var(--mono); font-size: 12px; }
@@ -99,39 +102,62 @@
     th.pick, td.pick { width: 1px; padding-right: 4px; }
     td.pick input { accent-color: var(--accent); margin: 0; vertical-align: middle; }
     tr.picked td.pick { box-shadow: inset 2px 0 0 var(--accent); }
-    #feed { margin-top: 22px; }
-    #feed h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin: 0 0 8px; }
-    #feedlines { max-height: 220px; overflow-y: auto; }
-    #feedlines div { padding: 3px 12px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12px; }
-    #feedlines .who { color: var(--dim); display: inline-block; min-width: 96px; }
+    /* One request per line, in the bar at the bottom and on the Live activity page alike. */
+    .line { padding: 3px 12px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .line:last-child { border-bottom: 0; }
+    .line .who { color: var(--dim); display: inline-block; min-width: 96px; }
+    /* The bar is pinned to the viewport, not to the end of the page, so it cannot scroll out of
+       reach on a long table. It shows the newest three lines; the rest are on the Live page. */
+    #feed {
+      position: fixed; left: 210px; right: 0; bottom: 0; z-index: 5;
+      background: var(--panel); border-top: 1px solid var(--line);
+      display: flex; gap: 14px; padding: 7px 24px 8px;
+    }
+    #feed h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim);
+               margin: 2px 0 0; white-space: nowrap; }
+    #feed h3 button {
+      background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer;
+      text-transform: inherit; letter-spacing: inherit;
+    }
+    #feed h3 button:hover { color: var(--text); text-decoration: underline; }
+    /* display:flex on an id beats the browser's own [hidden] rule, which is a plain attribute selector. */
+    #feed[hidden] { display: none; }
+    #feedlines { flex: 1; min-width: 0; height: 60px; overflow: hidden; }
+    #feedlines .line { padding: 1px 0; border-bottom: 0; }
   </style>
 </head>
 <body>
 <nav>
   <h1>Oko</h1>
   <div id="targets"></div>
+  <div class="pages">
+    <button data-page="live">Live activity</button>
+    <button data-page="audit">Audit</button>
+  </div>
 </nav>
 
 <main>
-  <header><h2 id="title">…</h2><span class="url" id="url"></span></header>
-  <div class="meta" id="meta"></div>
-  <div class="tabs">
-    <button data-tab="state" aria-current="true">State</button>
-    <button data-tab="requests">Requests</button>
-    <button data-tab="audit">Audit</button>
-    <button data-tab="library" hidden>Library</button>
+  <div id="chrome">
+    <header><h2 id="title">…</h2><span class="url" id="url"></span></header>
+    <div class="meta" id="meta"></div>
+    <div class="tabs">
+      <button data-tab="state" aria-current="true">State</button>
+      <button data-tab="requests">Requests</button>
+    </div>
   </div>
   <div id="body"></div>
-
-  <section id="feed">
-    <h3>Live activity <span id="feedstate" style="text-transform:none;letter-spacing:0"></span></h3>
-    <div class="scroll" id="feedlines"></div>
-  </section>
 </main>
+
+<section id="feed">
+  <h3><button data-page="live">Live activity</button>
+      <span id="feedstate" style="text-transform:none;letter-spacing:0"></span></h3>
+  <div id="feedlines"><div class="line"><span class="who">waiting…</span></div></div>
+</section>
 
 <script>
   const POLL_MS = 2000;
-  let selected = null, tab = "state", latest = null, events = null;
+  let selected = null, tab = "state", page = null, latest = null, events = null;
 
   const el = (id) => document.getElementById(id);
   const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -189,7 +215,7 @@
       alert(`${button.dataset.a} failed (${response.status})\n\n${detail}`);
     }
     await refresh();
-    if (tab !== "state") render();
+    if (page || tab !== "state") render();
   }
 
   // What the Deezer cache table is filtered by. Module state rather than the input's own value: the
@@ -197,9 +223,12 @@
   let deezerFilter = "";
 
   // ── the library editor (gaida-local only) ───────────────────────────────────
+  // Rendered into the #lib slot of gaida-local's State view, next to its cards. `libHtml` is the
+  // markup as last rendered: the State tab is repainted on every poll, and re-inserting the string
+  // is what keeps the table on screen between library loads.
   // Its own submit path rather than `run`: the variant lists are repeated query parameters
   // (title=A&title=B), which a flat params object cannot express.
-  let libraryRows = [], editing = null;
+  let libraryRows = [], editing = null, libHtml = "", libraryFor = null;
 
   // Which rows the batch editor will write to, and the values it opened with. `batch` holds the
   // strings as they were rendered, so "was this field touched?" is a comparison rather than a flag —
@@ -212,7 +241,11 @@
 
   async function loadLibrary() {
     const query = el("libq") ? el("libq").value : "";
+    // Claimed before the fetch, so a poll landing mid-flight does not start a second one — and
+    // checked after it, so rows never land under a pod they did not come from.
+    libraryFor = selected;
     const response = await fetch(`/api/read/${encodeURIComponent(selected)}/library?take=200&q=${encodeURIComponent(query)}`);
+    if (libraryFor !== selected) return;
     libraryRows = response.ok ? await response.json() : [];
     // A new search means a new set of rows, and a selection you cannot see is a selection you cannot
     // check before writing to it.
@@ -429,8 +462,11 @@
     }
 
     const all = libraryRows.length > 0 && picked.size === libraryRows.length;
+    // Only put the keyboard back if it was in here to begin with: selecting the service repaints
+    // the library too, and that must not pull focus off the page.
+    const wasInside = el("lib")?.contains(document.activeElement);
 
-    el("body").innerHTML =
+    libHtml =
       `<div class="rowbar">
          <input type="search" id="libq" placeholder="Search titles, artists, albums or paths…" value="${esc(query ?? (el("libq") ? el("libq").value : ""))}">
          <button class="act" data-reload="1">Search</button>
@@ -446,8 +482,11 @@
              <tbody>${rows.join("")}</tbody></table></div>`
         : `<div class="scroll"><div class="empty">Nothing matches.</div></div>`);
 
+    if (!el("lib")) return;
+    el("lib").innerHTML = libHtml;
+
     const box = el("libq");
-    if (box && editing === null && !batch) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+    if (box && wasInside && editing === null && !batch) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
   }
 
   // ── per-service views ────────────────────────────────────────────────────────
@@ -515,8 +554,9 @@
           <div class="card"><b>${s.withoutAlbum}</b><span>no album</span></div>
           <div class="card"><b>${s.withoutArtist}</b><span>no artist</span></div>
         </div>
-        <div class="scroll"><div class="empty">Storage: <span class="mono">${esc(s.storage)}</span>.
-          Names and albums are edited on the Library tab.</div></div>`;
+        <div class="scroll"><div class="empty">Storage: <span class="mono">${esc(s.storage)}</span>.</div></div>
+        <h3 class="section">Library</h3>
+        <div id="lib">${libHtml || `<div class="scroll"><div class="empty">Loading…</div></div>`}</div>`;
     },
 
     selo(s, name) {
@@ -546,7 +586,7 @@
       const rows = (s.entries ?? []).filter((e) => !needle ||
         `${e.name} ${e.artist} ${e.album ?? ""} ${e.id}`.toLowerCase().includes(needle));
 
-      // Keyed on what the pod reports about itself, like the Library tab — not on what the target
+      // Keyed on what the pod reports about itself, like the library table — not on what the target
       // happens to be called in this deployment's config.
       const library = (latest?.services ?? []).find((x) => x.snapshot?.service === "gaida-local")?.name;
 
@@ -577,7 +617,7 @@
               : act("Promote to FLAC", name, "promote", { id: e.id })) +
             (library
               ? act("To library", library, "import-deezer", { id: e.id },
-                  { confirm: `Copy "${e.name}" into the library's Deezer folder?\n\nIt becomes an ordinary audio:// song, for you to tidy up on the Library tab.` })
+                  { confirm: `Copy "${e.name}" into the library's Deezer folder?\n\nIt becomes an ordinary audio:// song, for you to tidy up in gaida-local's library.` })
               : "") +
             act("Evict", name, "evict", { id: e.id }) +
           `</td>`
@@ -607,23 +647,24 @@
       el("body").innerHTML = `<div class="scroll"><div class="error">${esc(e.message)}</div></div>`;
       return;
     }
-    if (tab !== "requests" || selected !== name) return;
+    if (page || tab !== "requests" || selected !== name) return;
     el("body").innerHTML = table(["When", "Method", "Path", "Status", "Time"], rows.slice().reverse().map((r) => [
       cell(ago(r.at) + " ago"), cell(r.method, "mono"), cell(r.path, "mono wrap"),
       `<td class="mono s${String(r.status)[0]}">${r.status}</td>`, cell(r.ms + " ms", "mono")
     ]));
   }
 
-  // Oko's own log rather than a service's: every mutation made through this panel since it started.
-  // Not per-target, so the same list shows whichever service is selected.
+  // Oko's own log rather than a service's: a page of its own, not a tab, because it covers every
+  // target at once and belongs to no single one of them.
   async function renderAudit() {
     let rows = [];
     try { rows = await (await fetch("/api/audit")).json(); }
     catch (e) { el("body").innerHTML = `<div class="scroll"><div class="error">${esc(e.message)}</div></div>`; return; }
-    if (tab !== "audit") return;
+    if (page !== "audit") return;
 
     el("body").innerHTML =
-      `<div class="meta">Everything changed through this panel since Oko started — in memory, newest first, capped at 1000.</div>` +
+      `<div class="pagehead"><h2>Audit</h2>
+        <div class="meta">Everything changed through this panel since Oko started — in memory, newest first, capped at 1000.</div></div>` +
       table(["When", "Who", "Service", "Action", "Parameters", "Result"], rows.map((a) => [
         cell(ago(a.at) + " ago"), cell(a.who), cell(a.target), cell(a.action, "mono"),
         cell(a.parameters, "mono wrap"),
@@ -631,18 +672,33 @@
       ]));
   }
 
+  // The whole feed, as against the newest three lines the bar at the bottom keeps on screen.
+  function renderLive() {
+    el("body").innerHTML =
+      `<div class="pagehead"><h2>Live activity</h2>
+        <div class="meta">Every request the watched services report, as it happens — newest first, capped at 200.</div></div>` +
+      `<div class="scroll" id="livelines">${feed.join("") || `<div class="empty">Waiting for requests…</div>`}</div>`;
+  }
+
   function render() {
-    if (tab === "requests") renderRequests(selected);
-    else if (tab === "audit") renderAudit();
-    else if (tab === "library") { editing = null; loadLibrary(); }
+    if (page === "live") renderLive();
+    else if (page === "audit") renderAudit();
+    else if (tab === "requests") renderRequests(selected);
     else draw();
   }
 
   function draw() {
     if (!latest) return;
     el("targets").innerHTML = latest.services.map((s) => `
-      <button data-name="${esc(s.name)}" aria-current="${s.name === selected}">
+      <button data-name="${esc(s.name)}" aria-current="${!page && s.name === selected}">
         <span class="dot ${s.up ? "" : "down"}"></span>${esc(s.name)}</button>`).join("");
+    document.querySelectorAll("nav [data-page]").forEach((b) => b.setAttribute("aria-current", b.dataset.page === page));
+
+    // A global page owns the whole of main; the service header and its tabs mean nothing there,
+    // and on the Live page the bar at the bottom would only repeat what is already on screen.
+    el("chrome").hidden = !!page;
+    el("feed").hidden = page === "live";
+    if (page) return;
 
     const service = latest.services.find((s) => s.name === selected) || latest.services[0];
     if (!service) { el("body").innerHTML = `<div class="scroll"><div class="empty">No targets configured.</div></div>`; return; }
@@ -652,14 +708,16 @@
     el("url").textContent = service.url;
     el("meta").textContent = `${service.up ? "up" : "not answering"} · refreshed ${new Date(latest.at).toLocaleTimeString()}`;
 
-    // Keyed on what the service reports about itself, not on what the target is called in config.
-    const editable = service.up && service.snapshot?.service === "gaida-local";
-    document.querySelector('[data-tab="library"]').hidden = !editable;
-    if (!editable && tab === "library") { tab = "state"; syncTabs(); }
+    // Not while the Deezer filter is being typed into, and not over a library that is being worked
+    // in: the State tab is redrawn on every poll, and replacing the body under an open editor, a
+    // selection or a focused input takes all three with it.
+    const libraryBusy = el("lib") && (editing || batch || picked.size || el("lib").contains(document.activeElement));
+    if (tab === "state" && document.activeElement?.id !== "dzq" && !libraryBusy)
+      el("body").innerHTML = renderState(service);
 
-    // Not while the Deezer filter is being typed into: the State tab is redrawn on every poll, and
-    // replacing the body under a focused input takes the caret with it.
-    if (tab === "state" && document.activeElement?.id !== "dzq") el("body").innerHTML = renderState(service);
+    // Keyed on what the service reports about itself, not on what the target is called in config.
+    if (tab === "state" && service.up && service.snapshot?.service === "gaida-local" && libraryFor !== service.name)
+      loadLibrary();
   }
 
   function syncTabs() {
@@ -676,19 +734,33 @@
   function poll() { if (!document.hidden) refresh(); }
 
   // ── live feed ────────────────────────────────────────────────────────────────
+  // Held as markup rather than as nodes: the same line is what the bar shows three of and what the
+  // Live page rebuilds from when it is opened.
+  const feed = [];
+
+  function pushFeed(html) {
+    feed.unshift(html);
+    if (feed.length > 200) feed.length = 200;
+    el("feedlines").innerHTML = feed.slice(0, 3).join("");
+
+    // Prepended rather than re-rendered, so reading further down the page is not interrupted by
+    // the next request arriving.
+    const live = el("livelines");
+    if (!live) return;
+    if (live.querySelector(".empty")) live.innerHTML = "";
+    live.insertAdjacentHTML("afterbegin", html);
+    while (live.childElementCount > 200) live.lastElementChild.remove();
+  }
+
   function openFeed() {
     if (events) return;
     events = new EventSource("/api/events");
     events.addEventListener("activity", (message) => {
       const item = JSON.parse(message.data);
       const request = item.data;
-      const line = document.createElement("div");
-      line.innerHTML = `<span class="who">${esc(item.target)}</span>` +
+      pushFeed(`<div class="line"><span class="who">${esc(item.target)}</span>` +
         `<span class="s${String(request.status)[0]}">${esc(request.status)}</span> ` +
-        `${esc(request.method)} ${esc(request.path)} <span class="who">${esc(request.ms)}ms</span>`;
-      const box = el("feedlines");
-      box.prepend(line);
-      while (box.childElementCount > 200) box.lastElementChild.remove();
+        `${esc(request.method)} ${esc(request.path)} <span class="who">${esc(request.ms)}ms</span></div>`);
     });
     events.onopen = () => el("feedstate").textContent = "";
     events.onerror = () => el("feedstate").textContent = "— reconnecting";
@@ -700,6 +772,7 @@
   el("targets").addEventListener("click", (e) => {
     const button = e.target.closest("button[data-name]");
     if (!button) return;
+    page = null;
     selected = button.dataset.name;
     draw();
     if (tab === "requests") renderRequests(selected);
@@ -760,6 +833,16 @@
 
     box.focus();
     box.setSelectionRange(caret, caret);
+  });
+
+  // Both the nav entries and the label on the bar at the bottom, which is the short way to the
+  // whole feed from wherever you are.
+  document.addEventListener("click", (e) => {
+    const button = e.target.closest("[data-page]");
+    if (!button) return;
+    page = button.dataset.page;
+    draw();
+    render();
   });
 
   document.querySelector(".tabs").addEventListener("click", (e) => {
