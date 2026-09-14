@@ -19,7 +19,7 @@
 
 <svelte:head><title>Browse · musicrain</title></svelte:head>
 
-<div class="page mx-auto w-full max-w-5xl gap-6 p-4 sm:gap-9 sm:p-6 sm:pb-28">
+<div class="page page-column gap-6 p-4 sm:gap-9 sm:p-6 sm:pb-28">
 	<div>
 		<p class="eyebrow text-gold">The library</p>
 		<h1
