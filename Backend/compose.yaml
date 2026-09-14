@@ -52,6 +52,11 @@ services:
       # them into the library's Deezer/ folder. Unset, that one route answers 400 and nothing else
       # changes — this is the library pod's only outbound call.
       DEEZER_URL: http://gaida-deezer:8080
+    # The only service that writes into a directory the host also owns, so the only one whose
+    # container user matters: imports and Info.json rewrites land as this uid:gid instead of root.
+    # A Dockerfile cannot do this -- the host's uid is not known at build time -- so it lives here
+    # with the rest of the host-specific values, in .env.
+    user: "${LIBRARY_UID:-1000}:${LIBRARY_GID:-1000}"
     volumes:
       # Read-write, not :ro — MusicManager.cs:77 opens Info.json OpenOrCreate/ReadWrite,
       # CoverExtractor.cs:25,50 rewrites it and writes extracted covers, and the tag
