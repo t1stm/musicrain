@@ -6,6 +6,7 @@
 	import SeekBar from './layers/seek-bar/SeekBar.svelte';
 	import { ArrowsRightLeft, ChatBubbleOvalLeft, ChevronDown, ChevronUp, Icon, QueueList } from 'svelte-hero-icons';
 	import Audio from '$components/player/layers/audio/Audio.svelte';
+	import Gapless from '$components/player/layers/audio/Gapless.svelte';
 	import current from '$states/current.svelte';
 	import queue from '$states/queue.svelte';
 	import session from '$states/session.svelte';
@@ -145,7 +146,19 @@
 		<Controls />
 		<SeekBar />
 	</div>
-	<Audio />
+	<!--
+	  Two engines, one at a time, because they want opposite things. A room needs
+	  the element: it starts on the first few seconds instead of the whole file,
+	  and its rate is what the sync clock steers. On your own, nothing steers
+	  anything and what matters is that two continuous tracks join without a hole,
+	  which only a scheduled buffer can do. Swapping engines restarts the track at
+	  the position the other one left — joining a room re-seeks everyone anyway.
+	-->
+	{#if session.inRoom}
+		<Audio />
+	{:else}
+		<Gapless />
+	{/if}
 </div>
 
 
