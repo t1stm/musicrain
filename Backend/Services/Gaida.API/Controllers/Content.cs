@@ -180,7 +180,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
         var fileId = FileId(id);
         Response.ContentType = contentType;
         Response.Headers.Append("Content-Disposition", $"inline; filename={fileId}.{ffmpegOutputFormat[3..]}");
-        SetCacheHeaders($"{contentType}-{bitrate}-{fileId}");
+        SetCacheHeaders($"v2-{contentType}-{bitrate}-{fileId}");
 
         await using var source = await upstream.Content.ReadAsStreamAsync(HttpContext.RequestAborted);
         var ffmpegArguments = $"{ffmpegCodec} -b:a {bitrate}k -vn -d copy {ffmpegOutputFormat}";

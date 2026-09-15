@@ -216,7 +216,11 @@ app.MapGet("/content", async Task<IResult> (string? id, MusicDatabase db, HttpRe
     var spreader = await result.GetContentDataAsync(ct);
     if (spreader is null) return Results.NotFound();
 
-    var extension = result is MusicResult local ? Path.GetExtension(local.Path) : string.Empty;
+    // A hybrid WavPack track leaves MusicGetter decoded and re-wrapped as FLAC, so the file's own
+    // extension would describe a body it no longer has.
+    var extension = result is MusicResult local
+        ? WavPack.CorrectionFor(local.Path) is null ? Path.GetExtension(local.Path) : ".flac"
+        : string.Empty;
     response.ContentType = ContentTypeFor(extension);
     response.Headers.Append("Content-Disposition", $"attachment; filename={FileId(id)}{extension}");
 

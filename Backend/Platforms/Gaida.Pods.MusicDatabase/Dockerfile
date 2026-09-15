@@ -18,8 +18,9 @@ RUN dotnet publish "Platforms/Gaida.Pods.MusicDatabase/Gaida.Pods.MusicDatabase.
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
-# MusicManager.Manager/MediaInfo.cs shells out to ffprobe to read audio tags.
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+# MusicManager.Manager/MediaInfo.cs shells out to ffprobe to read audio tags; MusicGetter.cs shells
+# out to wvunpack, the only decoder here that reads a .wvc WavPack correction file.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg wavpack \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app .
