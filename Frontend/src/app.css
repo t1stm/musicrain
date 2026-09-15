@@ -310,9 +310,64 @@
 		height 320ms cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
-/* nothing sets this yet — the lyrics feature adds the attribute and a row */
+/* The sleeve gives up its height for the words and the stack grows a row. One
+   property does the resizing, which is why the cover was written against
+   `--cover` before there was anything to resize it for. */
 #player[data-shape='full'][data-lyrics='on'] {
 	--cover: min(38vw, 20vh);
+	/* One block for the record, one for the words. The sleeve and the name it
+	   belongs to travel together rather than being dealt into separate rows --
+	   which is what let the title drift to the top edge of the screen once the
+	   pane took the slack between them. */
+	grid-template-areas:
+		'info'
+		'lyrics'
+		'seek'
+		'transport';
+	/* The pane takes what is left over and nothing more. Everything else is
+	   content-sized, so the words can never push the sleeve, the title or the
+	   transport off the screen -- which is exactly what an unplaced pane in an
+	   implicit row does. `minmax(0, 1fr)` rather than `1fr`: an fr track floors
+	   at min-content otherwise, and a hundred lines of song have a tall one. */
+	grid-template-rows: auto minmax(0, 1fr) auto auto;
+	/* The rail is absolute against the bottom edge, and a grid that fills its
+	   container puts the transport underneath it -- centred content never reached
+	   that far. The stack gives the switches their corner back: their own 44px
+	   plus the 0.75rem they sit in. */
+	padding-bottom: 3.75rem;
+}
+
+/* `#track-info` dissolves into the grid everywhere else so the sleeve and the
+   words can be placed apart. With the pane open they belong together, so it
+   becomes a real box again and carries both. */
+#player[data-shape='full'][data-lyrics='on'] #track-info {
+	display: flex;
+	flex: none;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.55rem;
+	grid-area: info;
+	min-width: 0;
+	max-width: none;
+}
+
+/* the name sits under the sleeve now, so it gives back the row it was placed in
+   and the edge it was ranged against */
+#player[data-shape='full'][data-lyrics='on'] #track-info > div {
+	grid-area: auto;
+	align-self: auto;
+	align-items: center;
+	padding-bottom: 0;
+	max-width: 100%;
+	text-align: center;
+}
+
+/* The three lines carry `sm:text-right` for the bar, where the info block sits
+   right of the sleeve. A declaration on the line itself beats one inherited from
+   the box around it whatever the layers say, so centring the box is not enough --
+   and it only shows once a title is long enough to wrap. */
+#player[data-shape='full'][data-lyrics='on'] #track-info > div > span {
+	text-align: inherit;
 }
 
 #player[data-shape='full'] #track-info > div {
@@ -432,8 +487,60 @@
 	#player[data-shape='full'] #controls {
 		justify-self: center;
 	}
+	/* Two columns, and the left one is the record entire: sleeve with its name
+	   underneath, centred against the words beside it. The title used to sit in
+	   its own row across the top, which put it at the very edge of the screen as
+	   soon as the pane took the height between them. */
 	#player[data-shape='full'][data-lyrics='on'] {
-		--cover: min(28vh, 24vw);
+		--cover: min(34vh, 26vw);
+		grid-template-areas:
+			'info lyrics'
+			'seek seek'
+			'transport transport';
+		grid-template-rows: minmax(0, 1fr) auto auto;
+		/* The sleeve's width, not `auto`. An auto track sizes to max-content, and
+		   the name's max-content is the whole title on one line -- so a long one
+		   widened the column far past the artwork and pushed the words half a
+		   title away from it. `min(100%, ...)` does not rein that in either: the
+		   percentage cannot resolve while the track is still being sized.
+
+		   Naming the track `var(--cover)` makes the column exactly the artwork,
+		   so the gap between the two is the gap you can see. */
+		grid-template-columns: var(--cover) minmax(0, 26rem);
+		column-gap: 2.5rem;
+		/* the rail shrinks to 28px here and sits well right of a centred
+		   transport, so the stack takes its padding back */
+		padding-bottom: 1.5rem;
+	}
+
+	/* The sung line sits on the pane's middle, so for it to sit on the sleeve's
+	   middle the sleeve has to be what is centred -- and centring the block
+	   instead puts the sleeve half a title's height too high, because the name
+	   hangs below it and drags the block's centre down with it.
+
+	   Equal `1fr` above and below does it without a magic number: the block
+	   stretches to the full row, the two empty tracks divide what the sleeve
+	   leaves evenly, and the name rides at the top of the lower one -- still
+	   directly under the artwork, but no longer paid for by its position. */
+	#player[data-shape='full'][data-lyrics='on'] #track-info {
+		align-self: stretch;
+		display: grid;
+		grid-template-rows: 1fr auto 1fr;
+		justify-items: center;
+		gap: 0;
+	}
+	/* `grid-area: cover` above names a column as well as a row, and inside this
+	   box there is no such line -- which deals the sleeve into an implicit second
+	   column beside the name instead of above it. Both are placed by hand. */
+	#player[data-shape='full'][data-lyrics='on'] #track-info img {
+		grid-row: 2;
+		grid-column: 1;
+	}
+	#player[data-shape='full'][data-lyrics='on'] #track-info > div {
+		grid-row: 3;
+		grid-column: 1;
+		align-self: start;
+		padding-top: 0.55rem;
 	}
 	#player[data-shape='full'] #track-info img {
 		align-self: center;
@@ -460,12 +567,210 @@
 		--cover: min(40vh, 26vw);
 		column-gap: 2rem;
 	}
+
+	/* Sheet and pane at once: equal specificity with the rule above, so the
+	   tighter of the two sleeves has to be named rather than inferred. */
+	#player[data-shape='full'][data-lyrics='on'][data-dock='queue'],
+	#player[data-shape='full'][data-lyrics='on'][data-dock='chat'] {
+		--cover: min(22vh, 18vw);
+	}
 }
 
 /* the shape is an attribute, so there is nothing to still except the cover */
 @media (prefers-reduced-motion: reduce) {
 	#player[data-shape='full'] #track-info img {
 		transition: none;
+	}
+}
+
+/* ── The lyrics pane ─────────────────────────────────────────────────────────
+   Focus is sharpness. The full shape's ground is already a blurred photograph
+   under a veil; the same idea on type gives the sung line the only sharp edge
+   on the screen, and the eye lands on it without being told to. The palette
+   was named for this — fog, haze, chalk is a lightness ramp, and the lines
+   walk up it as they arrive.
+
+   The words stay chalk and never take --primary. Highlighting in the brand
+   colour would make them read as chrome, and they are not the app speaking:
+   the record's own colour is already on the wall behind them. Same argument
+   as the Deezer badge above. */
+#player-lyrics {
+	grid-area: lyrics;
+	justify-self: stretch;
+	width: 100%;
+	min-width: 0;
+	min-height: 0;
+	height: 100%;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	text-align: center;
+	/* `safe` centring: a short song sits in the middle of the track, a long one
+	   starts at the top instead of having its first lines centred out of reach
+	   above the scroll origin. */
+	display: grid;
+	align-content: safe center;
+	/* Dissolve at both ends rather than cut. A hard edge against the artwork
+	   announces a box; this leaves the impression the words carry on past it,
+	   which they do. The mask sits on the padding box, so it stays at the
+	   frame's edges while the content moves under it.
+
+	   The distance is absolute, not a percentage: a line has to fade out over at
+	   least its own height or it is sliced through the middle of its letters
+	   while still half lit, which reads as a clipping bug rather than an edge. */
+	mask-image: linear-gradient(to bottom, transparent, #000 3rem, #000 calc(100% - 3rem), transparent);
+	/* keyboard focus lands a line in the clear, not inside the fade */
+	scroll-padding-block: 3rem;
+	/* the anchor below is half the pane's own height, so the pane has to be a
+	   container before `cqh` means anything */
+	container-type: size;
+	/* the pane scrolls itself line by line, so the bar is noise beside centred type */
+	scrollbar-width: none;
+}
+#player-lyrics::-webkit-scrollbar {
+	display: none;
+}
+
+#player-lyrics ol {
+	display: flex;
+	flex-direction: column;
+	gap: 0.05rem;
+	/* The row is a click target and wants padding; the words want the title's left
+	   edge. The list gives back exactly what the button takes, so the type ranges
+	   with the name of the record and the target stays thumb-sized. */
+	margin: 0 -0.3rem;
+	/* Half the pane above the first line and half below the last, which puts the
+	   line being sung on the pane's middle and keeps it there: `scrollIntoView`
+	   centres it, and with this it can centre the opening line and the closing
+	   one too. Without the padding a song starts hard against the top edge and
+	   only reaches the middle once it is deep enough to scroll. */
+	padding-block: 50cqh;
+	list-style: none;
+}
+
+/* Golos, not Unbounded. The display face is rationed to the one line that names
+   the record -- spending it on sixty more would leave the title with nothing of
+   its own, and Unbounded's width is wrong for a paragraph of song. */
+#player-lyrics li button {
+	display: block;
+	width: 100%;
+	padding: 0.32rem 0.3rem;
+	border: 0;
+	border-radius: var(--radius-art);
+	background: none;
+	font-family: var(--font-body);
+	font-size: clamp(1.05rem, 2.5vw, 1.45rem);
+	font-weight: 500;
+	line-height: 1.32;
+	letter-spacing: -0.01em;
+	text-align: inherit;
+	text-wrap: pretty;
+	color: var(--color-fog);
+	opacity: 0.62;
+	/* Weight and size stay put across states: a variable font reflows when either
+	   moves, and a line that reflows under the auto-scroll fights it. Colour,
+	   opacity and `scale` are the only things that change, and `scale` is its own
+	   property so the app's press feedback still composes on top. */
+	filter: blur(0.5px);
+	transition:
+		color 200ms ease,
+		opacity 200ms ease,
+		scale 200ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* the line being sung: the one thing in focus */
+#player-lyrics li[data-active='true'] button {
+	color: var(--color-chalk);
+	opacity: 1;
+	filter: none;
+	scale: 1.015;
+}
+
+/* behind the voice, and dimmer than what is still coming */
+#player-lyrics li[data-sung='true'] button {
+	opacity: 0.42;
+}
+
+/* A line has to be readable before it is worth clicking, so pointing at one
+   pulls it back into focus -- which is also the affordance that says it can be
+   clicked at all. */
+#player-lyrics li button:hover,
+#player-lyrics li button:focus-visible {
+	color: var(--color-chalk);
+	opacity: 0.88;
+	filter: none;
+}
+#player-lyrics li button:focus-visible {
+	outline: 2px solid var(--color-primary-200);
+	outline-offset: 2px;
+}
+
+/* No clock, no ticker, no click targets: one block, read at your own pace. The
+   newlines are the only structure LRCLIB gives here, so they have to survive. */
+#player-lyrics p[data-state='plain'] {
+	margin: 0;
+	/* nothing here is a click target, so no hit padding to range the type against */
+	padding: 0.25rem 0;
+	font-family: var(--font-body);
+	font-size: clamp(1rem, 2.3vw, 1.2rem);
+	font-weight: 450;
+	line-height: 1.6;
+	color: var(--color-chalk);
+	opacity: 0.8;
+	white-space: pre-wrap;
+	text-wrap: pretty;
+}
+
+/* The app's own voice, not the record's: mono, small and quiet, the same
+   division the font-mono note above draws between things people made and facts
+   a machine measured. Ember for the one of the three that is a fault. */
+#player-lyrics p[data-state='loading'],
+#player-lyrics p[data-state='none'],
+#player-lyrics p[data-state='error'] {
+	margin: 0;
+	padding: 0.9rem 0.3rem;
+	font-family: var(--font-mono);
+	font-size: 0.78rem;
+	line-height: 1.5;
+	color: var(--color-fog);
+}
+#player-lyrics p[data-state='error'] {
+	color: var(--color-ember);
+}
+
+/* Nothing to give the slack to. The reserved track leaves one short line adrift in
+   the middle of an empty half-screen, so the stack goes back to its ordinary centred
+   composition and the status sits where the first line of the song would have.
+
+   `loading` is deliberately not in here: it is the same layout a moment before the
+   words arrive, and collapsing it would make every track change jump. The sleeve
+   keeps its smaller size throughout for the same reason -- the pane is open, and
+   an artwork that resized itself per track would be worse than a quiet gap. */
+#player[data-shape='full'][data-lyrics='on']:has(#player-lyrics p[data-state='none']),
+#player[data-shape='full'][data-lyrics='on']:has(#player-lyrics p[data-state='error']) {
+	grid-template-rows: none;
+	padding-bottom: 1.5rem;
+}
+
+@media (min-width: 640px) {
+	#player-lyrics {
+		/* ranged against the title above it, which is left-aligned at this width */
+		text-align: left;
+	}
+}
+
+/* Out-of-focus text is a effect worth losing on request; the ramp still reads
+   through opacity alone. */
+@media (prefers-reduced-transparency: reduce) {
+	#player-lyrics li button {
+		filter: none;
+		opacity: 0.55;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	#player-lyrics li button {
+		transition: none;
+		scale: none;
 	}
 }
 
