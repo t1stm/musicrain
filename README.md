@@ -61,7 +61,7 @@ Host-specific values and secrets live in `Backend/.env`, which compose reads on 
 - [@discord/embedded-app-sdk](https://github.com/discord/embedded-app-sdk) for running inside a Discord voice channel
 - Variable fonts from Fontsource: [Unbounded](https://fontsource.org/fonts/unbounded) for display, [Golos Text](https://fontsource.org/fonts/golos-text) for body, [JetBrains Mono](https://fontsource.org/fonts/jetbrains-mono) for numerics
 - [.NET 10](https://dotnet.microsoft.com/) with ASP.NET Core minimal APIs on the backend, using `IAsyncEnumerable<T>` responses as the streaming primitive, and [Serilog](https://serilog.net/) throughout
-- [TagLib#](https://github.com/mono/taglib-sharp) for library tags, [YoutubeExplode](https://github.com/Tyrrrz/YoutubeExplode) with [yt-dlp](https://github.com/yt-dlp/yt-dlp) as fallback, and [FFmpeg](https://ffmpeg.org/) for transcoding
+- [TagLib#](https://github.com/mono/taglib-sharp) for library tags, [YoutubeExplode](https://github.com/Tyrrrz/YoutubeExplode) with [yt-dlp](https://github.com/yt-dlp/yt-dlp) as fallback, and [FFmpeg](https://ffmpeg.org/) for transcoding, with [WavPack](https://www.wavpack.com/)'s `wvunpack` for hybrid tracks FFmpeg decodes lossy
 - [FastAPI](https://fastapi.tiangolo.com/) for the two Python pods, over [SpotAPI](https://github.com/Aran404/SpotAPI) and [deezer-py](https://gitlab.com/RemixDev/deezer-py) — both reach their service's own web endpoints, so neither needs an API key
 - [DSharpPlus](https://github.com/DSharpPlus/DSharpPlus) on its `voice-rewrite` branch, tracked as a submodule, for the Discord bot
 

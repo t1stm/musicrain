@@ -17,7 +17,7 @@ It is the one pod that is not replicable — it is pinned to the library volume 
 docker compose up gaida-local        # from Backend/
 ```
 
-Or on the host, with the library somewhere convenient:
+Or on the host, with the library somewhere convenient and `ffmpeg` and `wvunpack` (from `wavpack`) on `PATH` — `ffprobe` reads the tags, and `wvunpack` is what decodes a hybrid WavPack track against its `.wvc` correction file:
 
 ```bash
 STORAGE=../../data/music ALBUM_COVERS=./Album_Covers DOMAIN=http://localhost:8081 \

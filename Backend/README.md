@@ -20,7 +20,7 @@ The frontend-facing contract is in [API.md](API.md), the room protocol in [MULTI
 
 ## Getting started
 
-**Prerequisites:** Docker with Compose v2. Working on the .NET services outside a container also wants the [.NET 10 SDK](https://dotnet.microsoft.com/download), with `ffmpeg` and `yt-dlp` on `PATH`.
+**Prerequisites:** Docker with Compose v2. Working on the .NET services outside a container also wants the [.NET 10 SDK](https://dotnet.microsoft.com/download), with `ffmpeg`, `wvunpack` (from `wavpack`) and `yt-dlp` on `PATH`.
 
 ```bash
 docker compose up --build
@@ -104,6 +104,7 @@ dotnet run --project Platforms/Gaida.Pods.YouTube -- --self-check
 - [TagLib#](https://github.com/mono/taglib-sharp) — reads ID3v2, FLAC and WavPack tags out of the library
 - [YoutubeExplode](https://github.com/Tyrrrz/YoutubeExplode), with [yt-dlp](https://github.com/yt-dlp/yt-dlp) as the fallback getter
 - [FFmpeg](https://ffmpeg.org/) for on-the-fly transcoding
+- [WavPack](https://www.wavpack.com/) — `wvunpack`, the only decoder that reads a `.wvc` correction file, so hybrid tracks decode lossless
 - [FastAPI](https://fastapi.tiangolo.com/) and [Uvicorn](https://www.uvicorn.org/) for the Python pods
 - [SpotAPI](https://github.com/Aran404/SpotAPI) and [deezer-py](https://gitlab.com/RemixDev/deezer-py) — both reach their service's own web endpoints, so neither needs a client ID or a secret
 - [DSharpPlus](https://github.com/DSharpPlus/DSharpPlus) on its `voice-rewrite` branch, tracked as a submodule

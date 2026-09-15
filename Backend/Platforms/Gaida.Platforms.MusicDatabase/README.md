@@ -8,7 +8,7 @@ Two environment variables shape it: `STORAGE` is the library root, `ALBUM_COVERS
 
 ## Using it
 
-Not a deployable — it is referenced by [Gaida.Pods.MusicDatabase](../Gaida.Pods.MusicDatabase) and by [Gaida.Bot](../../Services/Gaida.Bot), both of which construct `MusicManager` and let it scan. `ffprobe`, `metaflac` and `wvunpack` are expected on `PATH`.
+Not a deployable — it is referenced by [Gaida.Pods.MusicDatabase](../Gaida.Pods.MusicDatabase) and by [Gaida.Bot](../../Services/Gaida.Bot), both of which construct `MusicManager` and let it scan. `ffprobe`, `metaflac` and `wvunpack` — the last from `wavpack` — are expected on `PATH`.
 
 ```bash
 dotnet test Tests/Pods.Tests         # from Backend/ — the matcher's calibration lives here
@@ -27,7 +27,8 @@ dotnet test Tests/Pods.Tests         # from Backend/ — the matcher's calibrati
 ## Technologies worth a look
 
 - [TagLib#](https://github.com/mono/taglib-sharp) (`taglib-sharp-netstandard2.0`) for ID3v2 tags and embedded pictures
-- [FFmpeg](https://ffmpeg.org/) — `ffprobe` for metadata, `metaflac` and `wvunpack` for FLAC and WavPack art
+- [FFmpeg](https://ffmpeg.org/) — `ffprobe` for metadata, `metaflac` for FLAC art
+- [WavPack](https://www.wavpack.com/) — `wvunpack` for WavPack art, and for decoding a hybrid track against its `.wvc` correction file
 - [Serilog](https://serilog.net/), through the shared [Gaida.Core](../../Gaida%20Library/Gaida.Core) abstractions
 
 ## Project structure
