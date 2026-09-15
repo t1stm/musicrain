@@ -597,8 +597,22 @@
 #player-lyrics {
 	grid-area: lyrics;
 	justify-self: stretch;
-	width: 100%;
 	min-width: 0;
+	/* `overflow-y: auto` computes the inline axis to `auto` as well, so the pane
+	   clips at its own edge -- and the sung line is 1.5% wider than the ones
+	   around it, which puts its first letter just outside and slices it. The
+	   padding is the room that growth needs; the equal negative margin spends it
+	   into the column gap, so the type still ranges with the title rather than
+	   stepping right to buy itself the space. `width: 100%` is gone with it:
+	   `justify-self: stretch` already fills the track, and it does so around the
+	   margins instead of against them.
+
+	   0.5rem, not the 0.2rem the letters need: the row is wider than its text by
+	   the hit padding the list gives back above, and short of 0.5rem the far end
+	   of that row still counts as overflow -- which leaves the pane scrollable
+	   sideways by two invisible pixels. */
+	padding-inline: 0.5rem;
+	margin-inline: -0.5rem;
 	min-height: 0;
 	height: 100%;
 	overflow-y: auto;
