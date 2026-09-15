@@ -1,6 +1,6 @@
 # Build context is the repo root (see compose.yaml), matching the other pods' Dockerfiles.
 # ponytail: no build stage. There is nothing to compile -- the image is the interpreter, the
-# dependencies, and six modules.
+# dependencies, and seven modules.
 FROM python:3.12-slim
 
 WORKDIR /app

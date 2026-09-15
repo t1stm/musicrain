@@ -37,5 +37,6 @@
     <Project Path="Services/Gaida.Bot/Gaida.Bot.csproj" />
     <Project Path="Services/Selo/Selo.csproj" />
     <Project Path="Services/Dom/Dom.csproj" />
+    <Project Path="Services/Stih/Stih.csproj" />
   </Folder>
 </Solution>

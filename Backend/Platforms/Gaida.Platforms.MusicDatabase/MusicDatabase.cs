@@ -76,6 +76,20 @@ public sealed class MusicDatabase : Platform, ISupportsSearch, ISupportsRandomRe
         string extension, Stream content, byte[]? cover = null, CancellationToken cancellationToken = default) =>
         _provider.ImportAsync(artist, title, album, extension, content, cover, cancellationToken);
 
+    /// <summary>
+    ///     The library entry behind an ID. <c>/resolve</c> needs the file's path and its lyrics state, and
+    ///     neither survives the trip through <see cref="PlatformResult" />.
+    /// </summary>
+    public MusicInfo? FindEntry(string id) => _provider.FindEntry(id);
+
+    /// <summary>Records what stih found beside one track — see <see cref="Manager.MusicManager.StampLyricsAsync" />.</summary>
+    public Task<(MusicInfo? entry, string? error)> StampLyricsAsync(string id, LyricsKind? kind, LyricsOrigin? source)
+        => _provider.StampLyricsAsync(id, kind, source);
+
+    /// <returns>Tracks with no lyrics beside them, for stih's backfill sweep.</returns>
+    public IReadOnlyList<MusicInfo> MissingLyrics(int take, DateOnly retryBefore) =>
+        _provider.MissingLyrics(take, retryBefore);
+
     /// <returns>The library's answer to a YouTube title, or <c>null</c> when it has none worth offering.</returns>
     public (LocalMatch Match, PlatformResult Result)? FindLocalVariant(string name, string? artist, TimeSpan duration)
     {

@@ -9,6 +9,7 @@
 #   /Audio/Download*, /Audio/Preload*  → 127.0.0.1:5341  (dunav)
 #   /Audio/Multiplayer*                → 127.0.0.1:5342  (selo, WebSocket upgrade)
 #   /Audio/Accounts*, /Audio/Playlists* → 127.0.0.1:5343  (dom)
+#   /Audio/Lyrics*                     → 127.0.0.1:5345  (stih)
 #   everything else                    → 127.0.0.1:5340  (gaida-api)
 #
 # The admin panel is not on that list: it is published on 0.0.0.0:5344 and fronted by the host
@@ -124,6 +125,9 @@ services:
       # 2000 tracks at MP3 320 or 500 at FLAC; the oldest go first when it is reached.
       DEEZER_CACHE_MAX_BYTES: ${DEEZER_CACHE_MAX_BYTES:-21474836480}
       DEEZER_ADMIN_ROWS: ${DEEZER_ADMIN_ROWS:-200}
+      # Where downloaded lyrics are registered. Unset, this pod keeps its words to itself: they still
+      # go into the file's tags, stih just falls back to LRCLIB for these tracks.
+      STIH_URL: http://stih:8080
     volumes:
       # A real cache: losing it costs re-downloads, nothing else. Tracks promoted into the music
       # library live under MUSIC_LIBRARY_PATH instead and are not affected by anything here.
@@ -231,6 +235,51 @@ services:
       # Uploaded playlist covers. Losing these loses artwork, not playlists.
       - dom-covers:/covers
 
+  # ── Lyrics ─────────────────────────────────────────────────────────────────────
+  # Fetches, stores and serves every lyric in the stack. Two volumes: the music library, shared
+  # read-write with gaida-local because a library track's words belong beside the track, and its own,
+  # for the tracks that have no library folder to live in.
+  #
+  # Not replicable, and for a real reason rather than by habit: it is the stack's only LRCLIB client,
+  # and the promise of one sequential caller is the promise a second replica breaks. Losing
+  # lyrics-data loses the Deezer lyrics and the negative cache, not the library's words — those are
+  # in /music.
+
+  stih:
+    <<: *service
+    build:
+      context: .
+      dockerfile: Services/Stih/Dockerfile
+      # Baked in so the lyrics-data volume is created owned by the user below, not root.
+      args:
+        LIBRARY_UID: ${LIBRARY_UID:-1000}
+        LIBRARY_GID: ${LIBRARY_GID:-1000}
+    environment:
+      <<: *env
+      Local__Url: http://gaida-local:8080
+      Deezer__Url: http://gaida-deezer:8080
+      MUSIC_LIBRARY: /music
+      LYRICS_DATA: /lyrics
+      # One dash, not two: an operator setting this empty means "off", and `:-` would helpfully undo
+      # that. Empty disables every outbound lookup — stih still serves the files it has.
+      LRCLIB_URL: ${LRCLIB_URL-https://lrclib.net}
+      # lrclib.net asks every client to identify itself. Keep the URL — it is how they reach you if
+      # this deployment ever misbehaves.
+      LRCLIB_USER_AGENT: ${LRCLIB_USER_AGENT:-musicrain/1.0 (+https://github.com/t1stm/musicrain)}
+      LYRICS_RETRY_DAYS: ${LYRICS_RETRY_DAYS:-30}
+      LYRICS_SWEEP: ${LYRICS_SWEEP:-true}
+      LYRICS_SWEEP_DELAY_MS: ${LYRICS_SWEEP_DELAY_MS:-1000}
+      LYRICS_SWEEP_IDLE_HOURS: ${LYRICS_SWEEP_IDLE_HOURS:-6}
+    # The second service that writes into a directory the host owns, so the second one whose container
+    # user matters — and it must be the same one gaida-local runs as, or the .lrc files it writes land
+    # owned by root in the middle of the library.
+    user: "${LIBRARY_UID:-1000}:${LIBRARY_GID:-1000}"
+    volumes:
+      - ${MUSIC_LIBRARY_PATH:-./data/music}:/music
+      - lyrics-data:/lyrics
+    ports:
+      - "127.0.0.1:${STIH_PORT:-5345}:8080"
+
   # ── The admin panel ────────────────────────────────────────────────────────────
   # Reads every other service and moderates them. Holds no state of its own: no volume, nothing to
   # back up, and losing it loses nothing. It is also the only service here that talks to all of the
@@ -266,6 +315,8 @@ services:
       Targets__6__Url: http://gaida-spotify:8080
       Targets__7__Name: gaida-deezer
       Targets__7__Url: http://gaida-deezer:8080
+      Targets__8__Name: stih
+      Targets__8__Url: http://stih:8080
     ports:
       # The one port in this file NOT bound to 127.0.0.1: published on every interface so the host
       # firewall decides who reaches it, as asked. That makes the firewall the only thing between
@@ -278,3 +329,6 @@ volumes:
   thumbnails:
   dom-data:
   dom-covers:
+  # Lyrics for tracks with no library folder, plus Lyrics.json. The library's own words are in
+  # MUSIC_LIBRARY_PATH beside the audio, so losing this costs re-fetches and nothing else.
+  lyrics-data:

@@ -10,11 +10,18 @@ namespace Gaida.Platforms.MusicDatabase;
 /// <summary>Every string a song can be found by, cleaned once and cached on the entry.</summary>
 public sealed record SearchVariants(string[] Titles, string[] Artists, IReadOnlySet<string> Tags);
 
+/// <summary>Which shape of lyrics file sits beside a track. Serialized by name — see MusicInfo.SerializerOptions.</summary>
+public enum LyricsKind { Unsynchronized, Synchronized }
+
+/// <summary>Who found the words. Enums rather than strings: a file carrying "synced" should fail at load.</summary>
+public enum LyricsOrigin { Deezer, LRCLIB }
+
 public class MusicInfo : IJsonOnDeserialized
 {
     /// <summary>Layout of the per-artist Info.json files on disk. Property names are the on-disk names.</summary>
     public static readonly JsonSerializerOptions SerializerOptions = new()
     {
+        Converters = { new JsonStringEnumConverter() },
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         PropertyNameCaseInsensitive = true,
         WriteIndented = true
@@ -100,6 +107,35 @@ public class MusicInfo : IJsonOnDeserialized
     }
 
     public string? RelativeLocation { get; set; }
+
+    /// <summary>Which shape of lyrics sits beside the audio file, or <c>null</c> for none.</summary>
+    /// <remarks>
+    ///     The file is the authority; this is its index. <see cref="MusicManager.ReconcileLyrics" />
+    ///     rewrites this and <see cref="LyricsSource" /> from what is actually on disk on every scan, so
+    ///     an entry can never point at a .lrc someone deleted — including one stih wrote.
+    /// </remarks>
+    public LyricsKind? LyricsType { get; set; }
+
+    /// <summary>
+    ///     Where the file came from, as stih reported it. <c>null</c> beside a non-null
+    ///     <see cref="LyricsType" /> means the file was already in the folder — nothing overwrites one of
+    ///     those.
+    /// </summary>
+    public LyricsOrigin? LyricsSource { get; set; }
+
+    /// <summary>
+    ///     The day stih last reported finding nothing for this track. Set only on a real "not found":
+    ///     a timeout or a 429 never reaches this pod at all.
+    /// </summary>
+    public DateOnly? LyricsChecked { get; set; }
+
+    /// <summary>
+    ///     Where a lyrics file of one kind would live, relative to the storage root. Relative because it is
+    ///     what goes over the wire to stih, which has the same tree mounted at its own path.
+    /// </summary>
+    public string? LyricsPathFor(LyricsKind kind) => RelativeLocation is null
+        ? null
+        : Path.ChangeExtension(RelativeLocation, kind == LyricsKind.Synchronized ? ".lrc" : ".txt");
 
     // ponytail: read-only shim for the four-field format. Setter-only properties are never serialized by
     // System.Text.Json, so nothing writes these names back. Delete once no Info.json still carries them.

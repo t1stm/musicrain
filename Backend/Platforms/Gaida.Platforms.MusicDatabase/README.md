@@ -21,6 +21,7 @@ dotnet test Tests/Pods.Tests         # from Backend/ — the matcher's calibrati
 - **Covers deduplicated by content hash.** [CoverExtractor.cs](Manager/CoverExtractor.cs) pulls embedded art out of every folder in parallel and names each file by its hash, so one album's art is written once however many tracks carry it.
 - **A cover URL with a placeholder in it.** Entries are stored with `$[DOMAIN]` in place of the host and substituted on load, so the same library serves correct absolute URLs on localhost and in production with no rewrite pass.
 - **Four tag readers behind one interface.** `ffprobe` supplies the metadata; embedded art comes from [Id3v2.cs](Manager/Id3v2.cs) through TagLib#, or from `metaflac` and `wvunpack` for the two formats it does not cover.
+- **The file is the authority, the index is its projection.** Lyrics live as `.lrc` or `.txt` files beside the audio, written by `stih` rather than by anything here. [MusicManager.Lyrics.cs](Manager/MusicManager.Lyrics.cs) rewrites each entry's `LyricsType` and `LyricsSource` from two `File.Exists` calls on every scan — cheap enough to do for every song, and it means a hand-deleted sidecar cannot leave an entry pointing at nothing. Deliberately not a `ScanVersion` bump: that would re-run `ffprobe` over the whole library to learn something two `stat` calls already know.
 - **A single edit gate.** Admin edits serialise on one `SemaphoreSlim` for the whole library rather than one per folder — edits arrive at the rate a person clicks Save, and the work under it is a dictionary lookup and one small file write.
 
 ## Technologies worth a look
@@ -38,7 +39,7 @@ dotnet test Tests/Pods.Tests         # from Backend/ — the matcher's calibrati
 └── Search Providers/
 ```
 
-[Manager](Manager) is the library itself: the scan, the tag readers, the cover extractor and the matcher. `MusicManager` is a partial class split across [MusicManager.cs](Manager/MusicManager.cs) (scan, load, edits) and [MusicManager.Match.cs](Manager/MusicManager.Match.cs) (matching and its calibration constants).
+[Manager](Manager) is the library itself: the scan, the tag readers, the cover extractor and the matcher. `MusicManager` is a partial class split across [MusicManager.cs](Manager/MusicManager.cs) (scan, load, edits), [MusicManager.Match.cs](Manager/MusicManager.Match.cs) (matching and its calibration constants) and [MusicManager.Lyrics.cs](Manager/MusicManager.Lyrics.cs) (sidecar reconciliation, and the two answers `stih` asks for).
 
 [Search Providers](Search%20Providers) turns the in-memory song list into search, artist, album, browse and random results.
 

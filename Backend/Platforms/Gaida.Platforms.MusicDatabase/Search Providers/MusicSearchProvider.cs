@@ -65,6 +65,17 @@ public class MusicSearchProvider(ILogger logger) : SearchProvider(logger),
         string extension, Stream content, byte[]? cover = null, CancellationToken cancellationToken = default) =>
         MusicManager.ImportAsync(artist, title, album, extension, content, cover, cancellationToken);
 
+    /// <summary>The library entry behind an ID, with the fields <see cref="PlatformResult" /> does not carry.</summary>
+    public MusicInfo? FindEntry(string id) => MusicManager.SearchById(id);
+
+    /// <summary>stih: what it found, or that it found nothing.</summary>
+    public Task<(MusicInfo? entry, string? error)> StampLyricsAsync(string id, LyricsKind? kind, LyricsOrigin? source)
+        => MusicManager.StampLyricsAsync(id, kind, source);
+
+    /// <summary>stih: the sweep's work list.</summary>
+    public IReadOnlyList<MusicInfo> MissingLyrics(int take, DateOnly retryBefore) =>
+        MusicManager.MissingLyrics(take, retryBefore);
+
     public (LocalMatch Match, PlatformResult Result)? FindLocalVariant(string name, string? artist, TimeSpan duration)
     {
         var match = MusicManager.FindLocalVariant(name, artist, duration);

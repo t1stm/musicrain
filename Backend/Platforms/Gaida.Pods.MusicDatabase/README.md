@@ -26,6 +26,30 @@ STORAGE=../../data/music ALBUM_COVERS=./Album_Covers DOMAIN=http://localhost:808
 
 The scan runs in the background, so the pod answers before it has finished reading the tree. Its tests are in [Tests/Pods.Tests](../../Tests/Pods.Tests); `--self-check` runs the pure-logic ones with no library mounted.
 
+## Lyrics
+
+This pod does not fetch lyrics and has never heard of LRCLIB. **`stih`** does both, and it writes the files it finds straight into this pod's volume, beside the audio — `Rock/Rammstein/Rammstein - Sonne.lrc` next to `Rock/Rammstein/Rammstein - Sonne.flac`, `.txt` when the words are not timed. That is why a `.lrc` can appear in the library with nothing here having written it, and why both containers run as the same `LIBRARY_UID:LIBRARY_GID`.
+
+What this pod owns is the record of it. Each `Info.json` entry carries three fields, all `null` by default:
+
+| Field | Values | Meaning |
+| --- | --- | --- |
+| `LyricsType` | `null`, `"Unsynchronized"`, `"Synchronized"` | Which file sits beside the audio. |
+| `LyricsSource` | `null`, `"Deezer"`, `"LRCLIB"` | Where it came from. `null` beside a non-null type means it was already in the folder. |
+| `LyricsChecked` | `null` or a date | The day `stih` last reported finding nothing. |
+
+The file on disk settles any disagreement: every scan reconciles both of the first two fields from `File.Exists`, so a `.lrc` deleted by hand disappears from `Info.json` at the next boot whatever `stih`'s own index says.
+
+Two routes serve `stih`, plus one field on an existing one:
+
+| Route | What it answers |
+| --- | --- |
+| `GET /lyrics/missing?take=200&retryDays=30` | Tracks with no lyrics beside them, oldest-checked first. The names are the untransliterated tags — LRCLIB holds tracks under the names they were released with. |
+| `POST /lyrics/stamp?id=&type=&source=` | Records what `stih` wrote, or, with `type` omitted, that it found nothing. It writes no lyrics file. |
+| `GET /resolve?id=` | Also returns `relativeLocation`, `lyricsType` and `lyricsSource`, so `stih` learns where to write in the same call that tells it the track's name and length. |
+
+Both are ordinary routes rather than `/Admin` ones: this is service-to-service traffic on the internal network, nginx proxies neither, and gating them behind `ADMIN_TOKEN` would make lyrics stop working in a deployment that has chosen not to run the admin panel.
+
 ## Interesting techniques
 
 - **A scan that does not block the boot.** `Initialize()` starts the library scan and returns, so the pod is listening while it reads thousands of folders. Folders are parsed with `Parallel.ForEachAsync` into a `ConcurrentBag`; folder order stops being stable, and nothing downstream depends on it.

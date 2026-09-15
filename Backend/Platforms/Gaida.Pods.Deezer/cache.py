@@ -1,10 +1,10 @@
 """
 The downloaded-song cache: this pod's only state, and the only reason it needs a volume.
 
-Two files per track in one flat directory -- ``<id>.mp3`` or ``<id>.flac`` beside ``<id>.json``. The
-sidecar is what makes the cache self-describing: Oko's table and the local pod's import both read a
-cached track's name, artist and format out of it rather than asking Deezer again, and a pod that
-restarts rebuilds its whole index from one directory scan.
+Two files per track in one flat directory: ``<id>.mp3`` or ``<id>.flac`` beside ``<id>.json``. The JSON
+sidecar is what makes the cache self-describing: Oko's table and the local pod's import both read a cached track's name, artist and
+format out of it rather than asking Deezer again, and a pod that restarts rebuilds its whole index from
+one directory scan.
 
 Nothing here is async. Every method is called from a worker thread (``asyncio.to_thread`` in
 :mod:`main`), which is also where the download that feeds it runs.
@@ -19,6 +19,8 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+import tags
 
 log = logging.getLogger("gaida.deezer")
 
@@ -104,17 +106,40 @@ class Cache:
 
     # ── writing ─────────────────────────────────────────────────────────────────────────────────
 
-    def store(self, track_id: str, data: bytes, audio_format: str, dto: dict[str, Any]) -> Entry:
+    def store(self, track_id: str, data: bytes, audio_format: str, dto: dict[str, Any],
+              cover: bytes | None = None, lyrics: str | None = None) -> Entry:
         """
         Writes one downloaded track, replacing whatever was cached for it, and evicts down to the cap.
 
         The audio goes to a ``.part`` first and is renamed into place, so a crash mid-write never
-        leaves a truncated file that the next request would happily serve as a whole song.
+        leaves a truncated file that the next request would happily serve as a whole song. The tags go
+        on while it is still that ``.part``: mutagen rewrites the file to make room for a picture, and
+        doing that to a file ``/content`` is already serving is the one version of this that can be read
+        half-written. It is also why ``bytes`` is measured off the disk rather than from ``data`` -- a
+        100 KB cover is 100 KB of the cache's budget.
+
+        The timed lines are not here. stih owns every lyrics file in this stack and indexes them; a
+        second copy in the audio cache would be one more thing to keep in step with it. The plain block
+        still goes into the file's tags, because that is part of the file's quality rather than a copy --
+        it is what a track imported into the library carries into its tags.
+
+        :param cover: the artwork bytes, embedded in the file.
+        :param lyrics: the plain lyrics, embedded in the file.
         """
+        target = self.directory / f"{track_id}.{audio_format}"
+        partial = target.with_suffix(target.suffix + ".part")
+        partial.write_bytes(data)
+
+        # Nothing to embed, nothing to rewrite. ponytail: that skips the names too, for a track with
+        # neither a cover nor lyrics -- which a Deezer album object does not produce, since every one of
+        # them carries artwork. Drop the guard if one ever does.
+        if cover or lyrics:
+            tags.embed(partial, audio_format, dto, cover, lyrics)
+
         entry = Entry(
             id=track_id,
             format=audio_format,
-            bytes=len(data),
+            bytes=partial.stat().st_size,
             at=time.time(),
             name=dto.get("name") or "Unknown title",
             artist=dto.get("artist") or "Unknown artist",
@@ -123,9 +148,6 @@ class Cache:
             thumbnailUrl=dto.get("thumbnailUrl"),
         )
 
-        target = self.directory / entry.filename
-        partial = target.with_suffix(target.suffix + ".part")
-        partial.write_bytes(data)
         os.replace(partial, target)
 
         with self._lock:
@@ -142,15 +164,14 @@ class Cache:
         return entry
 
     def remove(self, track_id: str) -> bool:
-        """Deletes one track's audio and sidecar. ``False`` when it was not cached."""
+        """Deletes every file one track owns. ``False`` when it was not cached."""
         with self._lock:
             entry = self._entries.pop(track_id, None)
 
         if entry is None:
             return False
 
-        _remove(self.directory / entry.filename)
-        _remove(self.directory / f"{track_id}.json")
+        self._delete(entry)
         log.info("Evicted %s from the cache", track_id)
         return True
 
@@ -161,8 +182,7 @@ class Cache:
             self._entries.clear()
 
         for entry in entries:
-            _remove(self.directory / entry.filename)
-            _remove(self.directory / f"{entry.id}.json")
+            self._delete(entry)
 
         log.info("Evicted all %d cached tracks", len(entries))
         return len(entries)
@@ -200,9 +220,23 @@ class Cache:
                 loaded[entry.id] = entry
             else:
                 _remove(sidecar)
+                _remove(self.directory / f"{entry.id}.lrc")
 
         self._entries = loaded
         log.info("Loaded %d cached tracks from %s", len(loaded), self.directory)
+
+    def _delete(self, entry: Entry) -> None:
+        """
+        Every file one cached track owns: the audio and the JSON sidecar.
+
+        The ``.lrc`` is gone -- stih holds the timed lines now -- but deleting it stays, here and in
+        :meth:`_load`, because files an older version of this pod wrote are still sitting in deployed
+        volumes and this is the cheapest way to clear them out over time. Drop the two lines once every
+        deployment has rotated through its cache.
+        """
+        _remove(self.directory / entry.filename)
+        _remove(self.directory / f"{entry.id}.json")
+        _remove(self.directory / f"{entry.id}.lrc")
 
     def _evict_to_cap(self) -> None:
         """
@@ -230,8 +264,7 @@ class Cache:
                 total -= entry.bytes
 
         for entry in doomed:
-            _remove(self.directory / entry.filename)
-            _remove(self.directory / f"{entry.id}.json")
+            self._delete(entry)
 
         log.info("Evicted %d track(s) to stay under %d bytes", len(doomed), self.max_bytes)
 

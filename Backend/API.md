@@ -96,6 +96,26 @@ Known but missing local/video IDs return `404` with `code: "not_found"`. A tempo
 
 `result` is an ordinary discovery result. `match` is `same` (the tag sets agree), `variant` (a tagged upload answered with the plain library copy) or `weak` (offer it, but say so). Renditions run one way only: an `(Instrumental)` upload may be answered with your plain copy, a plain upload is never answered with your instrumental, and `(Remastered)` counts as the same performance. `durationDeltaSeconds` is library minus upload and is reported, never a reason to reject a `same` or `variant` — uploads carry intros.
 
+## Lyrics
+
+`GET /Audio/Lyrics/Get?id={id}` returns the words for one track. An ID and nothing else: the service asks the pod that owns the ID what the track is called and how long it runs, so a caller never has to keep a copy of the matching rules. `204` when there are none anywhere — the ordinary answer for a great many tracks, and not an error. `400 invalid_query` for a missing or malformed `id`.
+
+```json
+{
+  "type": "Synchronized",
+  "source": "LRCLIB",
+  "lines": [{ "at": 0.0, "text": "" }, { "at": 12.34, "text": "Alle warten auf das Licht" }],
+  "text": "Alle warten auf das Licht\n…",
+  "matched": { "title": "Sonne", "artist": "Rammstein", "length": 272 }
+}
+```
+
+`type` is `Synchronized` or `Unsynchronized`. `lines` is present for both: unsynchronized words come back with every `at` as `null`, so a client renders one component either way and only the highlighting branches. `text` is always the plain block with the timestamps stripped, for someone copying the words out. `source` is `Deezer`, `LRCLIB`, or `null` for a file that was already sitting in the library folder. `matched` is what the words actually belong to, which is not always what was asked for — it is what lets someone see they have been given the live version's lyrics.
+
+Where the words come from, in order: a file this stack already has for the track; a `.lrc` or `.txt` someone put in the library folder by hand; then [LRCLIB](https://lrclib.net), matched on length to within a second and on the library's own title-and-artist rules, with anything below a strong match rejected — wrong words scrolling in time with the music is the one failure a listener cannot ignore. A hit for a library track is written beside the audio, so it is there for every listener afterwards and for any other player that opens the folder. A miss is remembered for a month and then tried again, because LRCLIB grows.
+
+Responses are `Cache-Control: public, max-age=86400`. YouTube IDs answer `204`: there is no source for them yet, and saying so is the honest state.
+
 ## Artwork
 
 `GET /Audio/Cover?id={id}` returns the track's artwork as an image, for any local or YouTube ID. The API fetches the upstream thumbnail once and keeps it on disk, so repeat requests never touch the platform layer; the first request streams to the caller while it downloads rather than waiting for the whole image. An ID with no artwork returns `404 {"error":{"code":"not_found","message":"..."}}`, a missing ID `400 invalid_query`.

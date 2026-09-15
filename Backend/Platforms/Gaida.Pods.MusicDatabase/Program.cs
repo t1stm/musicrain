@@ -135,9 +135,60 @@ app.MapGet("/classify", IResult (string? query) =>
 app.MapGet("/resolve", async Task<IResult> (string? id, MusicDatabase db, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(id)) return Results.NotFound();
-    var result = await db.GetByIdAsync(StripAudioPrefix(id), ct);
+    var bare = StripAudioPrefix(id);
+    var result = await db.GetByIdAsync(bare, ct);
     var mapped = result is null ? null : Map(result);
-    return mapped is null ? Results.NotFound() : Results.Ok(mapped);
+    if (mapped is null) return Results.NotFound();
+
+    // stih writes the .lrc next to the audio on the shared volume, so it needs the path — and this is
+    // the route it already has to call to learn the track's name and length. Gaida.API deserializes
+    // into its own DTO and ignores fields it does not know, so none of this reaches the public API.
+    var entry = db.FindEntry(bare);
+    return Results.Ok(entry is null
+        ? mapped
+        : mapped with
+        {
+            RelativeLocation = entry.RelativeLocation,
+            LyricsType = entry.LyricsType?.ToString(),
+            LyricsSource = entry.LyricsSource?.ToString()
+        });
+});
+
+// ── stih's two routes. Ordinary routes rather than /Admin ones: this is service-to-service traffic on
+// the internal network, nginx proxies neither, and gating them behind ADMIN_TOKEN would make lyrics
+// stop working in a deployment that has chosen not to run the admin panel. ──
+
+// The backfill sweep's work list: tracks with nothing beside them, oldest-checked first. The names are
+// the untransliterated tags, because LRCLIB holds tracks under the names they were released with.
+app.MapGet("/lyrics/missing", IResult (int? take, int? retryDays, MusicDatabase db) =>
+{
+    var retryBefore = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-Math.Max(0, retryDays ?? 30));
+    return Results.Ok(db.MissingLyrics(take ?? 200, retryBefore).Select(song => new MissingLyricsDto(
+        "audio://" + song.ID,
+        song.Title,
+        song.Artist,
+        song.Album,
+        song.Duration.ToString("c", CultureInfo.InvariantCulture),
+        song.RelativeLocation)));
+});
+
+// What stih calls after writing a file, and after a lookup that found nothing (`type` omitted). It
+// writes no lyrics file: stih has already done that on the volume both pods share.
+app.MapPost("/lyrics/stamp", async Task<IResult> (string? id, string? type, string? source, MusicDatabase db) =>
+{
+    if (string.IsNullOrWhiteSpace(id)) return Results.BadRequest(new ErrorDto("A track ID is required."));
+
+    if (!TryParseLyrics<LyricsKind>(type, out var kind))
+        return Results.BadRequest(new ErrorDto($"'{type}' is not a lyrics type."));
+    if (!TryParseLyrics<LyricsOrigin>(source, out var origin))
+        return Results.BadRequest(new ErrorDto($"'{source}' is not a lyrics source."));
+
+    var (entry, error) = await db.StampLyricsAsync(StripAudioPrefix(id), kind, origin);
+    if (error is not null)
+        return error == "No song with that ID." ? Results.NotFound() : Results.BadRequest(new ErrorDto(error));
+
+    return Results.Ok(new LyricsRowDto("audio://" + entry!.ID, entry.LyricsType?.ToString(),
+        entry.LyricsSource?.ToString(), entry.LyricsChecked?.ToString("O")));
 });
 
 // The routes hand back the sequence itself: ASP.NET serialises an IAsyncEnumerable element by element and
@@ -293,6 +344,20 @@ static List<string>? Variants(HttpRequest request, string name)
 /// </summary>
 static LibraryRowDto LibraryRow(MusicInfo song) => new(song.ID ?? "", [.. song.Titles], [.. song.Artists],
     song.Album, song.RelativeLocation, song.Duration.ToString("c", CultureInfo.InvariantCulture), song.CoverUrl);
+
+/// <summary>An omitted or empty value is the <c>null</c> case, not a bad request. Anything else must parse.</summary>
+static bool TryParseLyrics<T>(string? value, out T? parsed) where T : struct, Enum
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        parsed = null;
+        return true;
+    }
+
+    var ok = Enum.TryParse<T>(value, true, out var result);
+    parsed = ok ? result : null;
+    return ok;
+}
 
 static async IAsyncEnumerable<ResultDto> Mapped(IAsyncEnumerable<PlatformResult> source,
     [EnumeratorCancellation] CancellationToken ct)
@@ -632,7 +697,23 @@ public sealed record ResultDto(
     string Duration,
     string? ThumbnailUrl,
     string? OriginalTitle,
-    string? OriginalArtist);
+    string? OriginalArtist,
+    // Only /resolve fills these, and only stih reads them — see LYRICS_1_LIBRARY_PLAN.md.
+    string? RelativeLocation = null,
+    string? LyricsType = null,
+    string? LyricsSource = null);
+
+/// <summary>One track stih's sweep has not found words for yet.</summary>
+public sealed record MissingLyricsDto(
+    string Id,
+    string? Title,
+    string? Artist,
+    string? Album,
+    string Duration,
+    string? RelativeLocation);
+
+/// <summary>What one track's lyrics state became, after a stamp.</summary>
+public sealed record LyricsRowDto(string Id, string? Type, string? Source, string? Checked);
 
 public sealed record LibraryRowDto(
     string Id,

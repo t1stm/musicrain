@@ -5,6 +5,7 @@
 
 	import { getTimeString } from '$lib';
 	import { SliderInteractions } from '$lib/sliderInteractions.svelte.js';
+	import { seekTo } from '$lib/seek';
 
 	const seekSeconds = 2;
 	const slider = new SliderInteractions(seekSeconds);
@@ -15,11 +16,11 @@
 	slider.onChange = () => {
 		const seconds = (slider.percentage / 100) * current.lengthSeconds;
 		if (!session.inRoom) {
-			audio.currentSeconds = seconds;
+			seekTo(seconds);
 			return;
 		}
 		clearTimeout(seekTimer);
-		seekTimer = setTimeout(() => session.send(`seek ${seconds}`), 150);
+		seekTimer = setTimeout(() => seekTo(seconds), 150);
 	};
 
 	let buffered = $derived(current.lengthSeconds > 0 ? (audio.bufferedSeconds / current.lengthSeconds) * 100 : 0);

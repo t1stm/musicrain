@@ -14,6 +14,7 @@ The frontend-facing contract is in [API.md](API.md), the room protocol in [MULTI
 | [Dunav](Services/Dunav) | The fan-out download cache. One upstream fetch per key, an on-disk body served to every client that asked, LRU eviction against a disk budget. |
 | [Selo](Services/Selo) | Rooms. WebSocket sessions holding several listeners on one shared clock. |
 | [Dom](Services/Dom) | Accounts and playlists. Talks to nothing, and the one volume that holds real user data. |
+| [Stih](Services/Stih) | Lyrics. The stack's only LRCLIB client: it fetches the words, writes them beside the audio and indexes what it has. |
 | [Oko](Services/Oko) | The admin panel. Reads every other service, holds no state of its own. |
 | [Gaida.Bot](Services/Gaida.Bot) | A Discord bot playing from the same library, in-process rather than over HTTP. |
 
@@ -33,6 +34,7 @@ That is the whole stack on compose's defaults — no secrets, no credentials, ev
 | Dunav | 5341 | `127.0.0.1` |
 | Selo | 5342 | `127.0.0.1` |
 | Dom | 5343 | `127.0.0.1` |
+| Stih | 5345 | `127.0.0.1` |
 | Oko | 5344 | every interface |
 
 The pods themselves publish nothing: they are reachable only from the compose network, by service name.

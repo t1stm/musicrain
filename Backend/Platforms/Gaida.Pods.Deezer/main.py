@@ -23,6 +23,7 @@ import logging
 import os
 from typing import Any, Iterator
 
+import requests
 from fastapi import APIRouter, FastAPI, Response
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.responses import StreamingResponse
@@ -60,6 +61,19 @@ songs = cache.Cache(
     os.environ.get("DEEZER_CACHE") or "/cache",
     int(os.environ.get("DEEZER_CACHE_MAX_BYTES") or cache.MAX_BYTES_DEFAULT),
 )
+
+STIH_URL = (os.environ.get("STIH_URL") or "").rstrip("/")
+"""
+Where downloaded lyrics are registered. Unset, this pod keeps its words to itself: they still go into
+the file's tags, stih just falls back to LRCLIB for these tracks -- the same shape ``DEEZER_URL`` has in
+gaida-local.
+"""
+
+REGISTER_TIMEOUT = 5
+"""Seconds. A download that succeeded must not sit waiting on a lyrics service that is restarting."""
+
+if not STIH_URL:
+    log.info("STIH_URL is unset: downloaded lyrics go into the file's tags only, and are not registered")
 
 ADMIN_ROWS = int(os.environ.get("DEEZER_ADMIN_ROWS") or 200)
 """
@@ -298,7 +312,41 @@ async def _fetch(track_id: str, prefer_flac: bool) -> cache.Entry | None:
         log.warning("Downloading %s from Deezer failed", track_id, exc_info=True)
         return None
 
-    return await asyncio.to_thread(songs.store, track_id, downloaded.data, downloaded.format, dto)
+    # Both after the download, so a track Deezer refuses costs neither request. Two threads because both
+    # are blocking calls -- one CDN GET, one gateway call behind the client's own lock.
+    cover, lyrics = await asyncio.gather(
+        asyncio.to_thread(stream.fetch_artwork, dto["thumbnailUrl"]),
+        asyncio.to_thread(client.lyrics, track_id),
+    )
+
+    entry = await asyncio.to_thread(songs.store, track_id, downloaded.data, downloaded.format, dto,
+                                    cover, lyrics.text)
+    await _register_lyrics(track_id, lyrics)
+    return entry
+
+
+async def _register_lyrics(track_id: str, lyrics: stream.Lyrics) -> None:
+    """
+    Hands one track's words to stih, which owns every lyrics file in this stack.
+
+    Fire and forget on purpose: a download that succeeded must not fail because the lyrics service is
+    restarting, and there is nothing here worth retrying -- the next play of this track registers the
+    same words again, and stih's own LRCLIB fall-through covers it in the meantime.
+
+    Deezer's lyrics win over anything stih found on its own: they came with the audio, from the same
+    source, matched to the recording by Deezer's own track ID. No title matching, no length gate, no
+    chance of the wrong song's words.
+    """
+    if not STIH_URL or not (lyrics.text or lyrics.lrc):
+        return
+
+    body = {"id": f"deezer://{track_id}", "source": "Deezer", "text": lyrics.text, "lrc": lyrics.lrc}
+    try:
+        await asyncio.to_thread(
+            lambda: requests.post(f"{STIH_URL}/register", json=body, timeout=REGISTER_TIMEOUT)
+            .raise_for_status())
+    except Exception:
+        log.warning("Registering lyrics for %s with stih failed", track_id, exc_info=True)
 
 
 async def _refetch(id: str | None, prefer_flac: bool) -> Response:

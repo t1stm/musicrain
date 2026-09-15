@@ -7,5 +7,9 @@ deezer-py==1.3.6
 # because the import is `Cryptodome.*` -- the same package and the same import path streamrip uses.
 pycryptodomex==3.23.0
 
+# Tagging the downloaded file: ID3 frames on the MP3, Vorbis comments and a picture block on the FLAC.
+# Pure Python, no system library, and the same package streamrip tags with.
+mutagen==1.48.1
+
 fastapi==0.141.1
 uvicorn==0.52.4

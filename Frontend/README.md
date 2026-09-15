@@ -59,6 +59,7 @@ The build is plain files — `adapter-static` with an `index.html` fallback — 
 - **A height-based responsive mode.** [src/app.css](src/app.css) defines `micro` as [`@media (max-height: 320px)`](https://developer.mozilla.org/en-US/docs/Web/CSS/@media/height). Height rather than width, because a phone is narrow *and tall* and wants the compact page, while 320px of height means there is no room for a page at all. An iframe measures its own size, so one rule covers Discord picture-in-picture with no SDK layout-mode event.
 - **Platform-honest details in CSS.** [`color-scheme: dark`](https://developer.mozilla.org/en-US/docs/Web/CSS/color-scheme) once at the root so native widgets stop rendering light-on-dark, [`-webkit-tap-highlight-color: transparent`](https://developer.mozilla.org/en-US/docs/Web/CSS/-webkit-tap-highlight-color) with a real press state in its place, and [prefers-reduced-motion](https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion) respected throughout.
 - **Installability without a cache.** [src/service-worker.ts](src/service-worker.ts) registers an empty [fetch handler](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerGlobalScope/fetch_event) — the minimum Chrome wants before it offers "Install" — next to a [web app manifest](https://developer.mozilla.org/en-US/docs/Web/Manifest). No precaching, so there is nothing to invalidate.
+- **Lyrics that follow the ear, not the display.** The pane's `requestAnimationFrame` loop reads `audio.positionNow()` — the interpolated position with this device's output latency already subtracted — rather than the 10 Hz `currentSeconds` the UI ticks on, because at 100 ms granularity a line lands visibly late against the voice. [src/lib/lyrics.ts](src/lib/lyrics.ts) binary-searches the timestamps and the state is written only when the line actually changes, so a Svelte effect runs per line rather than sixty times a second.
 - **Searches cancelled, not raced.** Every in-flight request is tied to an [AbortController](https://developer.mozilla.org/en-US/docs/Web/API/AbortController), so a new query drops the old stream instead of interleaving with it.
 
 ## Technologies worth a look
@@ -110,11 +111,11 @@ The build is plain files — `adapter-static` with an `index.html` fallback — 
 └── vite.config.ts
 ```
 
-[src/state](src/state) holds the rune-based state classes — audio, queue, room session, account, playlists, quality, search. They are plain classes with `$state` fields, so a component reads them directly and a test imports them without mounting anything.
+[src/state](src/state) holds the rune-based state classes — audio, queue, room session, account, playlists, quality, search, lyrics. They are plain classes with `$state` fields, so a component reads them directly and a test imports them without mounting anything.
 
 [src/components/player/layers](src/components/player/layers) splits the player by concern rather than by screen: audio graph, transport controls, seek bar, volume, quality picker and track info are separate components composed into both the compact bar and the full-screen player.
 
-[src/lib](src/lib) is the logic with no UI attached: the two clocks, the back stack, the JSON stream scanner, slider interaction handling, source-badge lookup and the Discord URL rewriting. Most of it has a `.test.ts` beside it.
+[src/lib](src/lib) is the logic with no UI attached: the two clocks, the back stack, the JSON stream scanner, slider interaction handling, the active-lyric search, the shared seek, source-badge lookup and the Discord URL rewriting. Most of it has a `.test.ts` beside it.
 
 [src/routes/(app)](src/routes/%28app%29) is a [SvelteKit group](https://svelte.dev/docs/kit/advanced-routing#Advanced-layouts-group) — every page shares the app shell layout without adding a path segment.
 

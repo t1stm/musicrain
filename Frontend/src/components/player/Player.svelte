@@ -4,12 +4,14 @@
 	import Volume from './layers/volume/Volume.svelte';
 	import Quality from './layers/quality/Quality.svelte';
 	import SeekBar from './layers/seek-bar/SeekBar.svelte';
-	import { ArrowsRightLeft, ChatBubbleOvalLeft, ChevronDown, ChevronUp, Icon, QueueList } from 'svelte-hero-icons';
+	import { ArrowsRightLeft, ChatBubbleOvalLeft, ChevronDown, ChevronUp, Icon, MusicalNote, QueueList } from 'svelte-hero-icons';
 	import Audio from '$components/player/layers/audio/Audio.svelte';
 	import Gapless from '$components/player/layers/audio/Gapless.svelte';
 	import current from '$states/current.svelte';
 	import queue from '$states/queue.svelte';
 	import session from '$states/session.svelte';
+	import lyrics from '$states/lyrics.svelte';
+	import Lyrics from '$components/player/layers/lyrics/Lyrics.svelte';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
 
 	type Dock = 'queue' | 'chat' | null;
@@ -61,6 +63,7 @@
 <div
 	id="player"
 	data-shape={full ? 'full' : 'bar'}
+	data-lyrics={lyrics.open ? 'on' : 'off'}
 	data-dock={dock ?? 'none'}
 	data-hold={holdState}
 	class="static z-10 mx-2 mb-2 flex w-auto shrink-0 flex-col items-center gap-2 rounded-panel border border-haze bg-surface-100/85 px-3 py-2 backdrop-blur-xl sm:absolute sm:inset-x-0 sm:bottom-4 sm:mx-auto sm:mb-0 sm:min-h-[53px] sm:w-[min(100%-2rem,80rem)] sm:flex-row sm:justify-between sm:gap-0 sm:px-4 sm:py-1"
@@ -81,7 +84,23 @@
 			     empty state is the feature's front door -->
 			<!-- Shuffle only in the full shape: the bar has no room for it, and the queue
 			     sheet — one tap away in either shape — carries the same button. -->
+			<!-- Lyrics only in the full shape, like shuffle beside it: the bar has no room,
+			     and reading words is what the full shape is for. Disabled rather than hidden
+			     when there are none — a button that vanishes per track is worse than one
+			     that greys out. -->
 			{#if full}
+				<button
+					type="button"
+					aria-label={lyrics.open ? 'Hide the lyrics' : 'Show the lyrics'}
+					aria-pressed={lyrics.open}
+					disabled={lyrics.status === 'none'}
+					class="flex size-11 items-center justify-center rounded-art text-fog hover:text-chalk focus-visible:outline-2 focus-visible:outline-primary-200 disabled:opacity-40 disabled:hover:text-fog sm:size-7"
+					class:bg-surface-200={lyrics.open}
+					class:text-chalk={lyrics.open}
+					onclick={() => (lyrics.open = !lyrics.open)}
+				>
+					<Icon src={MusicalNote} mini size="16" />
+				</button>
 				<button
 					type="button"
 					aria-label="Shuffle what is coming up"
@@ -141,6 +160,12 @@
 			<div class="hidden sm:block"><Volume /></div>
 		</div>
 	</div>
+
+	<!-- Inside the same element as everything else. Nothing about the pane may remount
+	     the player: the <audio> element and its graph live in this div. -->
+	{#if full && lyrics.open}
+		<Lyrics />
+	{/if}
 
 	<div class="player-row flex w-full min-w-0 items-center gap-3 sm:contents">
 		<Controls />

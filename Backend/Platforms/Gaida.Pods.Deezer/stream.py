@@ -20,6 +20,7 @@ import threading
 from dataclasses import dataclass
 
 import deezer
+import requests
 from Cryptodome.Cipher import AES, Blowfish
 
 log = logging.getLogger("gaida.deezer")
@@ -60,6 +61,18 @@ class Download:
 
     data: bytes
     format: str
+
+
+@dataclass(frozen=True)
+class Lyrics:
+    """One track's words: the plain block that goes in the tag, and the timed lines that go beside it."""
+
+    text: str | None
+    lrc: str | None
+
+
+NO_LYRICS = Lyrics(None, None)
+"""What every refusal answers -- no ARL, no lyrics for this track, a gateway that has changed."""
 
 
 class Client:
@@ -117,6 +130,27 @@ class Client:
                 log.warning("Deezer download of %s failed (%s), logging in again", track_id, error)
                 self._logged_in = False
                 return self._download(track_id, prefer_flac)
+
+    def lyrics(self, track_id: str) -> Lyrics:
+        """
+        Everything Deezer has to say about one track's words.
+
+        ``song.getLyrics`` is a gateway call, so it needs the same login the download does -- which is
+        why this is only ever asked after one. A track with no lyrics is an error there rather than an
+        empty body, and it is the common answer, so every failure is the same quiet :data:`NO_LYRICS`.
+        """
+        if not self._arl:
+            return NO_LYRICS
+
+        with self._lock:
+            try:
+                self._login()
+                found = self._client.gw.get_track_lyrics(track_id) or {}
+            except Exception as error:
+                log.info("Deezer has no lyrics for %s (%s)", track_id, error)
+                return NO_LYRICS
+
+        return Lyrics(found.get("LYRICS_TEXT") or None, _lrc(found.get("LYRICS_SYNC_JSON")))
 
     # ── everything below runs under self._lock ──────────────────────────────────────────────────
 
@@ -186,6 +220,44 @@ class Client:
             url = _encrypted_url(track_id, info["MD5_ORIGIN"], info["MEDIA_VERSION"])
 
         return url, extension
+
+
+def fetch_artwork(url: str | None) -> bytes | None:
+    """
+    The cover image behind a DTO's ``thumbnailUrl``, or ``None`` when there is nothing to fetch.
+
+    A plain ``requests.get`` rather than the client's session: this is a CDN image over a URL the public
+    API already handed us, so it touches none of deezer-py's shared state and needs neither the login
+    nor the lock that serialises every call that does.
+    """
+    if not url:
+        return None
+
+    try:
+        response = requests.get(url, timeout=15)
+        response.raise_for_status()
+        return response.content or None
+    except Exception:
+        log.warning("Could not fetch the Deezer cover at %s", url, exc_info=True)
+        return None
+
+
+def _lrc(lines: list[dict] | None) -> str | None:
+    """
+    Deezer's timed lines as the contents of an ``.lrc`` file, or ``None`` when it sent none.
+
+    Every entry carries its own bracketed ``lrc_timestamp``, so this is a join rather than a format. The
+    entries with no words are Deezer's own gaps and are kept: a timestamped empty line is what clears a
+    player's display between verses. The trailing entry that carries only a duration has no timestamp at
+    all, and is the one thing dropped.
+    """
+    if not lines:
+        return None
+
+    timed = [f"{line.get('lrc_timestamp')}{line.get('line') or ''}"
+             for line in lines if line.get("lrc_timestamp")]
+
+    return "\n".join(timed) + "\n" if timed else None
 
 
 def _encrypted_url(track_id: str, track_hash: str, media_version: str) -> str:

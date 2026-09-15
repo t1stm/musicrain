@@ -135,8 +135,16 @@ public partial class MusicManager(ILogger logger)
             Logger.Information("Backfilled {Count} entries of '{Artist}' to scan {Version}", behind.Count, artist,
                 ScanVersion);
 
+        // The lyrics sidecars, every scan rather than once behind a ScanVersion bump: it is two
+        // File.Exists per song against a version bump that would re-run ffprobe over the whole library,
+        // and it is what lets a .lrc deleted by hand disappear from Info.json at the next boot.
+        var reconciled = existing.Count(ReconcileLyrics);
+        if (reconciled > 0)
+            Logger.Information("Reconciled lyrics on {Count} entries of '{Artist}'", reconciled, artist);
+
         var newFiles = NewFiles(existing, songs).ToList();
-        if (stale == 0 && newFiles.Count == 0 && legacy.Count == 0 && behind.Count == 0) return existing;
+        if (stale == 0 && newFiles.Count == 0 && legacy.Count == 0 && behind.Count == 0 && reconciled == 0)
+            return existing;
 
         foreach (var file in newFiles)
             existing.Add(await ParseFile(file));
@@ -204,6 +212,7 @@ public partial class MusicManager(ILogger logger)
         entry.RelativeLocation ??= RelativeLocation(location);
         entry.ID = entry.UpdateRandomId();
         entry.Scan = ScanVersion;
+        ReconcileLyrics(entry);
 
         return entry;
     }
@@ -353,12 +362,16 @@ public partial class MusicManager(ILogger logger)
         var folders = new HashSet<string>(StringComparer.Ordinal);
         var withoutAlbum = 0;
         var withoutArtist = 0;
+        var withLyrics = 0;
+        var synchronized = 0;
 
         foreach (var song in songs)
         {
             if (song.RelativeLocation is { } location) folders.Add(FolderOf(location));
             if (string.IsNullOrWhiteSpace(song.Album)) withoutAlbum++;
             if (song.Artists.Count == 0) withoutArtist++;
+            if (song.LyricsType is not null) withLyrics++;
+            if (song.LyricsType == LyricsKind.Synchronized) synchronized++;
         }
 
         return new
@@ -368,6 +381,8 @@ public partial class MusicManager(ILogger logger)
             folders = folders.Count,
             withoutAlbum,
             withoutArtist,
+            withLyrics,
+            synchronized,
             storage = StorageDirectory
         };
     }

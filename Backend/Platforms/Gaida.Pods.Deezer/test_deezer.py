@@ -4,14 +4,26 @@ key derivation and the cache's two rules that would be wrong silently. No fixtur
 ARL. Run with `pytest`, or with `python test_deezer.py` in the pod image, which has neither.
 """
 
+import asyncio
 import json
+import os
+import struct
 import tempfile
 from pathlib import Path
+
+from mutagen.flac import FLAC
+from mutagen.id3 import ID3
 
 import cache
 import classify
 import stream
 from mapper import duration, to_dto, with_album
+
+# main builds a Cache at import time, so it needs somewhere to build it that is not /cache. Set before
+# the import and never after: the module reads its environment exactly once.
+os.environ.setdefault("DEEZER_CACHE", tempfile.mkdtemp())
+os.environ.setdefault("STIH_URL", "http://stih:8080")
+import main  # noqa: E402
 
 TRACK = "3135556"
 PLAYLIST = "908622995"
@@ -165,6 +177,16 @@ def test_decrypt_leaves_the_clear_stride_alone():
     assert stream._decrypt(TRACK, bytes(encrypted)) == plain
 
 
+def test_builds_an_lrc_from_deezers_timed_lines():
+    assert stream._lrc([
+        {"lrc_timestamp": "[00:04.20]", "line": "One more time"},
+        {"lrc_timestamp": "[00:08.00]", "line": ""},        # a gap, and it keeps its timestamp
+        {"milliseconds": "213000", "duration": "0"},        # the end marker, which has no timestamp
+    ]) == "[00:04.20]One more time\n[00:08.00]\n"
+
+    assert stream._lrc([]) is None and stream._lrc(None) is None
+
+
 # ── cache ───────────────────────────────────────────────────────────────────────────────────────
 
 def _dto(name="Harder, Better, Faster, Stronger"):
@@ -223,6 +245,142 @@ def test_cache_recent_caps_newest_first_and_0_lifts_the_cap():
 
         assert [entry.id for entry in songs.recent(2)] == ["3", "2"]
         assert [entry.id for entry in songs.recent(0)] == ["3", "2", "1"]
+
+
+_JPEG = b"\xff\xd8\xff" + b"j" * 500
+"""A stand-in cover: what matters is that the bytes come back out of the file unchanged."""
+
+_MP3 = b"\xff\xfb" + b"x" * 100
+"""Enough of an MP3 frame header for mutagen to write a tag in front of. Nothing decodes it."""
+
+
+def _flac_stub() -> bytes:
+    """
+    The smallest thing mutagen will open as a FLAC: the magic and a STREAMINFO block, no audio frames.
+
+    A real file would be a fixture, and these tests are about the picture block and the comments, both
+    of which live in front of the first frame.
+    """
+    streaminfo = struct.pack(">HH", 4096, 4096) + b"\x00" * 6 + b"\x0a\xc4\x42\xf0" + b"\x00" * 20
+    return b"fLaC" + bytes([0x80, 0, 0, 34]) + streaminfo
+
+
+def test_tags_go_into_the_mp3():
+    with tempfile.TemporaryDirectory() as directory:
+        songs = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
+        entry = songs.store(TRACK, _MP3, stream.MP3, _dto(), _JPEG, "One more time")
+
+        tag = ID3(Path(directory) / f"{TRACK}.mp3")
+        assert tag.getall("APIC")[0].data == _JPEG
+        assert tag.getall("USLT")[0].text == "One more time"
+        assert str(tag["TIT2"]) == "Harder, Better, Faster, Stronger"
+        assert str(tag["TALB"]) == "Discovery"
+
+        # The budget counts what is on disk: a cover is most of a file this size, and a cache that
+        # counted the pre-tag length would overrun its cap by every cover it ever wrote.
+        assert entry.bytes == (Path(directory) / f"{TRACK}.mp3").stat().st_size > 500
+
+
+def test_tags_go_into_the_flac():
+    with tempfile.TemporaryDirectory() as directory:
+        songs = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
+        songs.store(TRACK, _flac_stub(), stream.FLAC, _dto(), _JPEG, "One more time")
+
+        audio = FLAC(Path(directory) / f"{TRACK}.flac")
+        assert audio.pictures[0].data == _JPEG and audio.pictures[0].type == 3
+        assert audio["LYRICS"] == ["One more time"] and audio["UNSYNCEDLYRICS"] == ["One more time"]
+        assert audio["ARTIST"] == ["Daft Punk"]
+
+
+def test_the_cache_no_longer_writes_an_lrc():
+    """stih owns every lyrics file now. The plain block still reaches the tags -- that is the file's own."""
+    with tempfile.TemporaryDirectory() as directory:
+        songs = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
+        songs.store(TRACK, _MP3, stream.MP3, _dto(), _JPEG, "One more time")
+
+        assert not (Path(directory) / f"{TRACK}.lrc").exists()
+        assert ID3(Path(directory) / f"{TRACK}.mp3").getall("USLT")[0].text == "One more time"
+
+
+def test_a_legacy_lrc_is_cleared_out():
+    """Files an older version of this pod wrote are still in deployed volumes; eviction takes them."""
+    with tempfile.TemporaryDirectory() as directory:
+        songs = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
+        songs.store(TRACK, _MP3, stream.MP3, _dto(), _JPEG, "One more time")
+
+        legacy = Path(directory) / f"{TRACK}.lrc"
+        legacy.write_text("[00:04.20]One more time\n", encoding="utf-8")
+
+        assert songs.remove(TRACK) and not legacy.exists()
+
+
+# ── registering with stih ───────────────────────────────────────────────────────────────────────
+
+class _Posted:
+    """One captured POST, standing in for requests.post. ``status`` drives raise_for_status."""
+
+    def __init__(self, status: int = 200, error: Exception | None = None) -> None:
+        self.status = status
+        self.error = error
+        self.calls: list[tuple[str, dict]] = []
+
+    def __call__(self, url, json=None, timeout=None):
+        self.calls.append((url, json))
+        if self.error is not None:
+            raise self.error
+
+        return self
+
+    def raise_for_status(self):
+        if self.status >= 400:
+            raise RuntimeError(f"stih answered {self.status}")
+
+
+def _register(lyrics: stream.Lyrics, posted: _Posted, url: str = "http://stih:8080") -> _Posted:
+    """Runs one registration against a stubbed transport, with STIH_URL as given."""
+    original_post, original_url = main.requests.post, main.STIH_URL
+    main.requests.post, main.STIH_URL = posted, url
+    try:
+        asyncio.run(main._register_lyrics(TRACK, lyrics))
+    finally:
+        main.requests.post, main.STIH_URL = original_post, original_url
+
+    return posted
+
+
+def test_a_download_with_lyrics_registers_them_once():
+    posted = _register(stream.Lyrics("One more time", "[00:04.20]One more time\n"), _Posted())
+
+    assert len(posted.calls) == 1
+    url, body = posted.calls[0]
+    assert url == "http://stih:8080/register"
+    assert body == {"id": f"deezer://{TRACK}", "source": "Deezer",
+                    "text": "One more time", "lrc": "[00:04.20]One more time\n"}
+
+
+def test_a_track_with_no_lyrics_costs_no_request():
+    assert _register(stream.NO_LYRICS, _Posted()).calls == []
+
+
+def test_an_unset_stih_url_posts_nothing():
+    assert _register(stream.Lyrics("One more time", None), _Posted(), url="").calls == []
+
+
+def test_a_failing_stih_does_not_fail_the_download():
+    """The whole point of fire-and-forget: the audio is cached either way."""
+    assert len(_register(stream.Lyrics("One more time", None), _Posted(status=500)).calls) == 1
+    assert len(_register(stream.Lyrics("One more time", None),
+                         _Posted(error=TimeoutError("stih timed out"))).calls) == 1
+
+
+def test_a_file_that_cannot_be_tagged_is_still_cached():
+    """Ten bytes are not a FLAC stream and mutagen says so. The download is the part worth keeping."""
+    with tempfile.TemporaryDirectory() as directory:
+        songs = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
+        entry = songs.store(TRACK, b"x" * 10, stream.FLAC, _dto(), _JPEG, "One more time")
+
+        assert entry.bytes == 10 and songs.get(TRACK) is not None
+        assert (Path(directory) / f"{TRACK}.flac").read_bytes() == b"x" * 10
 
 
 def test_cache_ignores_a_torn_sidecar():
