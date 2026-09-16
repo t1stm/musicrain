@@ -704,6 +704,21 @@
 	opacity: 0.42;
 }
 
+/* The blank line is punctuation. A synced file ends a held line by timing an
+   empty one after it, and that is the only way the format says "stop singing" --
+   so it has to read as a pause, not as another line that happens to be short.
+   The words come off it and what is left is the silence's width: about a line and
+   a half of type, so the break reads at a glance from across the room rather than
+   as loose leading. Trimmed, because a lone space in the file is still a blank
+   line to a listener. */
+#player-lyrics li[data-blank='true'] {
+	height: 2rem;
+	pointer-events: none;
+}
+#player-lyrics li[data-blank='true'] button {
+	display: none;
+}
+
 /* A line has to be readable before it is worth clicking, so pointing at one
    pulls it back into focus -- which is also the affordance that says it can be
    clicked at all. */

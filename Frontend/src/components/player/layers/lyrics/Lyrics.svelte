@@ -76,7 +76,12 @@
 		{#if synced}
 			<ol>
 				{#each lyrics.lyrics.lines as line, index (index)}
-					<li data-index={index} data-active={index === lyrics.activeIndex} data-sung={index < lyrics.activeIndex}>
+					<li
+						data-index={index}
+						data-active={index === lyrics.activeIndex}
+						data-sung={index < lyrics.activeIndex}
+						data-blank={line.text.trim() === ''}
+					>
 						<button type="button" onclick={() => line.at !== null && seekTo(line.at)}>
 							{line.text}
 						</button>
