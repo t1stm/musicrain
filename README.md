@@ -10,10 +10,6 @@ Behind it is **Gaida**, the self-hosted backend in this repository: one public A
 
 ## Getting started
 
-> [!IMPORTANT]
-> Clone with submodules — the Discord bot builds against a pinned DSharpPlus branch.
-> `git clone --recurse-submodules <url>`, or `git submodule update --init` in a clone you already have.
-
 **Prerequisites:** [Node.js](https://nodejs.org/) 20 or newer for musicrain, and [Docker](https://docs.docker.com/get-docker/) with Compose v2 for the backend. Building the .NET services outside a container also wants the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 
 Run musicrain:
@@ -63,7 +59,7 @@ Host-specific values and secrets live in `Backend/.env`, which compose reads on 
 - [.NET 10](https://dotnet.microsoft.com/) with ASP.NET Core minimal APIs on the backend, using `IAsyncEnumerable<T>` responses as the streaming primitive, and [Serilog](https://serilog.net/) throughout
 - [TagLib#](https://github.com/mono/taglib-sharp) for library tags, [YoutubeExplode](https://github.com/Tyrrrz/YoutubeExplode) with [yt-dlp](https://github.com/yt-dlp/yt-dlp) as fallback, and [FFmpeg](https://ffmpeg.org/) for transcoding, with [WavPack](https://www.wavpack.com/)'s `wvunpack` for hybrid tracks FFmpeg decodes lossy
 - [FastAPI](https://fastapi.tiangolo.com/) for the two Python pods, over [SpotAPI](https://github.com/Aran404/SpotAPI) and [deezer-py](https://gitlab.com/RemixDev/deezer-py) — both reach their service's own web endpoints, so neither needs an API key
-- [DSharpPlus](https://github.com/DSharpPlus/DSharpPlus) on its `voice-rewrite` branch, tracked as a submodule, for the Discord bot
+- [DSharpPlus](https://github.com/DSharpPlus/DSharpPlus) nightlies for the Discord bot, whose `Voice` extension takes Opus straight from the API without decoding it
 
 ## Project structure
 
@@ -85,7 +81,6 @@ Host-specific values and secrets live in `Backend/.env`, which compose reads on 
     │   ├── music/
     │   ├── youtube-audio/
     │   └── youtube-cache/
-    ├── DSharpPlus/
     ├── Gaida Library/
     │   ├── Gaida.Admin/
     │   ├── Gaida.CLI/
@@ -118,4 +113,3 @@ Host-specific values and secrets live in `Backend/.env`, which compose reads on 
 
 [Backend/data](Backend/data) is where the compose defaults mount their volumes — the music library, extracted album art served as `/Album_Covers`, and the YouTube and Deezer audio caches. All of it is gitignored, and only the album covers are ever served directly by nginx.
 
-[Backend/DSharpPlus](Backend/DSharpPlus) is a git submodule pinned to the library's `voice-rewrite` branch, needed for the bot's voice support.

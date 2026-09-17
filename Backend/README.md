@@ -16,7 +16,7 @@ The frontend-facing contract is in [API.md](API.md), the room protocol in [MULTI
 | [Dom](Services/Dom) | Accounts and playlists. Talks to nothing, and the one volume that holds real user data. |
 | [Stih](Services/Stih) | Lyrics. The stack's only LRCLIB client: it fetches the words, writes them beside the audio and indexes what it has. |
 | [Oko](Services/Oko) | The admin panel. Reads every other service, holds no state of its own. |
-| [Gaida.Bot](Services/Gaida.Bot) | A Discord bot playing from the same library, in-process rather than over HTTP. |
+| [Gaida.Bot](Services/Gaida.Bot) | A Discord bot playing from the same library, over HTTP like any other client. Several accounts can play in one guild at once, and Oko watches it like any other service. |
 
 ## Getting started
 
@@ -24,6 +24,12 @@ The frontend-facing contract is in [API.md](API.md), the room protocol in [MULTI
 
 ```bash
 docker compose up --build
+```
+
+The Discord bot is not in that: it needs a token to do anything, so it sits behind a profile.
+
+```bash
+docker compose --profile bot up -d --build gaida-bot
 ```
 
 That is the whole stack on compose's defaults — no secrets, no credentials, every volume under `data/`. Name services to bring up part of it (`docker compose up gaida-api gaida-local`); the pods are independent of each other, and Gaida.API treats a pod that is not there as one that answered nothing.
@@ -64,6 +70,8 @@ Every host-specific value and every secret lives in `.env` beside [compose.yaml]
 | `DEEZER_RESOLVE` | `true` | Tells Gaida.API to resolve Deezer hits elsewhere — what metadata-only mode needs. |
 | `DUNAV_MAX_BYTES` | 20 GiB | Disk budget for the download cache, evicted LRU. |
 | `YOUTUBE_RANDOM_SHARE` | `0.4` | Share of `RandomResults` drawn from YouTube, the library backfilling the rest. |
+| `BOT_CONFIG_FILE` | `./Services/Gaida.Bot/.env.json` | The Discord bot's accounts, mounted read-only — the same file `dotnet run` reads. |
+| `BOT_CONFIGURATION` | *(unset)* | Those accounts as a JSON array instead, overriding the file. With neither, `gaida-bot` says so and exits. |
 
 > [!NOTE]
 > A missing secret disables a surface rather than exposing it. Without `ADMIN_TOKEN` the whole admin surface is 404 and Oko renders every target as down; without `DEEZER_ARL` every Deezer route works except `/content`. Both are what a fresh checkout runs on.
@@ -107,7 +115,7 @@ dotnet run --project Platforms/Gaida.Pods.YouTube -- --self-check
 - [WavPack](https://www.wavpack.com/) — `wvunpack`, the only decoder that reads a `.wvc` correction file, so hybrid tracks decode lossless
 - [FastAPI](https://fastapi.tiangolo.com/) and [Uvicorn](https://www.uvicorn.org/) for the Python pods
 - [SpotAPI](https://github.com/Aran404/SpotAPI) and [deezer-py](https://gitlab.com/RemixDev/deezer-py) — both reach their service's own web endpoints, so neither needs a client ID or a secret
-- [DSharpPlus](https://github.com/DSharpPlus/DSharpPlus) on its `voice-rewrite` branch, tracked as a submodule
+- [DSharpPlus](https://github.com/DSharpPlus/DSharpPlus) nightlies — the core library, `Commands`, `Interactivity` and `Voice`, which passes Opus through without decoding it
 - [xUnit](https://xunit.net/) and [coverlet](https://github.com/coverlet-coverage/coverlet)
 
 ## Project structure
@@ -120,7 +128,6 @@ dotnet run --project Platforms/Gaida.Pods.YouTube -- --self-check
 │   ├── music/
 │   ├── youtube-audio/
 │   └── youtube-cache/
-├── DSharpPlus/
 ├── Gaida Library/
 │   ├── Gaida.Admin/
 │   ├── Gaida.CLI/
@@ -164,4 +171,3 @@ dotnet run --project Platforms/Gaida.Pods.YouTube -- --self-check
 
 [Tests](Tests) is split by what it covers: `Gaida.Tests` for the shared library and the services, `Pods.Tests` for platform code. The .NET pods also carry a `--self-check` flag that runs their pure-logic checks with no library and no listening host.
 
-[DSharpPlus](DSharpPlus) is a git submodule pinned to the library's `voice-rewrite` branch, needed for the bot's voice support.
