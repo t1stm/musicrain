@@ -317,6 +317,10 @@ services:
       Targets__7__Url: http://gaida-deezer:8080
       Targets__8__Name: stih
       Targets__8__Url: http://stih:8080
+      # Only up under the bot profile. Without it this row renders as down, which is the honest
+      # answer — Oko pulls, so a target that is not running is a target that does not answer.
+      Targets__9__Name: gaida-bot
+      Targets__9__Url: http://gaida-bot:8080
     ports:
       # The one port in this file NOT bound to 127.0.0.1: published on every interface so the host
       # firewall decides who reaches it, as asked. That makes the firewall the only thing between
@@ -324,6 +328,44 @@ services:
       # so if this port is reachable from anywhere untrusted, put the nginx TLS block from
       # nginx.example.conf in front of it and bind this back to 127.0.0.1.
       - "${OKO_PORT:-5344}:8080"
+
+  # ── Discord bot ────────────────────────────────────────────────────────────────
+
+  # Not part of the default stack: it needs a bot token to do anything, so it sits behind a profile
+  # and comes up with `docker compose --profile bot up -d gaida-bot`. Without one it logs what is
+  # missing and exits rather than crash-looping.
+  #
+  # It publishes no port to the host: the only thing it listens for is Oko, on the compose network,
+  # over the same /Admin surface every other service answers. Everything else it does is outbound —
+  # a gateway websocket to Discord and a UDP voice socket per guild it is playing in.
+  gaida-bot:
+    <<: *service
+    profiles: ["bot"]
+    build:
+      context: .
+      dockerfile: Services/Gaida.Bot/Dockerfile
+    environment:
+      <<: *env
+      # The accounts normally come from the mounted .env.json below. This is the override for a
+      # deployment that would rather hold them the way every other secret here is held — the whole
+      # array on one line in .env, and it wins over the file when it is set:
+      #   BOT_CONFIGURATION=[{"name":"gaida","token":"…","prefixes":["-","="],"master":true}]
+      # One account is marked master — it is the only one that listens for commands; the others join
+      # voice channels it is too busy to serve, each owning the statusbar of its own player so the
+      # edit rate limits are spread between them.
+      BOT_CONFIGURATION: ${BOT_CONFIGURATION:-}
+      # Inside the compose network the API is a service name, not the host's 5340.
+      GAIDA_API_BASE_URL: http://gaida-api:8080
+      # Encode bitrate in kbps. Unset, each player asks for what its voice channel advertises.
+      GAIDA_OPUS_BITRATE: ${GAIDA_OPUS_BITRATE:-}
+      GAIDA_STATUSBAR_INTERVAL_MS: ${GAIDA_STATUSBAR_INTERVAL_MS:-3200}
+    volumes:
+      # The same file `dotnet run` reads, so a bot developed locally and a bot in compose are
+      # configured once. Read-only, and gitignored like Backend/.env — the Dockerfile never copies
+      # it, so no token is ever baked into an image. BOT_CONFIGURATION above overrides it.
+      - ${BOT_CONFIG_FILE:-./Services/Gaida.Bot/.env.json}:/config/.env.json:ro
+    depends_on:
+      - gaida-api
 
 volumes:
   thumbnails:
