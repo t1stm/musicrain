@@ -1,3 +1,4 @@
+using System.Globalization;
 using DSharpPlus;
 using Gaida.Bot.Messages;
 using Gaida.Bot.Players;
@@ -32,7 +33,7 @@ public static class BotSnapshot
         return new
         {
             username = client.CurrentUser.Username,
-            id = client.CurrentUser.Id.ToString(),
+            id = client.CurrentUser.Id.ToString(CultureInfo.InvariantCulture),
             master = masters.Contains(client.CurrentUser.Username),
             guilds = client.Guilds.Count,
             playing = players.Count(player => player.Client == client)

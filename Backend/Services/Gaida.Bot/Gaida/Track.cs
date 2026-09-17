@@ -22,21 +22,21 @@ public sealed record Track
 
     /// <summary>The old <c>PlayableItem.GetName()</c>.</summary>
     [JsonIgnore]
-    public string DisplayName => string.IsNullOrWhiteSpace(this.Artist) ? this.Name : $"{this.Name} - {this.Artist}";
+    public string DisplayName => string.IsNullOrWhiteSpace(Artist) ? Name : $"{Name} - {Artist}";
 
     /// <summary>The old <c>ILanguage.GetTypeOfTrack</c>, decided by the ID's platform prefix.</summary>
     [JsonIgnore]
-    public string Kind => this.Id switch
+    public string Kind => Id switch
     {
-        _ when this.Id.StartsWith("audio://", StringComparison.Ordinal) => "Music",
-        _ when this.Id.StartsWith("yt://", StringComparison.Ordinal) => "Youtube Video",
-        _ when this.Id.StartsWith("deezer://", StringComparison.Ordinal) => "Deezer Track",
+        _ when Id.StartsWith("audio://", StringComparison.Ordinal) => "Music",
+        _ when Id.StartsWith("yt://", StringComparison.Ordinal) => "Youtube Video",
+        _ when Id.StartsWith("deezer://", StringComparison.Ordinal) => "Deezer Track",
         _ => "Item"
     };
 
     /// <summary><see cref="TimeSpan.Zero" /> stands for the old "unknown length", which renders as ∞.</summary>
     [JsonIgnore]
-    public TimeSpan Length => TimeSpan.TryParse(this.Duration, out var parsed) ? parsed : TimeSpan.Zero;
+    public TimeSpan Length => TimeSpan.TryParse(Duration, out var parsed) ? parsed : TimeSpan.Zero;
 }
 
 /// <summary>What <c>/Audio/FindQueryType</c> says a pasted value is.</summary>
@@ -48,7 +48,7 @@ public sealed record QueryResolution
     public Track? Result { get; init; }
 
     /// <summary>A playlist is the one kind whose every track belongs in the queue.</summary>
-    public bool IsPlaylist => this.Kind is "youtubePlaylist" or "spotifyPlaylist" or "deezerPlaylist";
+    public bool IsPlaylist => Kind is "youtubePlaylist" or "spotifyPlaylist" or "deezerPlaylist";
 }
 
 /// <summary>What <c>/Audio/Lyrics/Get</c> returns. The bot only ever prints <see cref="Text" />.</summary>

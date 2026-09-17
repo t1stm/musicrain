@@ -6,6 +6,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
+    <!-- The project builds clean at this level; the two rules it cannot satisfy are suppressed at
+         the type that trips them, with the reason. -->
+    <AnalysisMode>Recommended</AnalysisMode>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
     <!-- The DSharpPlus.Natives.Opus pin below is a deliberate downgrade from what DSharpPlus.Voice
          asks for, which NuGet reports as NU1605 and the SDK escalates to an error. -->
     <NoWarn>$(NoWarn);NU1605</NoWarn>
@@ -46,6 +51,10 @@
     <None Update=".env.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EditorConfigFiles Remove=".editorconfig" />
   </ItemGroup>
 
 </Project>

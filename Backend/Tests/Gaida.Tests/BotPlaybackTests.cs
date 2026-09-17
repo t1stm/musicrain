@@ -114,7 +114,7 @@ public class BotPlaybackTests
     [Fact]
     public void QueueWrapsAndRepeatsTheWayTheLoopExpects()
     {
-        var queue = new PlayerQueue();
+        var queue = new Playlist();
         queue.AddToQueue([Track("one"), Track("two"), Track("three")]);
 
         Assert.Equal("one - Artist", queue.GetCurrent()!.DisplayName);
@@ -132,7 +132,7 @@ public class BotPlaybackTests
     [Fact]
     public void RemovingBelowTheCurrentIndexKeepsTheSameTrackPlaying()
     {
-        var queue = new PlayerQueue();
+        var queue = new Playlist();
         queue.AddToQueue([Track("one"), Track("two"), Track("three")]);
         queue.Current = 2;
 
@@ -146,7 +146,7 @@ public class BotPlaybackTests
     [Fact]
     public void MoveAndShuffleKeepTheCurrentTrackInPlace()
     {
-        var queue = new PlayerQueue();
+        var queue = new Playlist();
         queue.AddToQueue([Track("one"), Track("two"), Track("three"), Track("four")]);
         queue.Current = 2;
 
@@ -165,8 +165,8 @@ public class BotPlaybackTests
     [Fact]
     public void ShuffleWithTheSameSeedIsTheSameOrder()
     {
-        var first = new PlayerQueue();
-        var second = new PlayerQueue();
+        var first = new Playlist();
+        var second = new Playlist();
 
         foreach (var queue in new[] { first, second })
         {
@@ -180,7 +180,7 @@ public class BotPlaybackTests
     [Fact]
     public void ClearKeepsWhatIsPlaying()
     {
-        var queue = new PlayerQueue();
+        var queue = new Playlist();
         queue.AddToQueue([Track("one"), Track("two"), Track("three")]);
         queue.Current = 1;
 
@@ -382,8 +382,8 @@ public class BotPlaybackTests
     {
         var player = Detached("one");
 
-        Assert.Equal(Loop.WholeQueue, player.ToggleLoop());
-        Assert.Equal(Loop.One, player.ToggleLoop());
-        Assert.Equal(Loop.None, player.ToggleLoop());
+        Assert.Equal(LoopMode.WholeQueue, player.ToggleLoop());
+        Assert.Equal(LoopMode.One, player.ToggleLoop());
+        Assert.Equal(LoopMode.None, player.ToggleLoop());
     }
 }

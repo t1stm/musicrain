@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using DSharpPlus;
 using DSharpPlus.Entities;
 using Gaida.Bot.Enums;
@@ -20,7 +21,8 @@ public sealed class Statusbar
             ? configured
             : 3200;
 
-    private int pl0, pl1 = 1, pl2 = 2, pl3 = 3, pl4 = 4;
+    /// <summary>Cell indices of the five dots in the unknown-length animation.</summary>
+    private readonly int[] _animationCells = [0, 1, 2, 3, 4];
 
     public Player? Player { get; set; }
     public DiscordClient? Client { get; set; }
@@ -32,62 +34,62 @@ public sealed class Statusbar
     private StatusbarMode Mode { get; set; } = StatusbarMode.Stopped;
     private int UpdateDelay { get; set; } = DefaultUpdateDelay;
 
-    public void Stop() => this.Stopped = true;
+    public void Stop() => Stopped = true;
 
-    public void ChangeMode(StatusbarMode mode) => this.Mode = mode;
+    public void ChangeMode(StatusbarMode mode) => Mode = mode;
 
     public async Task StartAsync()
     {
-        if (this.Message is null)
+        if (Message is null)
         {
             try
             {
-                if (this.Channel is not null)
+                if (Channel is not null)
                 {
-                    this.Message = await this.Channel.SendMessageAsync(
+                    Message = await Channel.SendMessageAsync(
                         Text.ThisMessageWillUpdateShortly().CodeBlocked());
                 }
             }
             catch (Exception e)
             {
-                this.Player?.Logger.Warning(e, "Sending the statusbar message failed");
+                Player?.Logger.Warning(e, "Sending the statusbar message failed");
             }
         }
 
-        this.Stopped = false;
-        this.Mode = StatusbarMode.Playing;
+        Stopped = false;
+        Mode = StatusbarMode.Playing;
         var stopwatch = new Stopwatch();
 
-        while (!this.Stopped)
+        while (!Stopped)
         {
             try
             {
                 stopwatch.Restart();
                 await UpdateStatusbarAsync();
-                this.UpdateDelay += (int)stopwatch.ElapsedMilliseconds / 2;
+                UpdateDelay += (int)stopwatch.ElapsedMilliseconds / 2;
             }
             catch (Exception e)
             {
-                this.Player?.Logger.Warning(e, "Updating the statusbar failed");
+                Player?.Logger.Warning(e, "Updating the statusbar failed");
 
                 if (e.Message.Contains("404") || e.Message.Contains("400"))
                 {
-                    this.Message = this.Channel is null
+                    Message = Channel is null
                         ? null
-                        : await this.Channel.SendMessageAsync(Text.ThisMessageWillUpdateShortly().CodeBlocked());
+                        : await Channel.SendMessageAsync(Text.ThisMessageWillUpdateShortly().CodeBlocked());
                 }
             }
 
-            if (this.UpdateDelay > DefaultUpdateDelay) this.UpdateDelay -= DefaultUpdateDelay / 3;
-            if (this.UpdateDelay < DefaultUpdateDelay) this.UpdateDelay = DefaultUpdateDelay;
+            if (UpdateDelay > DefaultUpdateDelay) UpdateDelay -= DefaultUpdateDelay / 3;
+            if (UpdateDelay < DefaultUpdateDelay) UpdateDelay = DefaultUpdateDelay;
 
-            await Task.Delay(this.UpdateDelay);
+            await Task.Delay(UpdateDelay);
         }
     }
 
     private async Task UpdateStatusbarAsync()
     {
-        switch (this.Mode)
+        switch (Mode)
         {
             case StatusbarMode.Stopped:
             case StatusbarMode.Message:
@@ -103,20 +105,20 @@ public sealed class Statusbar
                 break;
 
             default:
-                throw new ArgumentOutOfRangeException(nameof(this.Mode), this.Mode, "Unknown statusbar mode.");
+                throw new ArgumentOutOfRangeException(nameof(Mode), Mode, "Unknown statusbar mode.");
         }
     }
 
     /// <summary>Reposts the statusbar when the conversation has buried it.</summary>
     private async Task UpdatePlacementAsync()
     {
-        if (this.Message is null || this.Channel is null) return;
+        if (Message is null || Channel is null) return;
 
         var after = 0;
 
         try
         {
-            await foreach (var _ in this.Channel.GetMessagesAfterAsync(this.Message.Id, 5))
+            await foreach (var _ in Channel.GetMessagesAfterAsync(Message.Id, 5))
             {
                 after++;
                 if (after > 4) break;
@@ -124,37 +126,37 @@ public sealed class Statusbar
         }
         catch (Exception e)
         {
-            this.Player?.Logger.Debug(e, "Reading the messages after the statusbar failed");
+            Player?.Logger.Debug(e, "Reading the messages after the statusbar failed");
             return;
         }
 
-        var clients = this.Player?.Controller.Clients.Count ?? 1;
+        var clients = Player?.Controller.Clients.Count ?? 1;
         if (after <= 2 || after <= clients) return;
 
-        await this.Channel.DeleteMessageAsync(this.Message);
-        this.Message = null;
+        await Channel.DeleteMessageAsync(Message);
+        Message = null;
     }
 
     private async Task UpdateMessageAsync()
     {
-        if (this.Message is null)
+        if (Message is null)
         {
-            if (this.Channel is null) return;
-            this.Message = await this.Channel.SendMessageAsync(GenerateBuilder());
+            if (Channel is null) return;
+            Message = await Channel.SendMessageAsync(GenerateBuilder());
             return;
         }
 
-        this.Message = await this.Message.ModifyAsync(GenerateBuilder());
+        Message = await Message.ModifyAsync(GenerateBuilder());
     }
 
     private async Task UpdateWaitingAsync()
     {
-        if (this.Message is null || this.Player is null) return;
+        if (Message is null || Player is null) return;
 
-        var waited = this.Player.WaitingStopwatch.ElapsedMilliseconds;
-        this.Message = await this.Message.ModifyAsync(new DiscordMessageBuilder().WithContent(
+        var waited = Player.WaitingStopwatch.ElapsedMilliseconds;
+        Message = await Message.ModifyAsync(new DiscordMessageBuilder().WithContent(
             $"```Waiting:\nFor 15 minutes and then leaving.\n" +
-            $"{GenerateProgressbar(waited, 900000)} ( {this.Player.WaitingStopwatch.Elapsed:mm\\:ss} - 15:00 )```"));
+            $"{GenerateProgressbar(waited, 900000)} ( {Player.WaitingStopwatch.Elapsed:mm\\:ss} - 15:00 )```"));
     }
 
     private DiscordMessageBuilder GenerateBuilder() =>
@@ -169,9 +171,9 @@ public sealed class Statusbar
 
     public string GenerateStatusbar()
     {
-        if (this.Player is null) return Text.ThisMessageWillUpdateShortly().CodeBlocked();
+        if (Player is null) return Text.ThisMessageWillUpdateShortly().CodeBlocked();
 
-        var player = this.Player;
+        var player = Player;
         var next = player.Queue.GetNext();
         var requester = player.CurrentItem?.Requester;
         var length = player.CurrentItem?.Length ?? TimeSpan.Zero;
@@ -182,7 +184,7 @@ public sealed class Statusbar
             $"({player.Queue.Current + 1} - {player.Queue.Count}) {player.CurrentItem?.DisplayName ?? "Something's broken."}\n" +
             $"{GenerateProgressbar((long)time.TotalMilliseconds, (long)length.TotalMilliseconds)} " +
             $"( {(player.Paused ? "⏸️" : "▶️")} {Time(time)} - {(length == TimeSpan.Zero ? "∞" : Time(length))} )" +
-            $"{player.LoopStatus switch { Loop.One => " ( 🔂 )", Loop.WholeQueue => " ( 🔁 )", _ => "" }}" +
+            $"{player.LoopStatus switch { LoopMode.One => " ( 🔂 )", LoopMode.WholeQueue => " ( 🔁 )", _ => "" }}" +
             $"{(requester is null ? "" : $"\n{Text.RequestedBy()}: {requester.Username}")}" +
             $"{(next is null ? "" : $"\n\n{Text.NextUp()}: ({player.Queue.Current + 2}) {next.DisplayName}")}```";
     }
@@ -194,15 +196,15 @@ public sealed class Statusbar
             Stop();
             await Task.Delay(DefaultUpdateDelay);
 
-            if (this.Message is null) return;
+            if (Message is null) return;
 
             var builder = new DiscordMessageBuilder().WithContent(formatted ? message.CodeBlocked() : message);
             builder.ClearComponents();
-            await this.Message.ModifyAsync(builder);
+            await Message.ModifyAsync(builder);
         }
         catch (Exception e)
         {
-            this.Player?.Logger.Warning(e, "Stopping the statusbar failed");
+            Player?.Logger.Warning(e, "Stopping the statusbar failed");
         }
     }
 
@@ -231,19 +233,18 @@ public sealed class Statusbar
 
         for (var i = 0; i < length; i++) progress[i] = EmptyBlock;
 
-        for (var i = 0; i < 2; i++)
+        for (var step = 0; step < 2; step++)
         {
-            this.pl0 = this.pl0 > length - 2 ? 0 : this.pl0 + 1;
-            this.pl1 = this.pl1 > length - 2 ? 0 : this.pl1 + 1;
-            this.pl2 = this.pl2 > length - 2 ? 0 : this.pl2 + 1;
-            this.pl3 = this.pl3 > length - 2 ? 0 : this.pl3 + 1;
-            this.pl4 = this.pl4 > length - 2 ? 0 : this.pl4 + 1;
+            for (var cell = 0; cell < _animationCells.Length; cell++)
+            {
+                _animationCells[cell] = _animationCells[cell] > length - 2 ? 0 : _animationCells[cell] + 1;
+            }
         }
 
-        progress[this.pl0] = progress[this.pl1] = progress[this.pl2] = progress[this.pl3] = progress[this.pl4] = FullBlock;
+        foreach (var cell in _animationCells) progress[cell] = FullBlock;
 
         return progress.ToString();
     }
 
-    public static string Time(TimeSpan timeSpan) => timeSpan.ToString("hh\\:mm\\:ss");
+    public static string Time(TimeSpan timeSpan) => timeSpan.ToString("hh\\:mm\\:ss", CultureInfo.InvariantCulture);
 }

@@ -28,11 +28,11 @@ public static class Text
 
     public static string BotIsNotInTheChannel() => "The bot isn't in the channel.";
 
-    public static string LoopStatusUpdate(Loop loop) => "Loop status is now: " + loop switch
+    public static string LoopStatusUpdate(LoopMode loop) => "Loop status is now: " + loop switch
     {
-        Loop.None => "None",
-        Loop.WholeQueue => "Looping whole queue.",
-        Loop.One => "One Item Only.",
+        LoopMode.None => "None",
+        LoopMode.WholeQueue => "Looping whole queue.",
+        LoopMode.One => "One Item Only.",
         _ => "None"
     };
 

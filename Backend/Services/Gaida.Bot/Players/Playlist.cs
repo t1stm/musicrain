@@ -7,15 +7,15 @@ namespace Gaida.Bot.Players;
 /// The old <c>Bot/Audio/Queue.cs</c>, with <c>PlayableItem</c> become <see cref="Track" />. The
 /// background processing loop is gone: the API resolves everything before it reaches the bot.
 /// </summary>
-public sealed class PlayerQueue
+public sealed class Playlist
 {
     // Shuffle and Clear replace the list, so the lock cannot be the list itself: whoever is
     // holding the old instance would be locking something nobody else can see any more.
-    private readonly Lock gate = new();
+    private readonly Lock _gate = new();
 
-    private List<Track> items = [];
+    private List<Track> _items = [];
 
-    public List<Track> Items => this.items;
+    public List<Track> Items => _items;
 
     public int Current { get; set; }
 
@@ -23,77 +23,77 @@ public sealed class PlayerQueue
     {
         get
         {
-            lock (this.gate) return this.items.Count;
+            lock (_gate) return _items.Count;
         }
     }
 
-    public bool EndOfQueue => this.Current >= this.Count;
+    public bool EndOfQueue => Current >= Count;
 
     public int RandomSeed { get; private set; }
 
     public void AddToQueue(Track info)
     {
-        lock (this.gate) this.items.Add(info);
+        lock (_gate) _items.Add(info);
     }
 
     public void AddToQueue(IEnumerable<Track> infos)
     {
-        lock (this.gate) this.items.AddRange(infos);
+        lock (_gate) _items.AddRange(infos);
     }
 
     public void AddToQueueNext(Track info)
     {
-        lock (this.gate) this.items.Insert(Math.Clamp(this.Current + 1, 0, this.items.Count), info);
+        lock (_gate) _items.Insert(Math.Clamp(Current + 1, 0, _items.Count), info);
     }
 
     public void AddToQueueNext(IEnumerable<Track> infos)
     {
-        lock (this.gate) this.items.InsertRange(Math.Clamp(this.Current + 1, 0, this.items.Count), infos);
+        lock (_gate) _items.InsertRange(Math.Clamp(Current + 1, 0, _items.Count), infos);
     }
 
     public Track RemoveFromQueue(int index)
     {
-        lock (this.gate)
+        lock (_gate)
         {
-            var item = this.items[index];
-            this.items.Remove(item);
+            var item = _items[index];
+            _items.Remove(item);
             return item;
         }
     }
 
     public Track RemoveFromQueue(Track item)
     {
-        lock (this.gate)
+        lock (_gate)
         {
-            this.items.Remove(item);
+            _items.Remove(item);
             return item;
         }
     }
 
     public Track RemoveFromQueue(string name)
     {
-        lock (this.gate)
+        lock (_gate)
         {
-            var item = this.items.First(vi => LevenshteinDistance.ComputeStrict(vi.DisplayName, name) < 3);
-            this.items.Remove(item);
+            var item = _items.First(vi => LevenshteinDistance.ComputeStrict(vi.DisplayName, name) < 3);
+            _items.Remove(item);
             return item;
         }
     }
 
     public Track GetWithString(string name)
     {
-        lock (this.gate)
+        lock (_gate)
         {
-            return this.items.First(vi => LevenshteinDistance.ComputeLean(vi.DisplayName, name) < 3);
+            return _items.First(vi => LevenshteinDistance.ComputeLean(vi.DisplayName, name) < 3);
         }
     }
 
     public void Shuffle()
     {
-        lock (this.gate)
+        lock (_gate)
         {
             var random = new Random();
-            var queue = this.items.OrderBy(_ => random.Next()).ToList();
+            var queue = _items.OrderBy(_ => random.Next()).ToList();
             var current = GetCurrent();
             if (current is not null)
             {
@@ -101,17 +101,17 @@ public sealed class PlayerQueue
                 queue.Insert(0, current);
             }
 
-            this.items = queue;
-            this.Current = 0;
+            _items = queue;
+            Current = 0;
         }
     }
 
     public void ShuffleWithSeed(int seed)
     {
-        lock (this.gate)
+        lock (_gate)
         {
             if (seed == -555) seed = new Random().Next(int.MaxValue);
-            var queue = this.items.OrderBy(_ => new Random(seed).Next()).ToList();
+            var queue = _items.OrderBy(_ => new Random(seed).Next()).ToList();
             var current = GetCurrent();
             if (current is not null)
             {
@@ -119,37 +119,37 @@ public sealed class PlayerQueue
                 queue.Insert(0, current);
             }
 
-            this.items = queue;
-            this.Current = 0;
-            this.RandomSeed = seed;
+            _items = queue;
+            Current = 0;
+            RandomSeed = seed;
         }
     }
 
     public void Clear()
     {
         var current = GetCurrent();
-        lock (this.gate)
+        lock (_gate)
         {
-            this.Current = 0;
-            this.items = [];
-            if (current is not null) this.items.Add(current);
+            Current = 0;
+            _items = [];
+            if (current is not null) _items.Add(current);
         }
     }
 
     public Track? GetCurrent()
     {
-        lock (this.gate)
+        lock (_gate)
         {
-            if (this.items.Count == 0) return null;
-            return this.Current >= this.items.Count || this.Current < 0 ? null : this.items[this.Current];
+            if (_items.Count == 0) return null;
+            return Current >= _items.Count || Current < 0 ? null : _items[Current];
         }
     }
 
     public Track? GetNext()
     {
-        lock (this.gate)
+        lock (_gate)
         {
-            return this.Current >= this.items.Count - 1 ? null : this.items[this.Current + 1];
+            return Current >= _items.Count - 1 ? null : _items[Current + 1];
         }
     }
 
@@ -158,11 +158,11 @@ public sealed class PlayerQueue
         item = null!;
         try
         {
-            lock (this.gate)
+            lock (_gate)
             {
-                var moved = this.items[from];
-                this.items.Remove(moved);
-                this.items.Insert(to, moved);
+                var moved = _items[from];
+                _items.Remove(moved);
+                _items.Insert(to, moved);
                 item = moved;
             }
 
@@ -180,26 +180,26 @@ public sealed class PlayerQueue
         itemTwo = null!;
         try
         {
-            lock (this.gate)
+            lock (_gate)
             {
-                var one = this.items.FirstOrDefault(vi =>
+                var one = _items.FirstOrDefault(vi =>
                     LevenshteinDistance.ComputeStrict(vi.DisplayName, first.Trim()) < vi.DisplayName.Length * 0.2);
-                var two = this.items.FirstOrDefault(vi =>
+                var two = _items.FirstOrDefault(vi =>
                     LevenshteinDistance.ComputeStrict(vi.DisplayName, second.Trim()) < vi.DisplayName.Length * 0.2);
 
                 if (one is null || two is null)
                 {
-                    one = this.items.MinBy(vi => LevenshteinDistance.ComputeStrict(vi.Name, first.Trim()));
-                    two = this.items.MinBy(vi => LevenshteinDistance.ComputeStrict(vi.Name, second.Trim()));
+                    one = _items.MinBy(vi => LevenshteinDistance.ComputeStrict(vi.Name, first.Trim()));
+                    two = _items.MinBy(vi => LevenshteinDistance.ComputeStrict(vi.Name, second.Trim()));
                     if (one is null || two is null) return false;
                 }
 
-                var indexOne = this.items.IndexOf(one);
-                var indexTwo = this.items.IndexOf(two);
-                this.items[indexOne] = two;
-                this.items[indexTwo] = one;
-                itemTwo = this.items[indexOne];
-                itemOne = this.items[indexTwo];
+                var indexOne = _items.IndexOf(one);
+                var indexTwo = _items.IndexOf(two);
+                _items[indexOne] = two;
+                _items[indexTwo] = one;
+                itemTwo = _items[indexOne];
+                itemOne = _items[indexTwo];
             }
 
             return true;
@@ -214,14 +214,14 @@ public sealed class PlayerQueue
     public override string ToString()
     {
         var result = "";
-        lock (this.gate)
+        lock (_gate)
         {
-            if (this.items.Count < 1) return Text.TheQueueIsEmpty();
+            if (_items.Count < 1) return Text.TheQueueIsEmpty();
 
-            for (var index = 0; index < this.items.Count; index++)
+            for (var index = 0; index < _items.Count; index++)
             {
-                var item = this.items[index];
-                if (index == this.Current)
+                var item = _items[index];
+                if (index == Current)
                 {
                     result += new string('-', item.DisplayName.Length + 8) + '\n';
                     result += $"({index + 1}) - \"{item.DisplayName}\"\n";

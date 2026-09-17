@@ -27,21 +27,21 @@ public sealed class BotEventLog
 {
     private const int Capacity = 500;
 
-    private readonly Lock gate = new();
-    private readonly Queue<BotEvent> entries = new(Capacity);
+    private readonly Lock _gate = new();
+    private readonly Queue<BotEvent> _entries = new(Capacity);
 
     public void Record(string kind, string account, string? guild = null, string? channel = null,
         string? user = null, string detail = "")
     {
-        lock (this.gate)
+        lock (_gate)
         {
-            if (this.entries.Count == Capacity) this.entries.Dequeue();
-            this.entries.Enqueue(new BotEvent(DateTimeOffset.UtcNow, kind, account, guild, channel, user, detail));
+            if (_entries.Count == Capacity) _entries.Dequeue();
+            _entries.Enqueue(new BotEvent(DateTimeOffset.UtcNow, kind, account, guild, channel, user, detail));
         }
     }
 
     public BotEvent[] Recent()
     {
-        lock (this.gate) return [.. this.entries];
+        lock (_gate) return [.. _entries];
     }
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using DSharpPlus;
 using DSharpPlus.Commands;
@@ -16,10 +17,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 
-var defaultSerializer = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-
 var logger = new LoggerConfiguration()
-    .WriteTo.Console()
+    .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture)
     .CreateLogger();
 
 // Whitespace counts as unset: compose passes BOT_CONFIGURATION through as ${BOT_CONFIGURATION:-},
@@ -45,7 +44,7 @@ if (botInlineConfiguration is null && !File.Exists(botConfigurationLocation))
 try
 {
     botsConfig = JsonSerializer.Deserialize<BotParametersConfiguration[]>(
-        botInlineConfiguration ?? File.ReadAllText(botConfigurationLocation), defaultSerializer);
+        botInlineConfiguration ?? File.ReadAllText(botConfigurationLocation), JsonSerializerOptions.Web);
 }
 catch (Exception e)
 {
@@ -154,7 +153,7 @@ foreach (var config in bots)
                 }
             });
             commandsExtension.AddProcessor<SlashCommandProcessor>();
-            commandsExtension.AddCommands(typeof(PlaybackCommands));
+            commandsExtension.AddCommands<PlaybackCommands>();
 
             // One hook for all fifteen commands, rather than a line of bookkeeping in each.
             commandsExtension.CommandExecuted += (_, args) =>

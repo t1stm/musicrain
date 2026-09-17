@@ -1,6 +1,6 @@
 namespace Gaida.Bot.Enums;
 
-public enum Loop
+public enum LoopMode
 {
     None,
     WholeQueue,

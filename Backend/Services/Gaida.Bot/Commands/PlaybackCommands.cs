@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using DSharpPlus.Commands;
@@ -389,7 +390,8 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         }
 
         var options = results.Select((track, index) => new DiscordSelectComponentOption(
-            Truncate(track.Name, 100), index.ToString(), Truncate(track.Artist, 100))).ToList();
+            Truncate(track.Name, 100), index.ToString(CultureInfo.InvariantCulture),
+            Truncate(track.Artist, 100))).ToList();
 
         var channel = player.Channel ?? ctx.Channel;
         var message = await channel.SendMessageAsync(new DiscordMessageBuilder()
@@ -422,9 +424,9 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
     /// the single best hit for a search term. Only a playlist queues more than one thing.
     /// </summary>
     private async IAsyncEnumerable<Track> TracksForAsync(string search,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var resolution = await api.ResolveAsync(search, ct);
+        var resolution = await api.ResolveAsync(search, cancellationToken);
 
         // A link the resolver already turned into a track: no search needed at all.
         if (resolution?.Result is not null)
@@ -435,14 +437,14 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
 
         if (resolution?.IsPlaylist is true)
         {
-            await foreach (var track in api.SearchAsync(resolution.Query, ct)) yield return track;
+            await foreach (var track in api.SearchAsync(resolution.Query, cancellationToken)) yield return track;
             yield break;
         }
 
         // Ordinary text, or a resolver that could not answer. Search streams its hits in the order
         // the pods answer, not by relevance, so every hit has to be in before one can be picked.
         var results = new List<Track>();
-        await foreach (var track in api.SearchAsync(resolution?.Query ?? search, ct)) results.Add(track);
+        await foreach (var track in api.SearchAsync(resolution?.Query ?? search, cancellationToken)) results.Add(track);
 
         var best = BestMatch(results, search);
         if (best is not null) yield return best;
@@ -512,7 +514,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         return null;
     }
 
-    private async ValueTask<DiscordChannel?> UserVoiceChannelAsync(CommandContext ctx, string command)
+    private static async ValueTask<DiscordChannel?> UserVoiceChannelAsync(CommandContext ctx, string command)
     {
         var channelId = ctx.Member?.VoiceState?.ChannelId;
 

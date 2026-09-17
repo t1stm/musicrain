@@ -26,27 +26,27 @@ public sealed class OggGranuleScanner
 
     private const int HeaderLength = 27;
 
-    private readonly byte[] header = new byte[HeaderLength];
-    private readonly byte[] segments = new byte[255];
+    private readonly byte[] _header = new byte[HeaderLength];
+    private readonly byte[] _segments = new byte[255];
 
-    private State state = State.Magic;
-    private int magicMatched;
-    private int collected;
-    private int segmentCount;
-    private long payloadRemaining;
+    private State _state = State.Magic;
+    private int _magicMatched;
+    private int _collected;
+    private int _segmentCount;
+    private long _payloadRemaining;
 
     /// <summary>The highest granule position seen so far, in 48 kHz samples.</summary>
     public long Granule { get; private set; }
 
     /// <summary>The audio handed over so far.</summary>
-    public TimeSpan Fed => TimeSpan.FromSeconds(this.Granule / 48000.0);
+    public TimeSpan Fed => TimeSpan.FromSeconds(Granule / 48000.0);
 
     public void Scan(ReadOnlySpan<byte> data)
     {
         var index = 0;
         while (index < data.Length)
         {
-            switch (this.state)
+            switch (_state)
             {
                 case State.Magic:
                     index = ScanForMagic(data, index);
@@ -55,54 +55,54 @@ public sealed class OggGranuleScanner
                 case State.Header:
                 {
                     // The magic is already matched and sitting in the buffer; fill the rest.
-                    var take = Math.Min(HeaderLength - this.collected, data.Length - index);
-                    data.Slice(index, take).CopyTo(this.header.AsSpan(this.collected));
-                    this.collected += take;
+                    var take = Math.Min(HeaderLength - _collected, data.Length - index);
+                    data.Slice(index, take).CopyTo(_header.AsSpan(_collected));
+                    _collected += take;
                     index += take;
 
-                    if (this.collected < HeaderLength) break;
+                    if (_collected < HeaderLength) break;
 
-                    var granule = BinaryPrimitives.ReadInt64LittleEndian(this.header.AsSpan(6, 8));
+                    var granule = BinaryPrimitives.ReadInt64LittleEndian(_header.AsSpan(6, 8));
 
                     // -1 means no packet finishes on this page. A new file starts a new scanner,
                     // so within one stream the granule only ever climbs.
-                    if (granule > this.Granule) this.Granule = granule;
+                    if (granule > Granule) Granule = granule;
 
-                    this.segmentCount = this.header[26];
-                    this.collected = 0;
-                    this.state = this.segmentCount == 0 ? State.Magic : State.SegmentTable;
+                    _segmentCount = _header[26];
+                    _collected = 0;
+                    _state = _segmentCount == 0 ? State.Magic : State.SegmentTable;
                     break;
                 }
 
                 case State.SegmentTable:
                 {
-                    var take = Math.Min(this.segmentCount - this.collected, data.Length - index);
-                    data.Slice(index, take).CopyTo(this.segments.AsSpan(this.collected));
-                    this.collected += take;
+                    var take = Math.Min(_segmentCount - _collected, data.Length - index);
+                    data.Slice(index, take).CopyTo(_segments.AsSpan(_collected));
+                    _collected += take;
                     index += take;
 
-                    if (this.collected < this.segmentCount) break;
+                    if (_collected < _segmentCount) break;
 
-                    this.payloadRemaining = 0;
-                    for (var i = 0; i < this.segmentCount; i++) this.payloadRemaining += this.segments[i];
+                    _payloadRemaining = 0;
+                    for (var i = 0; i < _segmentCount; i++) _payloadRemaining += _segments[i];
 
-                    this.collected = 0;
-                    this.state = this.payloadRemaining == 0 ? State.Magic : State.Payload;
+                    _collected = 0;
+                    _state = _payloadRemaining == 0 ? State.Magic : State.Payload;
                     break;
                 }
 
                 case State.Payload:
                 {
-                    var skip = (int)Math.Min(this.payloadRemaining, data.Length - index);
-                    this.payloadRemaining -= skip;
+                    var skip = (int)Math.Min(_payloadRemaining, data.Length - index);
+                    _payloadRemaining -= skip;
                     index += skip;
 
-                    if (this.payloadRemaining == 0) this.state = State.Magic;
+                    if (_payloadRemaining == 0) _state = State.Magic;
                     break;
                 }
 
                 default:
-                    throw new InvalidOperationException($"Unreachable scanner state {this.state}.");
+                    throw new InvalidOperationException($"Unreachable scanner state {_state}.");
             }
         }
     }
@@ -116,20 +116,20 @@ public sealed class OggGranuleScanner
         {
             var current = data[index++];
 
-            if (current == magic[this.magicMatched])
+            if (current == magic[_magicMatched])
             {
-                this.magicMatched++;
-                if (this.magicMatched < magic.Length) continue;
+                _magicMatched++;
+                if (_magicMatched < magic.Length) continue;
 
-                magic.CopyTo(this.header);
-                this.collected = magic.Length;
-                this.magicMatched = 0;
-                this.state = State.Header;
+                magic.CopyTo(_header);
+                _collected = magic.Length;
+                _magicMatched = 0;
+                _state = State.Header;
                 return index;
             }
 
             // A mismatch can itself begin a fresh magic, as in "OOggS".
-            this.magicMatched = current == magic[0] ? 1 : 0;
+            _magicMatched = current == magic[0] ? 1 : 0;
         }
 
         return index;
@@ -157,27 +157,27 @@ public static class OggPacer
         Func<TimeSpan> elapsed,
         Func<CancellationToken, Task> waitWhilePaused,
         Func<TimeSpan, Task>? onProgress,
-        CancellationToken ct
+        CancellationToken cancellationToken
     )
     {
         var buffer = ArrayPool<byte>.Shared.Rent(16384);
 
         try
         {
-            while (!ct.IsCancellationRequested)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                await waitWhilePaused(ct);
+                await waitWhilePaused(cancellationToken);
 
-                var read = await source.ReadAsync(buffer, ct);
+                var read = await source.ReadAsync(buffer, cancellationToken);
                 if (read == 0) break;
 
                 scanner.Scan(buffer.AsSpan(0, read));
-                await writer.WriteAsync(buffer.AsMemory(0, read), ct);
+                await writer.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
 
                 if (onProgress is not null) await onProgress(scanner.Fed);
 
                 var ahead = scanner.Fed - elapsed();
-                if (ahead > Lookahead) await Task.Delay(ahead - Lookahead, ct);
+                if (ahead > Lookahead) await Task.Delay(ahead - Lookahead, cancellationToken);
             }
         }
         finally

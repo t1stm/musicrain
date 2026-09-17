@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using DSharpPlus;
 using DSharpPlus.Entities;
 using DSharpPlus.Voice;
@@ -14,26 +15,31 @@ namespace Gaida.Bot.Players;
 /// The old <c>Bot/Audio/Player.cs</c>: one voice connection, one queue, one statusbar. ffmpeg and
 /// the transmit sink are gone — audio is Ogg/Opus from the API, passed through untouched.
 /// </summary>
+[SuppressMessage("Microsoft.Design", "CA1001:TypesThatOwnDisposableFieldsShouldBeDisposable",
+    Justification = "Neither source holds an unmanaged handle: PlayTrackAsync disposes each linked source as " +
+                    "it replaces it, and the last one plus _dying are cancelled in DisconnectAsync and then " +
+                    "collected with the player. Disposing them there instead would race the prefetch and the " +
+                    "feed loop, which still read their tokens as they unwind.")]
 public sealed class Player
 {
-    private readonly CancellationTokenSource dying = new();
+    private readonly CancellationTokenSource _dying = new();
 
-    private CancellationTokenSource trackCancellation = new();
-    private TaskCompletionSource unpaused = Completed();
-    private AudioWriter? writer;
+    private CancellationTokenSource _trackCancellation = new();
+    private TaskCompletionSource _unpaused = Completed();
+    private AudioWriter? _writer;
 
-    private bool waitingToLeave;
-    private bool preloadedNext;
+    private bool _waitingToLeave;
+    private bool _preloadedNext;
 
-    private Task<HttpResponseMessage?>? prefetch;
-    private string? prefetchId;
+    private Task<HttpResponseMessage?>? _prefetch;
+    private string? _prefetchId;
 
     public required DiscordClient Client { get; init; }
     public required GaidaClient Api { get; init; }
     public required ILogger Logger { get; init; }
     public required PlayerController Controller { get; init; }
 
-    public PlayerQueue Queue { get; } = new();
+    public Playlist Queue { get; } = new();
     public Statusbar Statusbar { get; } = new();
 
     public DiscordChannel? VoiceChannel { get; set; }
@@ -41,7 +47,7 @@ public sealed class Player
     public DiscordGuild? Guild { get; set; }
     public VoiceConnection? Connection { get; set; }
 
-    public Loop LoopStatus { get; private set; } = Loop.None;
+    public LoopMode LoopStatus { get; private set; } = LoopMode.None;
     public bool Paused { get; private set; }
     public bool Started { get; set; }
     public bool Dead { get; private set; }
@@ -51,7 +57,7 @@ public sealed class Player
     public Stopwatch WaitingStopwatch { get; } = new();
 
     /// <summary>Who is in the voice channel, for the button handler's "are you here" check.</summary>
-    public IReadOnlyList<DiscordMember> VoiceUsers => this.VoiceChannel?.Users ?? [];
+    public IReadOnlyList<DiscordMember> VoiceUsers => VoiceChannel?.Users ?? [];
 
     /// <summary>What the API is asked to encode at: the channel's own bitrate unless overridden.</summary>
     public int Bitrate
@@ -63,7 +69,7 @@ public sealed class Player
                 return Math.Clamp(configured, 8, 256);
             }
 
-            return Math.Clamp((this.VoiceChannel?.Bitrate ?? 112_000) / 1000, 8, 256);
+            return Math.Clamp((VoiceChannel?.Bitrate ?? 112_000) / 1000, 8, 256);
         }
     }
 
@@ -71,67 +77,67 @@ public sealed class Player
     {
         try
         {
-            this.Statusbar.Client = this.Client;
-            this.Statusbar.Guild = this.Guild;
-            this.Statusbar.Channel = this.Channel;
-            this.Statusbar.Player = this;
-            _ = Task.Run(this.Statusbar.StartAsync);
+            Statusbar.Client = Client;
+            Statusbar.Guild = Guild;
+            Statusbar.Channel = Channel;
+            Statusbar.Player = this;
+            _ = Task.Run(Statusbar.StartAsync);
 
-            this.Queue.Current = current;
+            Queue.Current = current;
 
             do
             {
-                if (this.Dead) break;
+                if (Dead) break;
 
-                if (this.Queue.Current < 0)
+                if (Queue.Current < 0)
                 {
-                    this.Queue.Current++;
+                    Queue.Current++;
                     continue;
                 }
 
-                this.CurrentItem = this.Queue.GetCurrent();
+                CurrentItem = Queue.GetCurrent();
 
-                if (this.CurrentItem is not null)
+                if (CurrentItem is not null)
                 {
-                    this.WaitingStopwatch.Reset();
-                    this.waitingToLeave = false;
-                    this.Statusbar.ChangeMode(StatusbarMode.Playing);
-                    await PlayTrackAsync(this.CurrentItem);
+                    WaitingStopwatch.Reset();
+                    _waitingToLeave = false;
+                    Statusbar.ChangeMode(StatusbarMode.Playing);
+                    await PlayTrackAsync(CurrentItem);
                 }
 
-                if (this.Dead) break;
+                if (Dead) break;
 
-                this.Stopwatch.Reset();
+                Stopwatch.Reset();
 
-                if (this.LoopStatus == Loop.One) this.Queue.Current--;
-                if (this.Queue.Current + 1 == this.Queue.Count && this.LoopStatus == Loop.WholeQueue)
+                if (LoopStatus == LoopMode.One) Queue.Current--;
+                if (Queue.Current + 1 == Queue.Count && LoopStatus == LoopMode.WholeQueue)
                 {
-                    this.Queue.Current = -1;
+                    Queue.Current = -1;
                 }
 
-                if (this.Queue.EndOfQueue)
+                if (Queue.EndOfQueue)
                 {
                     await Task.Delay(166);
-                    this.Statusbar.ChangeMode(StatusbarMode.Waiting);
+                    Statusbar.ChangeMode(StatusbarMode.Waiting);
 
-                    if (!this.waitingToLeave)
+                    if (!_waitingToLeave)
                     {
-                        this.waitingToLeave = true;
-                        this.WaitingStopwatch.Restart();
+                        _waitingToLeave = true;
+                        WaitingStopwatch.Restart();
                     }
 
-                    if (this.WaitingStopwatch.Elapsed.TotalMinutes > 15) this.Dead = true;
+                    if (WaitingStopwatch.Elapsed.TotalMinutes > 15) Dead = true;
                     continue;
                 }
 
-                this.Queue.Current++;
-            } while (!this.Dead);
+                Queue.Current++;
+            } while (!Dead);
 
             await DisconnectAsync();
         }
         catch (Exception e)
         {
-            this.Logger.Error(e, "The player loop in {Guild} died", this.Guild?.Name);
+            Logger.Error(e, "The player loop in {Guild} died", Guild?.Name);
             await DisconnectAsync();
         }
     }
@@ -142,32 +148,32 @@ public sealed class Player
     /// </summary>
     private async Task PlayTrackAsync(Track item)
     {
-        var previous = this.trackCancellation;
-        this.trackCancellation = CancellationTokenSource.CreateLinkedTokenSource(this.dying.Token);
+        var previous = _trackCancellation;
+        _trackCancellation = CancellationTokenSource.CreateLinkedTokenSource(_dying.Token);
         previous.Dispose();
 
-        var token = this.trackCancellation.Token;
+        var token = _trackCancellation.Token;
 
-        this.preloadedNext = false;
+        _preloadedNext = false;
 
         HttpResponseMessage? response = null;
 
         try
         {
-            response = await TakePrefetchedAsync(item.Id) ?? await this.Api.OpenAudioAsync(item.Id, this.Bitrate, token);
+            response = await TakePrefetchedAsync(item.Id) ?? await Api.OpenAudioAsync(item.Id, Bitrate, token);
 
             if (response is null)
             {
-                this.Logger.Warning("Nothing playable for {Id}, skipping it", item.Id);
+                Logger.Warning("Nothing playable for {Id}, skipping it", item.Id);
                 return;
             }
 
-            if (this.Connection is null)
+            if (Connection is null)
             {
                 // Nothing to play into, and the next track would fare no better: end the player
                 // rather than let the loop burn silently through the whole queue.
-                this.Logger.Warning("No voice connection in {Guild}, ending the player", this.Guild?.Name);
-                this.Dead = true;
+                Logger.Warning("No voice connection in {Guild}, ending the player", Guild?.Name);
+                Dead = true;
                 return;
             }
 
@@ -175,13 +181,13 @@ public sealed class Player
 
             Record("track", $"playing {item.DisplayName}", item.Requester?.Username);
 
-            this.Connection.SetDisconnectHandler(OnConnectionLostAsync);
-            this.writer = this.Connection.CreateAudioWriter(AudioFormat.Opus);
+            Connection.SetDisconnectHandler(OnConnectionLostAsync);
+            _writer = Connection.CreateAudioWriter(AudioFormat.Opus);
             var scanner = new OggGranuleScanner();
 
-            if (!this.Stopwatch.IsRunning) this.Stopwatch.Start();
+            if (!Stopwatch.IsRunning) Stopwatch.Start();
 
-            await OggPacer.FeedAsync(stream, this.writer, scanner, () => this.Stopwatch.Elapsed,
+            await OggPacer.FeedAsync(stream, _writer, scanner, () => Stopwatch.Elapsed,
                 WaitWhilePausedAsync, fed => OnProgressAsync(item, fed), token);
         }
         catch (OperationCanceledException)
@@ -190,7 +196,7 @@ public sealed class Player
         }
         catch (Exception e)
         {
-            this.Logger.Error(e, "Playing {Name} failed", item.DisplayName);
+            Logger.Error(e, "Playing {Name} failed", item.DisplayName);
         }
         finally
         {
@@ -204,10 +210,10 @@ public sealed class Player
     /// </summary>
     private async Task OnConnectionLostAsync(VoiceDisconnectReason reason, object? state)
     {
-        this.Logger.Warning("The voice connection in {Guild} was lost: {Reason}", this.Guild?.Name, reason);
+        Logger.Warning("The voice connection in {Guild} was lost: {Reason}", Guild?.Name, reason);
         Record("lost", $"the voice connection was lost: {reason}");
 
-        this.Connection = null;
+        Connection = null;
         await DisconnectAsync();
     }
 
@@ -216,23 +222,23 @@ public sealed class Player
     {
         if (item.Length <= TimeSpan.Zero) return;
 
-        var remaining = item.Length - this.Stopwatch.Elapsed;
+        var remaining = item.Length - Stopwatch.Elapsed;
 
         if (remaining > TimeSpan.FromSeconds(20)) return;
 
-        var next = this.LoopStatus == Loop.One ? item : this.Queue.GetNext();
+        var next = LoopStatus == LoopMode.One ? item : Queue.GetNext();
         if (next is null) return;
 
-        if (!this.preloadedNext)
+        if (!_preloadedNext)
         {
-            this.preloadedNext = true;
-            _ = this.Api.PreloadAsync(next.Id, this.Bitrate);
+            _preloadedNext = true;
+            _ = Api.PreloadAsync(next.Id, Bitrate);
         }
 
-        if (remaining > TimeSpan.FromSeconds(5) || this.prefetch is not null) return;
+        if (remaining > TimeSpan.FromSeconds(5) || _prefetch is not null) return;
 
-        this.prefetchId = next.Id;
-        this.prefetch = this.Api.OpenAudioAsync(next.Id, this.Bitrate, this.dying.Token);
+        _prefetchId = next.Id;
+        _prefetch = Api.OpenAudioAsync(next.Id, Bitrate, _dying.Token);
 
         await Task.CompletedTask;
     }
@@ -240,11 +246,11 @@ public sealed class Player
     /// <summary>The held-open body, if it is the track we are about to play.</summary>
     private async Task<HttpResponseMessage?> TakePrefetchedAsync(string id)
     {
-        var pending = this.prefetch;
-        var pendingId = this.prefetchId;
+        var pending = _prefetch;
+        var pendingId = _prefetchId;
 
-        this.prefetch = null;
-        this.prefetchId = null;
+        _prefetch = null;
+        _prefetchId = null;
 
         if (pending is null) return null;
 
@@ -255,43 +261,44 @@ public sealed class Player
         return null;
     }
 
-    private Task WaitWhilePausedAsync(CancellationToken ct) => this.unpaused.Task.WaitAsync(ct);
+    private Task WaitWhilePausedAsync(CancellationToken cancellationToken) =>
+        _unpaused.Task.WaitAsync(cancellationToken);
 
     /// <summary>Records one line in the bot's audit trail, filled in from this player.</summary>
     public void Record(string kind, string detail, string? user = null) =>
-        this.Controller.Events.Record(kind, this.Client.CurrentUser.Username, this.Guild?.Name,
-            this.VoiceChannel?.Name, user, detail);
+        Controller.Events.Record(kind, Client.CurrentUser.Username, Guild?.Name,
+            VoiceChannel?.Name, user, detail);
 
-    public Loop ToggleLoop() => this.LoopStatus = this.LoopStatus switch
+    public LoopMode ToggleLoop() => LoopStatus = LoopStatus switch
     {
-        Loop.None => Loop.WholeQueue,
-        Loop.WholeQueue => Loop.One,
-        Loop.One => Loop.None,
-        _ => Loop.None
+        LoopMode.None => LoopMode.WholeQueue,
+        LoopMode.WholeQueue => LoopMode.One,
+        LoopMode.One => LoopMode.None,
+        _ => LoopMode.None
     };
 
     /// <summary>Toggles pause. Queued audio — up to the look-ahead — still plays out.</summary>
     public void Pause()
     {
-        this.Paused = !this.Paused;
+        Paused = !Paused;
 
-        if (this.Paused)
+        if (Paused)
         {
-            this.unpaused = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            this.Stopwatch.Stop();
-            this.writer?.SignalSilence();
+            _unpaused = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Stopwatch.Stop();
+            _writer?.SignalSilence();
             return;
         }
 
-        this.Stopwatch.Start();
-        this.unpaused.TrySetResult();
+        Stopwatch.Start();
+        _unpaused.TrySetResult();
     }
 
     private void Resume()
     {
-        this.Paused = false;
-        this.Stopwatch.Start();
-        this.unpaused.TrySetResult();
+        Paused = false;
+        Stopwatch.Start();
+        _unpaused.TrySetResult();
     }
 
     public void Skip(int times = 1)
@@ -299,8 +306,8 @@ public sealed class Player
         Resume();
 
         times -= 1;
-        if (this.Queue.Current + times < -1) return;
-        if (this.Queue.Current + times != this.Queue.Count + 1) this.Queue.Current += times;
+        if (Queue.Current + times < -1) return;
+        if (Queue.Current + times != Queue.Count + 1) Queue.Current += times;
 
         CancelTrack();
     }
@@ -309,35 +316,35 @@ public sealed class Player
     {
         Resume();
 
-        if (index >= this.Queue.Count && index < -1) return null;
+        if (index >= Queue.Count && index < -1) return null;
 
-        this.Queue.Current = index - 1;
+        Queue.Current = index - 1;
         CancelTrack();
-        return this.Queue.GetNext();
+        return Queue.GetNext();
     }
 
-    public void Shuffle() => this.Queue.Shuffle();
+    public void Shuffle() => Queue.Shuffle();
 
     public Track? RemoveFromQueue(int index)
     {
         try
         {
-            if (index == this.Queue.Current)
+            if (index == Queue.Current)
             {
-                var removed = this.Queue.RemoveFromQueue(index);
+                var removed = Queue.RemoveFromQueue(index);
                 Skip(0);
                 return removed;
             }
 
-            if (index >= this.Queue.Current) return this.Queue.RemoveFromQueue(index);
+            if (index >= Queue.Current) return Queue.RemoveFromQueue(index);
 
-            var item = this.Queue.RemoveFromQueue(index);
-            this.Queue.Current -= 1;
+            var item = Queue.RemoveFromQueue(index);
+            Queue.Current -= 1;
             return item;
         }
         catch (Exception e)
         {
-            this.Logger.Warning(e, "Removing index {Index} from the queue failed", index);
+            Logger.Warning(e, "Removing index {Index} from the queue failed", index);
             return null;
         }
     }
@@ -346,25 +353,25 @@ public sealed class Player
     {
         try
         {
-            var item = this.Queue.GetWithString(name);
-            var index = this.Queue.Items.IndexOf(item);
+            var item = Queue.GetWithString(name);
+            var index = Queue.Items.IndexOf(item);
 
-            if (index == this.Queue.Current)
+            if (index == Queue.Current)
             {
-                var removed = this.Queue.RemoveFromQueue(item);
+                var removed = Queue.RemoveFromQueue(item);
                 Skip(0);
                 return removed;
             }
 
-            if (index >= this.Queue.Current) return this.Queue.RemoveFromQueue(item);
+            if (index >= Queue.Current) return Queue.RemoveFromQueue(item);
 
-            var removedItem = this.Queue.RemoveFromQueue(item);
-            this.Queue.Current -= 1;
+            var removedItem = Queue.RemoveFromQueue(item);
+            Queue.Current -= 1;
             return removedItem;
         }
         catch (Exception e)
         {
-            this.Logger.Warning(e, "Removing {Name} from the queue failed", name);
+            Logger.Warning(e, "Removing {Name} from the queue failed", name);
             return null;
         }
     }
@@ -384,43 +391,43 @@ public sealed class Player
     /// </remarks>
     public void MovedTo(DiscordChannel channel)
     {
-        this.Logger.Information("{Account} was moved to {Channel} in {Guild}", this.Client.CurrentUser.Username,
-            channel.Name, this.Guild?.Name);
-        Record("move", $"moved from {this.VoiceChannel?.Name ?? "—"} to {channel.Name}");
+        Logger.Information("{Account} was moved to {Channel} in {Guild}", Client.CurrentUser.Username,
+            channel.Name, Guild?.Name);
+        Record("move", $"moved from {VoiceChannel?.Name ?? "—"} to {channel.Name}");
 
-        this.VoiceChannel = channel;
+        VoiceChannel = channel;
     }
 
     public async Task DisconnectAsync(string message = Text.Farewell)
     {
-        if (this.Dead && this.Connection is null) return;
+        if (Dead && Connection is null) return;
 
         try
         {
-            this.Dead = true;
+            Dead = true;
             Resume();
             CancelTrack();
-            await this.dying.CancelAsync();
+            await _dying.CancelAsync();
 
-            await this.Statusbar.UpdateMessageAndStopAsync(message);
+            await Statusbar.UpdateMessageAndStopAsync(message);
 
-            this.writer?.SignalCompletion();
-            this.writer = null;
+            _writer?.SignalCompletion();
+            _writer = null;
 
-            if (this.Connection is not null) await this.Connection.DisposeAsync();
-            this.Connection = null;
+            if (Connection is not null) await Connection.DisposeAsync();
+            Connection = null;
 
-            this.Controller.Remove(this);
+            Controller.Remove(this);
 
-            this.Logger.Information("Disconnecting from {Channel} in {Guild}", this.VoiceChannel?.Name,
-                this.Guild?.Name);
-            Record("leave", this.WaitingStopwatch.Elapsed.TotalMinutes > 15
+            Logger.Information("Disconnecting from {Channel} in {Guild}", VoiceChannel?.Name,
+                Guild?.Name);
+            Record("leave", WaitingStopwatch.Elapsed.TotalMinutes > 15
                 ? "left after fifteen minutes with an empty queue"
                 : "left");
         }
         catch (Exception e)
         {
-            this.Logger.Error(e, "Disconnecting in {Guild} failed", this.Guild?.Name);
+            Logger.Error(e, "Disconnecting in {Guild} failed", Guild?.Name);
         }
     }
 
@@ -428,7 +435,7 @@ public sealed class Player
     {
         try
         {
-            this.trackCancellation.Cancel();
+            _trackCancellation.Cancel();
         }
         catch (ObjectDisposedException)
         {
