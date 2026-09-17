@@ -7,6 +7,9 @@ COPY ["Platforms/Gaida.Pods.YouTube/Gaida.Pods.YouTube.csproj", "Platforms/Gaida
 COPY ["Platforms/Gaida.Platforms.YouTube/Gaida.Platforms.YouTube.csproj", "Platforms/Gaida.Platforms.YouTube/"]
 COPY ["Gaida Library/Gaida.Core/Gaida.Core.csproj", "Gaida Library/Gaida.Core/"]
 COPY ["Gaida Library/Gaida.Admin/Gaida.Admin.csproj", "Gaida Library/Gaida.Admin/"]
+# Every project's PackageReference to JetBrains.Annotations lives here, so the props file has to
+# be in the context before the restore or [UsedImplicitly] stops compiling.
+COPY Directory.Build.props .
 RUN dotnet restore "Platforms/Gaida.Pods.YouTube/Gaida.Pods.YouTube.csproj"
 
 COPY ["Platforms/Gaida.Pods.YouTube/", "Platforms/Gaida.Pods.YouTube/"]

@@ -5,6 +5,9 @@ WORKDIR /src
 COPY ["Services/Dunav/Dunav.csproj", "Services/Dunav/"]
 COPY ["Gaida Library/Gaida.Core/Gaida.Core.csproj", "Gaida Library/Gaida.Core/"]
 COPY ["Gaida Library/Gaida.Admin/Gaida.Admin.csproj", "Gaida Library/Gaida.Admin/"]
+# Every project's PackageReference to JetBrains.Annotations lives here, so the props file has to
+# be in the context before the restore or [UsedImplicitly] stops compiling.
+COPY Directory.Build.props .
 RUN dotnet restore "Services/Dunav/Dunav.csproj"
 
 COPY ["Services/Dunav/", "Services/Dunav/"]

@@ -6,6 +6,9 @@ WORKDIR /src
 
 COPY Services/Selo/Selo.csproj Services/Selo/
 COPY ["Gaida Library/Gaida.Admin/Gaida.Admin.csproj", "Gaida Library/Gaida.Admin/"]
+# Every project's PackageReference to JetBrains.Annotations lives here, so the props file has to
+# be in the context before the restore or [UsedImplicitly] stops compiling.
+COPY Directory.Build.props .
 RUN dotnet restore Services/Selo/Selo.csproj
 
 COPY Services/Selo/ Services/Selo/
