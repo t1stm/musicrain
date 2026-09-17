@@ -17,7 +17,7 @@ public static class Romanize
         return builder.ToString();
     }
 
-    public static string CyrillicToRomanSwitch(char letter)
+    private static string CyrillicToRomanSwitch(char letter)
     {
         return char.ToLower(letter) switch
         {

@@ -6,15 +6,15 @@ namespace Gaida.Platforms.YouTube.Getters;
 
 public class GetterLocalCache(ILogger logger) : ContentGetter(logger)
 {
-    public string CacheLocation = "./YouTube Cache";
+    private string _cacheLocation = "./YouTube Cache";
     public override int Priority => 99;
 
     public override void Initialize()
     {
         var env = Environment.GetEnvironmentVariable("YOUTUBE_CACHE", EnvironmentVariableTarget.Process);
 
-        if (env is null) Environment.SetEnvironmentVariable("YOUTUBE_CACHE", CacheLocation);
-        CacheLocation = env ?? CacheLocation;
+        if (env is null) Environment.SetEnvironmentVariable("YOUTUBE_CACHE", _cacheLocation);
+        _cacheLocation = env ?? _cacheLocation;
 
         base.Initialize();
     }
@@ -28,10 +28,10 @@ public class GetterLocalCache(ILogger logger) : ContentGetter(logger)
             return Task.FromResult<StreamSpreader?>(null);
         }
 
-        var file = youtubeResult.GetPureID().ToString() + ".webm";
-        Directory.CreateDirectory(CacheLocation);
+        var file = youtubeResult.GetPureId().ToString() + ".webm";
+        Directory.CreateDirectory(_cacheLocation);
 
-        var path = Path.Combine(CacheLocation, file);
+        var path = Path.Combine(_cacheLocation, file);
         if (!File.Exists(path))
         {
             Logger.Debug("Not in the local cache: {Path}", path);

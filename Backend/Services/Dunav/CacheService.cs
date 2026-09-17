@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
-using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 using System.Timers;
 using Gaida.Core.Streams;
+using JetBrains.Annotations;
 using ILogger = Serilog.ILogger;
 using Timer = System.Timers.Timer;
 
@@ -17,34 +17,34 @@ namespace Dunav;
 /// </summary>
 public class CacheService
 {
-    private readonly ConcurrentDictionary<string, Lazy<Task<CacheEntry?>>> CachedEntries = new();
-    private readonly ConcurrentDictionary<string, DateTime> ExpireTimes = new();
-    private readonly string CacheDir;
-    private readonly HttpClient Http;
-    private readonly long MaxBytes;
-    private readonly TimeSpan Retention;
-    private readonly Timer SweepTimer;
+    private readonly ConcurrentDictionary<string, Lazy<Task<CacheEntry?>>> _cachedEntries = new();
+    private readonly ConcurrentDictionary<string, DateTime> _expireTimes = new();
+    private readonly string _cacheDir;
+    private readonly HttpClient _http;
+    private readonly long _maxBytes;
+    private readonly TimeSpan _retention;
+    private readonly Timer _sweepTimer;
 
     public CacheService(HttpClient http, ILogger logger, IConfiguration configuration)
     {
-        Http = http;
+        _http = http;
         Logger = logger;
-        Retention = TimeSpan.FromMinutes(configuration.GetValue("Dunav:RetentionMinutes", 45));
+        _retention = TimeSpan.FromMinutes(configuration.GetValue("Dunav:RetentionMinutes", 45));
 
         // A disk budget, not a memory one. Bodies live in CacheDir; what this bounds is how much of the
         // filesystem they may occupy, so it is sized against free disk rather than the pod's mem_limit.
-        MaxBytes = configuration.GetValue("Dunav:MaxBytes", 20L * 1024 * 1024 * 1024);
+        _maxBytes = configuration.GetValue("Dunav:MaxBytes", 20L * 1024 * 1024 * 1024);
 
         // Deliberately NOT a tmpfs mount: tmpfs pages are charged to the container's memory cgroup and
         // cannot be reclaimed, which is the OOM this whole design exists to avoid. Ordinary files on an
         // ordinary filesystem give reclaimable page cache instead. See DUNAV_SPILL_PLAN.md.
-        CacheDir = configuration.GetValue("Dunav:CacheDir", "/tmp/dunav");
-        Directory.CreateDirectory(CacheDir);
+        _cacheDir = configuration.GetValue("Dunav:CacheDir", "/tmp/dunav");
+        Directory.CreateDirectory(_cacheDir);
 
-        // Wipe on boot. CachedEntries starts empty, so nothing can reference a leftover file, and this is
+        // Wipe on boot. _cachedEntries starts empty, so nothing can reference a leftover file, and this is
         // what lets the writer use the final filename directly -- no .part suffix, no atomic rename, no
         // startup reconciliation to decide whether a stray file is complete.
-        foreach (var stale in Directory.EnumerateFiles(CacheDir))
+        foreach (var stale in Directory.EnumerateFiles(_cacheDir))
             try
             {
                 File.Delete(stale);
@@ -54,8 +54,8 @@ public class CacheService
                 Logger.Warning(exception, "Could not remove stale cache file {File}", stale);
             }
 
-        SweepTimer = new Timer(TimeSpan.FromMinutes(1)) { Enabled = true };
-        SweepTimer.Elapsed += Sweep;
+        _sweepTimer = new Timer(TimeSpan.FromMinutes(1)) { Enabled = true };
+        _sweepTimer.Elapsed += Sweep;
     }
 
     private ILogger Logger { get; }
@@ -66,7 +66,7 @@ public class CacheService
     /// </summary>
     // ponytail: only SHA-256 hex used here, no truncation/base64 tradeoffs considered -- id strings are
     // short (a video ID or a local path), so collision risk and key length are both non-issues.
-    public static string HashId(string id)
+    private static string HashId(string id)
     {
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(id)));
     }
@@ -85,6 +85,7 @@ public class CacheService
     ///     Starts the fetch for <paramref name="key" /> at most once, however many requests race for it: the
     ///     losers await the winner's task instead of issuing a second upstream request for the same bytes.
     /// </summary>
+    /// <param name="key">Identifies the entry; see <see cref="EncodedKey" />.</param>
     /// <param name="start">Feeds the entry's spreader from upstream. Returns <c>false</c> when the fetch could not be started.</param>
     /// <param name="started">
     ///     <c>true</c> for the single caller whose call actually started the fetch; every racer that found the
@@ -102,7 +103,7 @@ public class CacheService
             var entry = new CacheEntry
             {
                 // Named for its key and kept until evicted, rather than a self-deleting scratch file.
-                Body = new StreamSpreader(Path.Combine(CacheDir, key), false),
+                Body = new StreamSpreader(Path.Combine(_cacheDir, key), false),
                 Label = label
             };
             if (await start(entry)) return entry;
@@ -113,24 +114,20 @@ public class CacheService
             return null;
         }, LazyThreadSafetyMode.ExecutionAndPublication);
 
-        var cached = CachedEntries.GetOrAdd(key, lazy);
+        var cached = _cachedEntries.GetOrAdd(key, lazy);
         started = ReferenceEquals(cached, lazy);
 
         ExpireIn(key);
         return cached.Value;
     }
 
-    /// <summary>The fetch already running or finished for <paramref name="key" />, refreshing its expiry.</summary>
-    public bool TryGet(string key, [NotNullWhen(true)] out Task<CacheEntry?>? entry)
+    /// <summary>Whether a fetch is already running or finished for <paramref name="key" />, refreshing its expiry.</summary>
+    public bool Has(string key)
     {
-        if (!CachedEntries.TryGetValue(key, out var lazy))
-        {
-            entry = null;
-            return false;
-        }
+        if (!_cachedEntries.TryGetValue(key, out var lazy)) return false;
 
         ExpireIn(key);
-        entry = lazy.Value;
+        _ = lazy.Value; // the racer that finds a cold entry must still start it, as the out parameter used to
         return true;
     }
 
@@ -140,13 +137,13 @@ public class CacheService
     /// </summary>
     public void Forget(string key)
     {
-        CachedEntries.TryRemove(key, out _);
-        ExpireTimes.TryRemove(key, out _);
+        _cachedEntries.TryRemove(key, out _);
+        _expireTimes.TryRemove(key, out _);
     }
 
     private void ExpireIn(string key)
     {
-        ExpireTimes[key] = DateTime.UtcNow.Add(Retention);
+        _expireTimes[key] = DateTime.UtcNow.Add(_retention);
     }
 
     /// <summary>
@@ -159,7 +156,7 @@ public class CacheService
         HttpResponseMessage response;
         try
         {
-            response = await Http.GetAsync(upstreamPath, HttpCompletionOption.ResponseHeadersRead,
+            response = await _http.GetAsync(upstreamPath, HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
         }
         catch (Exception exception)
@@ -243,7 +240,7 @@ public class CacheService
     {
         var now = DateTime.UtcNow;
 
-        foreach (var (key, expire) in ExpireTimes)
+        foreach (var (key, expire) in _expireTimes)
         {
             if (expire > now) continue;
             Evict(key, "expired");
@@ -264,24 +261,24 @@ public class CacheService
     /// </remarks>
     private void EvictOverCeiling()
     {
-        if (MaxBytes <= 0) return;
+        if (_maxBytes <= 0) return;
 
-        var live = CachedEntries
-            .Where(kv => kv.Value is { IsValueCreated: true, Value.IsCompletedSuccessfully: true } &&
-                         kv.Value.Value.Result is not null)
+        var live = _cachedEntries
+            .Where(kv => kv.Value is
+                { IsValueCreated: true, Value: { IsCompletedSuccessfully: true, Result: not null } })
             .Select(kv => (kv.Key, Entry: kv.Value.Value.Result!,
-                Expire: ExpireTimes.GetValueOrDefault(kv.Key, DateTime.MinValue)))
+                Expire: _expireTimes.GetValueOrDefault(kv.Key, DateTime.MinValue)))
             .ToList();
 
         var total = live.Sum(x => x.Entry.Body.Length);
-        if (total <= MaxBytes) return;
+        if (total <= _maxBytes) return;
 
         // ExpireTimes doubles as a recency signal: every TryGet/GetOrStart refreshes it to now+Retention,
         // so the smallest expiry is also the least recently used. Only finished entries are eligible, so
         // eviction never unlinks the file out from under a fetch still writing to it.
         foreach (var (key, entry, _) in live.Where(x => x.Entry.Body.Closed).OrderBy(x => x.Expire))
         {
-            if (total <= MaxBytes) break;
+            if (total <= _maxBytes) break;
             if (!Evict(key, "over byte ceiling")) continue;
             total -= entry.Body.Length;
         }
@@ -289,8 +286,8 @@ public class CacheService
 
     public bool Evict(string key, string reason)
     {
-        ExpireTimes.TryRemove(key, out _);
-        if (!CachedEntries.TryRemove(key, out var lazy)) return false;
+        _expireTimes.TryRemove(key, out _);
+        if (!_cachedEntries.TryRemove(key, out var lazy)) return false;
 
         Logger.Information("Evicting cache entry {Key} ({Reason})", key, reason);
 
@@ -298,7 +295,7 @@ public class CacheService
         // the last open handle closes, so responses already streaming finish off their own handle and the
         // space comes back when they do. A reader that has not opened yet gets FileNotFoundException, which
         // AudioController turns into a retriable 503.
-        if (lazy is { IsValueCreated: true, Value.IsCompletedSuccessfully: true } && lazy.Value.Result is { } entry)
+        if (lazy is { IsValueCreated: true, Value: { IsCompletedSuccessfully: true, Result: { } entry } })
             Delete(entry);
         return true;
     }
@@ -309,7 +306,7 @@ public class CacheService
     /// </summary>
     public object Snapshot()
     {
-        var entries = CachedEntries
+        var entries = _cachedEntries
             .Select(kv =>
             {
                 // A fetch whose task has not completed yet has no observable CacheEntry, so it shows as
@@ -328,7 +325,7 @@ public class CacheService
                     entry?.Body.Length ?? 0,
                     entry is null ? "pending" : entry.Body.Closed ? "complete" : "downloading",
                     entry?.ContentType,
-                    ExpireTimes.TryGetValue(kv.Key, out var expires) ? expires : null);
+                    _expireTimes.TryGetValue(kv.Key, out var expires) ? expires : null);
             })
             .OrderByDescending(entry => entry.Bytes)
             .ToList();
@@ -337,9 +334,9 @@ public class CacheService
         {
             count = entries.Count,
             totalBytes = entries.Sum(entry => entry.Bytes),
-            maxBytes = MaxBytes,
-            retentionMinutes = Retention.TotalMinutes,
-            cacheDir = CacheDir,
+            maxBytes = _maxBytes,
+            retentionMinutes = _retention.TotalMinutes,
+            cacheDir = _cacheDir,
             entries
         };
     }
@@ -347,7 +344,7 @@ public class CacheService
     /// <summary>Evicts everything. Returns how many entries went.</summary>
     public int EvictAll()
     {
-        return CachedEntries.Keys.Count(key => Evict(key, "admin evict-all"));
+        return _cachedEntries.Keys.Count(key => Evict(key, "admin evict-all"));
     }
 }
 
@@ -355,6 +352,7 @@ public class CacheService
 /// <param name="Key">The on-disk filename, and what <c>POST /Admin/evict</c> takes.</param>
 /// <param name="Label">The codec/bitrate/id this was cached for, or <c>null</c> while still pending.</param>
 /// <param name="State">One of <c>pending</c>, <c>downloading</c> or <c>complete</c>.</param>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record CacheEntrySnapshot(
     string Key,
     string? Label,

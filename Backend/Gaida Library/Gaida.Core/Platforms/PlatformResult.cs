@@ -7,7 +7,7 @@ namespace Gaida.Core.Platforms;
 public abstract class PlatformResult
 {
     [JsonIgnore] public required IReadOnlyList<ContentGetter> Downloaders = [];
-    [JsonInclude] public required string ID;
+    [JsonInclude] public required string Id;
     [JsonInclude] public string? Name { get; set; }
     [JsonInclude] public string? Artist { get; set; }
     [JsonInclude] public string? Album { get; set; }
@@ -24,9 +24,9 @@ public abstract class PlatformResult
 
     public abstract string GetDownloadUrl();
 
-    public virtual ReadOnlySpan<char> GetPureID()
+    public ReadOnlySpan<char> GetPureId()
     {
-        var span = ID.AsSpan();
+        var span = Id.AsSpan();
         Span<Range> ranges = stackalloc Range[2];
 
         var count = span.Split(ranges, "://");
@@ -34,7 +34,7 @@ public abstract class PlatformResult
     }
 
     /// <returns>The content stream, or <c>null</c> when no downloader could provide it.</returns>
-    public virtual async Task<StreamSpreader?> GetContentDataAsync(CancellationToken token = default)
+    public async Task<StreamSpreader?> GetContentDataAsync(CancellationToken token = default)
     {
         foreach (var downloader in Downloaders)
         {

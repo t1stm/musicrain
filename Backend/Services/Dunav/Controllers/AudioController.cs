@@ -52,9 +52,9 @@ public class AudioController(ILogger<AudioController> logger, CacheService cache
 
         // 200 for every caller after the first: the fetch is already running or finished, and the lookup has
         // just pushed its expiry back, which is the whole of what a repeat preload can usefully do.
-        if (cache.TryGet(key, out _)) return Ok();
+        if (cache.Has(key)) return Ok();
 
-        logger.LogInformation("Preloading '{Id}' {Codec} {Bitrate}", id, codec, bitrate);
+        logger.LogInformation("Preloading '{ID}' {Codec} {Bitrate}", id, codec, bitrate);
         var entry = await GetOrFetch(key, UpstreamDownloadPath(codec, bitrate, id), out var started,
             Label(codec, bitrate, id));
         if (entry is null) return StatusCode(502);

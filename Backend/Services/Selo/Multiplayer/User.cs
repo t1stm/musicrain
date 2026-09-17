@@ -5,10 +5,10 @@ namespace Selo.Multiplayer;
 public class User
 {
     public required WebSocket WebSocket { get; init; }
-    public required string ID { get; init; }
+    public required string Id { get; init; }
     public string? Username { get; set; }
 
-    public string ChatUsername => Username ??= $"Anonymous {GetId(ID)}";
+    public string ChatUsername => Username ??= $"Anonymous {GetId(Id)}";
 
     /// <summary>
     ///     ValueTask so a send that completes inline — the usual case for a small text

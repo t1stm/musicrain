@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Globalization;
-using DSharpPlus;
 using DSharpPlus.Entities;
 using Gaida.Bot.Enums;
 using Gaida.Bot.Players;
@@ -25,8 +24,6 @@ public sealed class Statusbar
     private readonly int[] _animationCells = [0, 1, 2, 3, 4];
 
     public Player? Player { get; set; }
-    public DiscordClient? Client { get; set; }
-    public DiscordGuild? Guild { get; set; }
     public DiscordChannel? Channel { get; set; }
     public DiscordMessage? Message { get; set; }
 
@@ -34,7 +31,7 @@ public sealed class Statusbar
     private StatusbarMode Mode { get; set; } = StatusbarMode.Stopped;
     private int UpdateDelay { get; set; } = DefaultUpdateDelay;
 
-    public void Stop() => Stopped = true;
+    private void Stop() => Stopped = true;
 
     public void ChangeMode(StatusbarMode mode) => Mode = mode;
 
@@ -169,7 +166,7 @@ public sealed class Statusbar
                 new DiscordButtonComponent(DiscordButtonStyle.Success, "skip", "Next"),
                 new DiscordButtonComponent(DiscordButtonStyle.Secondary, "leave", "Leave"));
 
-    public string GenerateStatusbar()
+    private string GenerateStatusbar()
     {
         if (Player is null) return Text.ThisMessageWillUpdateShortly().CodeBlocked();
 

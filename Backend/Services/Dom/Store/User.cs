@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using JetBrains.Annotations;
 
 namespace Dom.Store;
 
@@ -15,8 +16,8 @@ public sealed class User
     public required string Hash { get; set; }
     public required int Iterations { get; set; }
 
-    public DateTimeOffset CreatedUtc { get; set; }
-    public List<Token> Tokens { get; set; } = [];
+    public DateTimeOffset CreatedUtc { get; init; }
+    public List<Token> Tokens { get; } = [];
 
     /// <summary>Two accounts may not differ only by case. Derived, so it is not written to the file.</summary>
     [JsonIgnore]
@@ -26,6 +27,7 @@ public sealed class User
 }
 
 /// <summary>A bearer token and the moment it stops working.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed class Token
 {
     public required string Value { get; set; }
@@ -36,7 +38,7 @@ public sealed class Token
 /// <summary>The whole file. Versioned so a later shape can be migrated rather than guessed at.</summary>
 public sealed class DomState
 {
-    public int Version { get; set; } = 1;
-    public List<User> Users { get; set; } = [];
-    public List<Playlist> Playlists { get; set; } = [];
+    public int Version { get; init; } = 1;
+    public List<User> Users { get; init; } = [];
+    public List<Playlist> Playlists { get; init; } = [];
 }

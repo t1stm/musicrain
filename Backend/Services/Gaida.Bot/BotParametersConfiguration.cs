@@ -1,5 +1,8 @@
+using JetBrains.Annotations;
+
 namespace Gaida.Bot;
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public class BotParametersConfiguration
 {
     /// <summary>

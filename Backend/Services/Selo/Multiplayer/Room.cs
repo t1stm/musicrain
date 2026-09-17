@@ -7,26 +7,26 @@ namespace Selo.Multiplayer;
 
 public class Room
 {
-    protected readonly HttpClient Gaida;
-    [JsonIgnore] protected readonly VirtualPlayer Player;
-    [JsonIgnore] protected readonly MessageQueue Queue;
+    private readonly HttpClient _gaida;
+    [JsonIgnore] private readonly VirtualPlayer _player;
+    [JsonIgnore] private readonly MessageQueue _queue;
 
-    [JsonIgnore] protected readonly UserStore Store;
+    [JsonIgnore] private readonly UserStore _store;
 
     public Room(Guid guid, HttpClient gaida)
     {
-        RoomID = guid;
-        Gaida = gaida;
+        RoomId = guid;
+        _gaida = gaida;
         RoomName = guid.ToString();
 
-        Store = new UserStore();
-        Queue = new MessageQueue(Store);
-        Player = new VirtualPlayer(Queue);
+        _store = new UserStore();
+        _queue = new MessageQueue(_store);
+        _player = new VirtualPlayer(_queue);
     }
 
     [JsonInclude]
     [JsonPropertyName("roomID")]
-    public Guid RoomID { get; init; }
+    public Guid RoomId { get; init; }
 
     [JsonInclude]
     [JsonPropertyName("name")]
@@ -54,16 +54,16 @@ public class Room
     {
         return new
         {
-            roomId = RoomID,
+            roomId = RoomId,
             name = RoomName,
             description = RoomDescription,
-            users = Store.Users.Values.Select(user => new
+            users = _store.Users.Values.Select(user => new
             {
-                id = user.ID,
+                id = user.Id,
                 username = user.Username,
                 socket = user.WebSocket.State.ToString()
             }).ToList(),
-            player = await Player.Snapshot()
+            player = await _player.Snapshot()
         };
     }
 
@@ -74,7 +74,7 @@ public class Room
     /// </summary>
     public async Task<bool> Kick(string id)
     {
-        var user = Store.GetUser(id);
+        var user = _store.GetUser(id);
         if (user is null) return false;
 
         await RemoveUser(id);
@@ -105,32 +105,32 @@ public class Room
     }
 
     /// <summary>Everyone currently in the room, for a close that has to remove them all.</summary>
-    public IReadOnlyCollection<string> UserIds => [.. Store.Users.Keys];
+    public IReadOnlyCollection<string> UserIds => [.. _store.Users.Keys];
 
     public ValueTask<User> GetOrAddUser(string id, WebSocket webSocket, string? initialUsername)
     {
         // the join callback closes over the username, so building it on every message — which
         // is what the unconditional call did — allocated a closure and a delegate per frame
-        if (Store.GetUser(id) is { } present) return new ValueTask<User>(present);
+        if (_store.GetUser(id) is { } present) return new ValueTask<User>(present);
 
-        return Store.GetOrAddUser(id, webSocket, user =>
+        return _store.GetOrAddUser(id, webSocket, user =>
         {
             user.Username = initialUsername;
-            return Player.Joined(user);
+            return _player.Joined(user);
         });
     }
 
     public async Task RemoveUser(string id)
     {
-        var user = Store.GetUser(id);
+        var user = _store.GetUser(id);
         // a socket can close without ever having joined, so let's just return in that case
         if (user is null) return;
 
-        await Store.RemoveUser(id);
-        await Queue.Send($"chat System %% User '{user.ChatUsername}' left from the session.");
-        await Player.UserLeft(id);
+        await _store.RemoveUser(id);
+        await _queue.Send($"chat System %% User '{user.ChatUsername}' left from the session.");
+        await _player.UserLeft(id);
 
-        if (Store.Count == 0)
+        if (_store.Count == 0)
             OnEmptied?.Invoke();
     }
 
@@ -153,25 +153,25 @@ public class Room
             : HandleParameterlessMessages(message, user);
     }
 
-    protected Task HandleParameterMessages(ReadOnlyMemory<char> name, ReadOnlyMemory<char> value, User user)
+    private Task HandleParameterMessages(ReadOnlyMemory<char> name, ReadOnlyMemory<char> value, User user)
     {
         return name.Span switch
         {
             "add" => Enqueue(value.ToString()),
             "addnext" => Enqueue(value.ToString(), true),
-            "setnext" when int.TryParse(value.Span, out var nextIndex) => Player.SetNext(nextIndex),
-            "move" when TryParseMove(value.Span, out var from, out var to) => Player.Move(from, to),
-            "skipto" when int.TryParse(value.Span, out var skipIndex) => Player.SkipTo(skipIndex),
-            "seek" when double.TryParse(value.Span, out var seekSeconds) => Player.SeekTo(seekSeconds),
-            "remove" when int.TryParse(value.Span, out var removeIndex) => Player.Remove(removeIndex),
-            "chat" => Queue.Send($"chat {user.ChatUsername} %% {value}"),
+            "setnext" when int.TryParse(value.Span, out var nextIndex) => _player.SetNext(nextIndex),
+            "move" when TryParseMove(value.Span, out var from, out var to) => _player.Move(from, to),
+            "skipto" when int.TryParse(value.Span, out var skipIndex) => _player.SkipTo(skipIndex),
+            "seek" when double.TryParse(value.Span, out var seekSeconds) => _player.SeekTo(seekSeconds),
+            "remove" when int.TryParse(value.Span, out var removeIndex) => _player.Remove(removeIndex),
+            "chat" => _queue.Send($"chat {user.ChatUsername} %% {value}"),
             "updateroom" => HandleUpdateRoom(value, user),
             _ => Task.CompletedTask
         };
     }
 
     /// <summary>Two indexes in one argument, <c>move &lt;from&gt; &lt;to&gt;</c>.</summary>
-    protected static bool TryParseMove(ReadOnlySpan<char> value, out int from, out int to)
+    private static bool TryParseMove(ReadOnlySpan<char> value, out int from, out int to)
     {
         from = 0;
         to = 0;
@@ -184,12 +184,12 @@ public class Room
                && int.TryParse(argument[(splitIndex + 1)..], out to);
     }
 
-    protected async Task Enqueue(string id, bool playNext = false)
+    private async Task Enqueue(string id, bool playNext = false)
     {
         SearchResultDto[]? results;
         try
         {
-            results = await Gaida.GetFromJsonAsync<SearchResultDto[]>(
+            results = await _gaida.GetFromJsonAsync<SearchResultDto[]>(
                 $"/Audio/Search?query={Uri.EscapeDataString(id)}");
         }
         catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
@@ -200,10 +200,10 @@ public class Room
         var result = results?.FirstOrDefault();
         if (result is null) return;
 
-        await Player.Enqueue(result.ToTrack(), playNext);
+        await _player.Enqueue(result.ToTrack(), playNext);
     }
 
-    protected Task HandleUpdateRoom(ReadOnlyMemory<char> value, User user)
+    private Task HandleUpdateRoom(ReadOnlyMemory<char> value, User user)
     {
         var action = value.Span.Trim();
         var splitIndex = action.IndexOf(' ');
@@ -230,25 +230,25 @@ public class Room
         }
     }
 
-    protected Task HandleParameterlessMessages(ReadOnlyMemory<char> name, User user)
+    private Task HandleParameterlessMessages(ReadOnlyMemory<char> name, User user)
     {
         return name.Span switch
         {
-            "end" => Player.SetFinished(user.ID),
-            "next" => Player.Next(),
-            "previous" => Player.Previous(),
-            "playpause" => Player.TogglePlaying(),
-            "stop" => Player.Stop(),
-            "shuffle" => Player.Shuffle(),
-            "clear" => Player.Clear(),
-            "loaded" => Player.SetLoaded(user.ID),
+            "end" => _player.SetFinished(user.Id),
+            "next" => _player.Next(),
+            "previous" => _player.Previous(),
+            "playpause" => _player.TogglePlaying(),
+            "stop" => _player.Stop(),
+            "shuffle" => _player.Shuffle(),
+            "clear" => _player.Clear(),
+            "loaded" => _player.SetLoaded(user.Id),
             "sync" => SyncTo(user),
             _ => Task.CompletedTask
         };
     }
 
-    protected Task SyncTo(User user)
+    private Task SyncTo(User user)
     {
-        return Player.SyncTo(user);
+        return _player.SyncTo(user);
     }
 }

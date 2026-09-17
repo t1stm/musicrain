@@ -7,13 +7,13 @@ namespace Gaida.Platforms.MusicDatabase.Manager;
 public static class MediaInfo
 {
     /// <summary>What repeated tag values are joined with: the separator matching already splits on.</summary>
-    public const string ArtistSeparator = ", ";
+    private const string ArtistSeparator = ", ";
 
     public static async Task<MusicInfo> GetInformation(string location)
     {
         var musicInfo = new MusicInfo
         {
-            ID = string.Empty
+            Id = string.Empty
         };
         var processedLocation = location.Replace("\"", "\\\"");
 

@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using ILogger = Serilog.ILogger;
 
 namespace Stih;
@@ -19,11 +18,11 @@ public sealed class Sweep(
 {
     private readonly ILogger _logger = logger.ForContext<Sweep>();
 
-    public int Looked { get; private set; }
-    public int Found { get; private set; }
-    public int Missed { get; private set; }
-    public DateTimeOffset? LastPage { get; private set; }
-    public string? LastTrack { get; private set; }
+    private int Looked { get; set; }
+    private int Found { get; set; }
+    private int Missed { get; set; }
+    private DateTimeOffset? LastPage { get; set; }
+    private string? LastTrack { get; set; }
 
     private bool Enabled => configuration["LYRICS_SWEEP"] is not { } value ||
                             !bool.TryParse(value, out var on) || on;
@@ -118,7 +117,7 @@ public sealed class Sweep(
         var content = found.SyncedLyrics ?? found.PlainLyrics ?? string.Empty;
         var kind = found.SyncedLyrics is not null ? LyricsKind.Synchronized : LyricsKind.Unsynchronized;
 
-        await lyrics.StoreAsync(track, content, kind, LyricsOrigin.LRCLIB, false, ct);
+        await lyrics.StoreAsync(track, content, kind, LyricsOrigin.Lrclib, false, ct);
     }
 
     /// <summary>

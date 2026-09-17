@@ -13,8 +13,6 @@ using Gaida.Bot.Commands;
 using Gaida.Bot.Gaida;
 using Gaida.Bot.Players;
 using Gaida.Admin;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 
 var logger = new LoggerConfiguration()

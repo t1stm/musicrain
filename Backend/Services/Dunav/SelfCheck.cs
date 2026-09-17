@@ -59,7 +59,7 @@ internal static class SelfCheck
         var cache = new CacheService(http, Log.Logger, scratch.Configuration);
 
         var results = await Task.WhenAll(Enumerable.Range(0, 20).Select(i => cache.GetOrStartAsync("check-key",
-            entry => cache.FetchAsync(entry, "/probe", CancellationToken.None), out var started)));
+            entry => cache.FetchAsync(entry, "/probe", CancellationToken.None), out _)));
 
         var ok = fetchCount == 1
                  && results.All(r => r is not null)
@@ -90,8 +90,10 @@ internal static class SelfCheck
 
         var payload = RandomNumberGenerator.GetBytes(20 * chunk);
         var expected = Convert.ToHexStringLower(SHA256.HashData(payload));
-        using var body = new StreamSpreader(Path.Combine(scratch.Path, "follow-check"), false);
+        await using var body = new StreamSpreader(Path.Combine(scratch.Path, "follow-check"), false);
 
+        // ReSharper disable AccessToDisposedClosure -- the finally below drains the writer and the reader
+        // fan-out is awaited, so every closure is finished before the `using` disposes `body`.
         var writer = Task.Run(async () =>
         {
             try
@@ -108,31 +110,40 @@ internal static class SelfCheck
             }
         });
 
-        // Bounded, so a writer that faults before creating the file reports a failure instead of hanging
-        // the whole self-check -- which is exactly what an earlier version of this did.
-        for (var waited = 0; !File.Exists(body.Path); waited += 2)
+        int[] joinAtMs = [0, 60, 150, 300, 600];
+        string[] hashes;
+
+        try
         {
-            if (waited > 5000)
+            // Bounded, so a writer that faults before creating the file reports a failure instead of hanging
+            // the whole self-check -- which is exactly what an earlier version of this did.
+            for (var waited = 0; !File.Exists(body.Path); waited += 2)
             {
-                Console.WriteLine("FAIL: the writer never created the body file");
-                await writer;
-                return false;
+                if (waited > 5000)
+                {
+                    Console.WriteLine("FAIL: the writer never created the body file");
+                    return false;
+                }
+
+                await Task.Delay(2);
             }
 
-            await Task.Delay(2);
+            hashes = await Task.WhenAll(joinAtMs.Select(async delay =>
+            {
+                await Task.Delay(delay);
+                await using var reader = body.OpenRead();
+                using var sink = new MemoryStream(payload.Length);
+                await reader.CopyToAsync(sink);
+                return Convert.ToHexStringLower(SHA256.HashData(sink.ToArray()));
+            }));
         }
-
-        int[] joinAtMs = [0, 60, 150, 300, 600];
-        var hashes = await Task.WhenAll(joinAtMs.Select(async delay =>
+        finally
         {
-            await Task.Delay(delay);
-            await using var reader = body.OpenRead();
-            using var sink = new MemoryStream(payload.Length);
-            await reader.CopyToAsync(sink);
-            return Convert.ToHexStringLower(SHA256.HashData(sink.ToArray()));
-        }));
-
-        await writer;
+            // The writer holds `body`. Drain it on every path, or a reader that faults leaves it writing
+            // into a spreader the `using` has already disposed.
+            await writer;
+        }
+        // ReSharper restore AccessToDisposedClosure
 
         var matched = hashes.Count(h => h == expected);
         var ok = matched == joinAtMs.Length;

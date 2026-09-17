@@ -11,17 +11,17 @@ namespace Selo.Controllers.Helpers;
 /// </summary>
 public sealed class WebSocketTextReader : IDisposable
 {
-    private readonly Decoder decoder = Encoding.UTF8.GetDecoder();
-    private char[] chars = ArrayPool<char>.Shared.Rent(4096);
-    private byte[] receive = ArrayPool<byte>.Shared.Rent(4096);
+    private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
+    private char[] _chars = ArrayPool<char>.Shared.Rent(4096);
+    private byte[] _receive = ArrayPool<byte>.Shared.Rent(4096);
 
     public void Dispose()
     {
-        if (receive.Length > 0) ArrayPool<byte>.Shared.Return(receive);
-        if (chars.Length > 0) ArrayPool<char>.Shared.Return(chars);
+        if (_receive.Length > 0) ArrayPool<byte>.Shared.Return(_receive);
+        if (_chars.Length > 0) ArrayPool<char>.Shared.Return(_chars);
 
-        receive = [];
-        chars = [];
+        _receive = [];
+        _chars = [];
     }
 
     /// <returns>
@@ -35,26 +35,26 @@ public sealed class WebSocketTextReader : IDisposable
         {
             if (webSocket.State != WebSocketState.Open) return null;
 
-            decoder.Reset();
+            _decoder.Reset();
             var length = 0;
             ValueWebSocketReceiveResult receiveResult;
 
             do
             {
-                receiveResult = await webSocket.ReceiveAsync(receive.AsMemory(), cancellationToken);
+                receiveResult = await webSocket.ReceiveAsync(_receive.AsMemory(), cancellationToken);
                 if (receiveResult.MessageType == WebSocketMessageType.Close) return null;
                 if (receiveResult.MessageType != WebSocketMessageType.Text) continue;
 
                 // a frame can end mid-codepoint, so the decoder carries the remainder over
                 // rather than each frame being decoded on its own
                 var room = Encoding.UTF8.GetMaxCharCount(receiveResult.Count);
-                if (length + room > chars.Length) GrowChars(length, length + room);
+                if (length + room > _chars.Length) GrowChars(length, length + room);
 
-                length += decoder.GetChars(receive.AsSpan(0, receiveResult.Count), chars.AsSpan(length),
+                length += _decoder.GetChars(_receive.AsSpan(0, receiveResult.Count), _chars.AsSpan(length),
                     receiveResult.EndOfMessage);
             } while (!receiveResult.EndOfMessage);
 
-            return chars.AsMemory(0, length);
+            return _chars.AsMemory(0, length);
         }
         // A connection that goes away is the end of the session, not a fault:
         // null is what the caller already treats as "this socket is done". Any
@@ -75,9 +75,9 @@ public sealed class WebSocketTextReader : IDisposable
     private void GrowChars(int length, int size)
     {
         var next = ArrayPool<char>.Shared.Rent(size);
-        chars.AsSpan(0, length).CopyTo(next);
+        _chars.AsSpan(0, length).CopyTo(next);
 
-        ArrayPool<char>.Shared.Return(chars);
-        chars = next;
+        ArrayPool<char>.Shared.Return(_chars);
+        _chars = next;
     }
 }

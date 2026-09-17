@@ -1,7 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using Serilog;
 
 namespace Gaida.Bot.Gaida;
 
@@ -12,25 +11,16 @@ namespace Gaida.Bot.Gaida;
 [SuppressMessage("Microsoft.Design", "CA1001:TypesThatOwnDisposableFieldsShouldBeDisposable",
     Justification = "One instance is shared by every account and lives as long as the process; there is no " +
                     "point in the run at which disposing it would be correct.")]
-public sealed class GaidaClient
+public sealed class GaidaClient(ILogger logger, string? baseUrl = null)
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
 
-    private readonly HttpClient _http;
-    private readonly ILogger _logger;
+    // No total timeout: /Audio/Download streams for the length of a track, and HttpClient's
+    // default 100s would cut every song off mid-play.
+    private readonly HttpClient _http = new() { Timeout = Timeout.InfiniteTimeSpan };
 
-    public GaidaClient(ILogger logger, string? baseUrl = null)
-    {
-        _logger = logger;
-        BaseUrl = (baseUrl ?? Environment.GetEnvironmentVariable("GAIDA_API_BASE_URL")
-            ?? "http://localhost:5340").TrimEnd('/');
-
-        // No total timeout: /Audio/Download streams for the length of a track, and HttpClient's
-        // default 100s would cut every song off mid-play.
-        _http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
-    }
-
-    public string BaseUrl { get; }
+    public string BaseUrl { get; } = (baseUrl ?? Environment.GetEnvironmentVariable("GAIDA_API_BASE_URL")
+        ?? "http://localhost:5340").TrimEnd('/');
 
     /// <summary>
     /// What a pasted value is: a local ID, a video, a playlist, or ordinary text to search. This is
@@ -49,7 +39,7 @@ public sealed class GaidaClient
         }
         catch (Exception e)
         {
-            _logger.Warning(e, "Resolving {Query} failed", query);
+            logger.Warning(e, "Resolving {Query} failed", query);
             return null;
         }
     }
@@ -66,7 +56,7 @@ public sealed class GaidaClient
 
         if (!response.IsSuccessStatusCode)
         {
-            _logger.Warning("Search for {Query} answered {Status}", query, response.StatusCode);
+            logger.Warning("Search for {Query} answered {Status}", query, response.StatusCode);
             yield break;
         }
 
@@ -87,7 +77,7 @@ public sealed class GaidaClient
 
         if (response.IsSuccessStatusCode) return response;
 
-        _logger.Warning("Opening audio for {Id} answered {Status}", id, response.StatusCode);
+        logger.Warning("Opening audio for {ID} answered {Status}", id, response.StatusCode);
         response.Dispose();
         return null;
     }
@@ -99,11 +89,11 @@ public sealed class GaidaClient
         {
             using var response = await _http.GetAsync(
                 $"{BaseUrl}/Audio/Preload/Opus/{bitrate}?id={Uri.EscapeDataString(id)}");
-            _logger.Debug("Preloading {Id} answered {Status}", id, response.StatusCode);
+            logger.Debug("Preloading {ID} answered {Status}", id, response.StatusCode);
         }
         catch (Exception e)
         {
-            _logger.Debug(e, "Preloading {Id} failed", id);
+            logger.Debug(e, "Preloading {ID} failed", id);
         }
     }
 
@@ -121,7 +111,7 @@ public sealed class GaidaClient
         }
         catch (Exception e)
         {
-            _logger.Warning(e, "Fetching lyrics for {Id} failed", id);
+            logger.Warning(e, "Fetching lyrics for {ID} failed", id);
             return null;
         }
     }

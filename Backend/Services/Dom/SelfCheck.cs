@@ -34,7 +34,7 @@ internal static class SelfCheck
 
         var created = store.Register("Радост", "correct horse battery");
         var sameNameOtherCase = store.Register("радост", "another password entirely");
-        var short_ = store.Register("kris", "short");
+        var shortPassword = store.Register("kris", "short");
         var spaced = store.Register("two words", "correct horse battery");
 
         var wrongPassword = store.Login("Радост", "correct horse batteri");
@@ -43,7 +43,7 @@ internal static class SelfCheck
 
         var ok = created.token is not null
                  && sameNameOtherCase.error == "username_taken"
-                 && short_.error == "invalid_request"
+                 && shortPassword.error == "invalid_request"
                  && spaced.error == "invalid_request"
                  && wrongPassword.error == "invalid_credentials"
                  // a wrong password and a missing account must be indistinguishable to the caller
@@ -54,7 +54,7 @@ internal static class SelfCheck
 
         Report(ok, "registration rules hold and a password verifies only against itself",
             $"created={created.error ?? "ok"} duplicate={sameNameOtherCase.error} " +
-            $"weak={short_.error} spaced={spaced.error} wrong={wrongPassword.error} " +
+            $"weak={shortPassword.error} spaced={spaced.error} wrong={wrongPassword.error} " +
             $"missing={noSuchUser.error} login={right.error ?? "ok"} users={store.UserCount}");
 
         return ok;
@@ -199,11 +199,8 @@ internal static class SelfCheck
     /// <summary>A throwaway accounts file, so a self-check run never touches a real one.</summary>
     private sealed class ScratchFile : IDisposable
     {
-        public ScratchFile() =>
-            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
-                "dom-selfcheck-" + Guid.NewGuid().ToString("n") + ".json");
-
-        public string Path { get; }
+        public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+            "dom-selfcheck-" + Guid.NewGuid().ToString("n") + ".json");
 
         public void Dispose()
         {

@@ -1,4 +1,5 @@
 using System.Globalization;
+using JetBrains.Annotations;
 
 namespace Selo.Multiplayer;
 
@@ -7,6 +8,7 @@ namespace Selo.Multiplayer;
 ///     returns. Duplicated rather than referenced because Selo takes no project reference into
 ///     this repo; keep the two in sync if that contract ever changes.
 /// </summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record SearchResultDto(
     string Id,
     string? Name,

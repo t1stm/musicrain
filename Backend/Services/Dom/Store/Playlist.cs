@@ -8,7 +8,7 @@ namespace Dom.Store;
 /// </summary>
 public sealed class Playlist
 {
-    public required string Id { get; set; }
+    public required string Id { get; init; }
 
     /// <summary>The owner's username as they typed it. <see cref="OwnerKey" /> is what ownership is decided on.</summary>
     public required string Owner { get; set; }
@@ -20,7 +20,7 @@ public sealed class Playlist
     public string? CoverFile { get; set; }
 
     public List<TrackSnapshot> Tracks { get; set; } = [];
-    public DateTimeOffset CreatedUtc { get; set; }
+    public DateTimeOffset CreatedUtc { get; init; }
     public DateTimeOffset UpdatedUtc { get; set; }
 
     [JsonIgnore] public string OwnerKey => User.Normalize(Owner);
@@ -37,13 +37,13 @@ public sealed class Playlist
 /// </summary>
 public sealed class TrackSnapshot
 {
-    public required string Id { get; set; }
-    public required string Name { get; set; }
-    public required string Artist { get; set; }
-    public string? Album { get; set; }
+    public required string Id { get; init; }
+    public required string Name { get; init; }
+    public required string Artist { get; init; }
+    public string? Album { get; init; }
 
     /// <summary>A <see cref="TimeSpan" /> string, <c>hh:mm:ss</c> — the shape the rest of the API speaks.</summary>
-    public string Duration { get; set; } = "00:00:00";
+    public string Duration { get; init; } = "00:00:00";
 
-    public string? ThumbnailUrl { get; set; }
+    public string? ThumbnailUrl { get; init; }
 }

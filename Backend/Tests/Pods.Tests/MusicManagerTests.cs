@@ -23,7 +23,7 @@ public class MusicManagerTests
     {
         var song = new MusicInfo
         {
-            ID = "romanized",
+            Id = "romanized",
             Titles = ["Притури се планината", "Prituri se planinata"],
             Artists = ["Стефка Съботинова", "Stefka Sabotinova"]
         };
@@ -52,7 +52,7 @@ public class MusicManagerTests
         // The tag said "Mako", the folder said "Maki". Both are in the array, both are searchable, and
         // nothing had to decide which one was the typo.
         var song = new MusicInfo
-            { ID = "wings", Titles = ["Wings of Fire"], Artists = ["Mako & Sayuki", "Maki & Sayuki"] };
+            { Id = "wings", Titles = ["Wings of Fire"], Artists = ["Mako & Sayuki", "Maki & Sayuki"] };
         var manager = new TestMusicManager(song);
 
         Assert.Equal([song], manager.SearchByTerm("Maki").ToList());
@@ -120,7 +120,7 @@ public class MusicManagerTests
     {
         return new MusicInfo
         {
-            ID = id,
+            Id = id,
             Titles = [title],
             Artists = [artist]
         };

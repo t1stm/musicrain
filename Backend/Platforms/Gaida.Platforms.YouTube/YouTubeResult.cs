@@ -13,6 +13,6 @@ public sealed class YouTubeResult : PlatformResult, ISupportsCaching
 
     public override string GetDownloadUrl()
     {
-        return $"https://www.youtube.com/watch?v={GetPureID()}";
+        return $"https://www.youtube.com/watch?v={GetPureId()}";
     }
 }

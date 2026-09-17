@@ -59,7 +59,7 @@ public static partial class Classify
             ? pathParts.FirstOrDefault()
             : uri.AbsolutePath.Equals("/watch", StringComparison.OrdinalIgnoreCase)
                 ? parameters.GetValueOrDefault("v")
-                : pathParts.Length >= 2 && pathParts[0] is "shorts" or "embed" or "live"
+                : pathParts is ["shorts" or "embed" or "live", _, ..]
                     ? pathParts[1]
                     : null;
 

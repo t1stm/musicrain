@@ -11,10 +11,10 @@ public class Multiplayer(ILogger<Multiplayer> logger, MultiplayerManager manager
     [HttpPost("/Audio/Multiplayer/CreateRoom")]
     public async Task<IActionResult> CreateRoom()
     {
-        var roomID = await manager.CreateNewRoom();
-        logger.LogInformation("Room created: {Room}", roomID);
+        var roomId = await manager.CreateNewRoom();
+        logger.LogInformation("Room created: {Room}", roomId);
 
-        return new JsonResult(manager.GetRoom(roomID));
+        return new JsonResult(manager.GetRoom(roomId));
     }
 
     [HttpGet("/Audio/Multiplayer/Rooms")]
@@ -67,7 +67,7 @@ public class Multiplayer(ILogger<Multiplayer> logger, MultiplayerManager manager
     {
         var user = new User
         {
-            ID = "dummy user",
+            Id = "dummy user",
             WebSocket = webSocket
         };
 
@@ -104,20 +104,20 @@ public class Multiplayer(ILogger<Multiplayer> logger, MultiplayerManager manager
         }
     }
 
-    private async Task HandleRoomJoinWebSocket(WebSocket webSocket, Guid roomID, string? username, string id,
+    private async Task HandleRoomJoinWebSocket(WebSocket webSocket, Guid roomId, string? username, string id,
         CancellationToken cancellationToken)
     {
         try
         {
             using var reader = new WebSocketTextReader();
-            var open = await HandleUserMessage(id, roomID, webSocket, default, username);
+            var open = await HandleUserMessage(id, roomId, webSocket, default, username);
 
             while (open)
             {
                 var message = await reader.ReadWholeMessageAsync(webSocket, cancellationToken);
                 if (message is null) break;
 
-                open = await HandleUserMessage(id, roomID, webSocket, message.Value);
+                open = await HandleUserMessage(id, roomId, webSocket, message.Value);
             }
 
             await CloseNormallyAsync(webSocket);
@@ -129,7 +129,7 @@ public class Multiplayer(ILogger<Multiplayer> logger, MultiplayerManager manager
             // already dropped, a lookup that fails — used to strand them there.
             // The barriers count against the live member list, so one stranded
             // member is a room that never advances past its current track again.
-            var room = manager.GetRoom(roomID);
+            var room = manager.GetRoom(roomId);
             await (room?.RemoveUser(id) ?? Task.CompletedTask);
 
             logger.LogDebug("WebSocket '{ID}' disconnected", id);
@@ -152,14 +152,14 @@ public class Multiplayer(ILogger<Multiplayer> logger, MultiplayerManager manager
     }
 
     /// <returns>Whether the room is still open.</returns>
-    private async Task<bool> HandleUserMessage(string id, Guid roomID, WebSocket webSocket,
+    private async Task<bool> HandleUserMessage(string id, Guid roomId, WebSocket webSocket,
         ReadOnlyMemory<char> message, string? initialUsername = null)
     {
         // guarded: the frame only becomes a string when someone is actually listening for it
         if (logger.IsEnabled(LogLevel.Debug))
             logger.LogDebug("WebSocket '{ID}' received: '{Message}'", id, message.ToString());
 
-        var room = manager.GetRoom(roomID);
+        var room = manager.GetRoom(roomId);
         if (room is null) return false;
 
         var user = await room.GetOrAddUser(id, webSocket, initialUsername);

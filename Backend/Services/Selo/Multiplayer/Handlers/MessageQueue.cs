@@ -4,7 +4,7 @@ namespace Selo.Multiplayer.Handlers;
 
 public class MessageQueue(UserStore store)
 {
-    protected readonly SemaphoreSlim Sync = new(1);
+    private readonly SemaphoreSlim _sync = new(1);
 
     public UserStore CurrentStore => store;
 
@@ -25,7 +25,7 @@ public class MessageQueue(UserStore store)
     /// <summary>Sends one pooled frame to every member, then returns its buffer.</summary>
     public async Task Add(Utf8Message message)
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
         try
         {
             foreach (var (_, user) in store.Users)
@@ -40,7 +40,7 @@ public class MessageQueue(UserStore store)
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
             message.Dispose();
         }
     }

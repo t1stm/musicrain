@@ -1,0 +1,9 @@
+<Project>
+
+  <!-- ReSharper cannot see through JSON serialization, Discord command dispatch or IConfiguration
+       binding, so the types those reach carry [UsedImplicitly]. One reference for every project. -->
+  <ItemGroup>
+    <PackageReference Include="JetBrains.Annotations" Version="2024.3.0"/>
+  </ItemGroup>
+
+</Project>

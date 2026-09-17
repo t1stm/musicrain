@@ -77,7 +77,7 @@ internal static class SelfCheck
     private static bool Index()
     {
         using var scratch = new ScratchDirectory();
-        var row = new LyricsRow("audio://x", LyricsKind.Synchronized, LyricsOrigin.LRCLIB,
+        var row = new LyricsRow("audio://x", LyricsKind.Synchronized, LyricsOrigin.Lrclib,
             LyricsVolume.Library, "Rock/x.lrc", DateTimeOffset.UtcNow);
 
         var index = new LyricsIndex(scratch.Path, Quiet);
@@ -98,7 +98,7 @@ internal static class SelfCheck
         var torn = new LyricsIndex(scratch.Path, Quiet);
 
         return Check("a row round-trips through the file",
-                   round is { Type: LyricsKind.Synchronized, Source: LyricsOrigin.LRCLIB, Path: "Rock/x.lrc" })
+                   round is { Type: LyricsKind.Synchronized, Source: LyricsOrigin.Lrclib, Path: "Rock/x.lrc" })
                & Check("the file names the values rather than numbering them",
                    written.Contains("\"Synchronized\""))
                & Check("a miss inside the retry window is believed",

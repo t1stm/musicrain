@@ -25,7 +25,7 @@ public sealed record LocalMatch(
 public partial class MusicManager
 {
     /// <summary>A weak match has to agree on length; a strong one never has to, since uploads carry intros.</summary>
-    public const double WeakDurationSeconds = 20;
+    private const double WeakDurationSeconds = 20;
 
     /// <summary>An unrecognised bracket is a small doubt, not a disqualification.</summary>
     private const double UnknownTagPenalty = 0.02;

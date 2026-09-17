@@ -57,7 +57,7 @@ public class LyricsTests : IDisposable
     {
         var entry = Track("Rock/Rammstein/Rammstein - Sonne.flac");
         entry.LyricsType = LyricsKind.Synchronized;
-        entry.LyricsSource = LyricsOrigin.LRCLIB;
+        entry.LyricsSource = LyricsOrigin.Lrclib;
         entry.LyricsChecked = new DateOnly(2026, 1, 1);
 
         Assert.True(MusicManager.ReconcileLyrics(entry));
@@ -72,10 +72,10 @@ public class LyricsTests : IDisposable
     {
         var entry = Track("Rock/Rammstein/Rammstein - Sonne.flac", ".lrc");
         entry.LyricsType = LyricsKind.Synchronized;
-        entry.LyricsSource = LyricsOrigin.LRCLIB;
+        entry.LyricsSource = LyricsOrigin.Lrclib;
 
         Assert.False(MusicManager.ReconcileLyrics(entry));
-        Assert.Equal(LyricsOrigin.LRCLIB, entry.LyricsSource);
+        Assert.Equal(LyricsOrigin.Lrclib, entry.LyricsSource);
     }
 
     // ── Info.json ───────────────────────────────────────────────────────────────────────────────
@@ -85,9 +85,9 @@ public class LyricsTests : IDisposable
     {
         var entry = new MusicInfo
         {
-            ID = "ramsonne-x9",
+            Id = "ramsonne-x9",
             LyricsType = LyricsKind.Synchronized,
-            LyricsSource = LyricsOrigin.LRCLIB,
+            LyricsSource = LyricsOrigin.Lrclib,
             LyricsChecked = new DateOnly(2026, 9, 15)
         };
 
@@ -98,7 +98,7 @@ public class LyricsTests : IDisposable
 
         var read = JsonSerializer.Deserialize<MusicInfo>(json, MusicInfo.SerializerOptions)!;
         Assert.Equal(LyricsKind.Synchronized, read.LyricsType);
-        Assert.Equal(LyricsOrigin.LRCLIB, read.LyricsSource);
+        Assert.Equal(LyricsOrigin.Lrclib, read.LyricsSource);
     }
 
     [Fact]
@@ -120,7 +120,7 @@ public class LyricsTests : IDisposable
             Entry("older", checkedOn: today.AddDays(-200)));
 
         var missing = manager.MissingLyrics(10, today.AddDays(-30));
-        Assert.Equal(["fresh", "older", "retried"], missing.Select(song => song.ID));
+        Assert.Equal(["fresh", "older", "retried"], missing.Select(song => song.Id));
     }
 
     [Fact]
@@ -139,7 +139,7 @@ public class LyricsTests : IDisposable
         var manager = Seeded(Entry("has-them", kind: LyricsKind.Unsynchronized), Entry("wants-them"));
 
         Assert.Equal(["wants-them"], manager.MissingLyrics(10, DateOnly.FromDateTime(DateTime.UtcNow))
-            .Select(song => song.ID));
+            .Select(song => song.Id));
     }
 
     // ── StampLyricsAsync ────────────────────────────────────────────────────────────────────────
@@ -147,7 +147,7 @@ public class LyricsTests : IDisposable
     [Fact]
     public async Task AnUnknownIdIsRefused()
     {
-        var (entry, error) = await Seeded().StampLyricsAsync("nobody", LyricsKind.Synchronized, LyricsOrigin.LRCLIB);
+        var (entry, error) = await Seeded().StampLyricsAsync("nobody", LyricsKind.Synchronized, LyricsOrigin.Lrclib);
 
         Assert.Null(entry);
         Assert.Equal("No song with that ID.", error);
@@ -170,7 +170,7 @@ public class LyricsTests : IDisposable
     {
         var manager = Seeded(Entry("has-them", kind: LyricsKind.Unsynchronized));
 
-        var (entry, error) = await manager.StampLyricsAsync("has-them", LyricsKind.Synchronized, LyricsOrigin.LRCLIB);
+        var (entry, error) = await manager.StampLyricsAsync("has-them", LyricsKind.Synchronized, LyricsOrigin.Lrclib);
 
         Assert.Null(entry);
         Assert.Equal("That entry already has lyrics.", error);
@@ -184,7 +184,7 @@ public class LyricsTests : IDisposable
         var (_, error) = await manager.StampLyricsAsync("wants-them", LyricsKind.Synchronized, LyricsOrigin.Deezer);
         Assert.Null(error);
 
-        var written = File.ReadAllText(Path.Combine(_storage, "Rock/Rammstein/Info.json"));
+        var written = await File.ReadAllTextAsync(Path.Combine(_storage, "Rock/Rammstein/Info.json"));
         Assert.Contains("\"LyricsSource\": \"Deezer\"", written);
     }
 
@@ -199,12 +199,12 @@ public class LyricsTests : IDisposable
 
         if (sidecar is not null) File.WriteAllText(Path.ChangeExtension(path, sidecar), "Alle warten");
 
-        return new MusicInfo { ID = "ramsonne-x9", RelativeLocation = relative };
+        return new MusicInfo { Id = "ramsonne-x9", RelativeLocation = relative };
     }
 
     private static MusicInfo Entry(string id, LyricsKind? kind = null, DateOnly? checkedOn = null) => new()
     {
-        ID = id,
+        Id = id,
         RelativeLocation = $"Rock/Rammstein/{id}.flac",
         LyricsType = kind,
         LyricsChecked = checkedOn

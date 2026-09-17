@@ -137,6 +137,7 @@ public static class Streaming
 
     /// <summary>Adapts an already-materialised sequence to the streaming interfaces.</summary>
 #pragma warning disable CS1998 // sequence is already in memory, there is nothing to await
+    // ReSharper disable once AsyncMethodWithoutAwait -- an IAsyncEnumerable iterator has to say 'async'
     public static async IAsyncEnumerable<T> AsAsync<T>(this IEnumerable<T> source)
 #pragma warning restore CS1998
     {

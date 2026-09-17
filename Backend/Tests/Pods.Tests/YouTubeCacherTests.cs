@@ -13,7 +13,7 @@ public class YouTubeCacherTests
         var results = await cacher.GetRandomAsync(4);
 
         Assert.Equal(4, results.Length);
-        Assert.Equal(4, results.DistinctBy(result => result.ID).Count());
+        Assert.Equal(4, results.DistinctBy(result => result.Id).Count());
     }
 
     /// <summary>A short cache must return what it has, so the endpoint can backfill the difference locally.</summary>
@@ -29,14 +29,14 @@ public class YouTubeCacherTests
 
     private static YouTubeResult Result(string id)
     {
-        return new YouTubeResult { ID = id, Downloaders = [] };
+        return new YouTubeResult { Id = id, Downloaders = [] };
     }
 
     private sealed class TestCacher : YouTubeCacher
     {
         public TestCacher(params YouTubeResult[] results) : base(Serilog.Core.Logger.None)
         {
-            foreach (var result in results) Cache[result.ID] = result;
+            foreach (var result in results) Cache[result.Id] = result;
         }
     }
 }

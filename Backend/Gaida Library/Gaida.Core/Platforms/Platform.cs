@@ -3,7 +3,7 @@ using Serilog;
 
 namespace Gaida.Core.Platforms;
 
-public abstract class Platform : ISupportsID
+public abstract class Platform : ISupportsId
 {
     protected Platform(ILogger logger)
     {
@@ -12,21 +12,17 @@ public abstract class Platform : ISupportsID
 
     protected ILogger Logger { get; }
 
-    protected abstract HashSet<string> SearchIDIdentifiers { get; }
-    protected abstract HashSet<string> SearchPlaylistIdentifiers { get; }
+    protected abstract HashSet<string> SearchIdIdentifiers { get; }
 
-    public virtual HashSet<string>.AlternateLookup<ReadOnlySpan<char>> SearchIDIdentifiersLookup =>
-        SearchIDIdentifiers.GetAlternateLookup<ReadOnlySpan<char>>();
-
-    public virtual HashSet<string>.AlternateLookup<ReadOnlySpan<char>> SearchPlaylistIdentifiersLookup =>
-        SearchPlaylistIdentifiers.GetAlternateLookup<ReadOnlySpan<char>>();
+    public HashSet<string>.AlternateLookup<ReadOnlySpan<char>> SearchIdIdentifiersLookup =>
+        SearchIdIdentifiers.GetAlternateLookup<ReadOnlySpan<char>>();
 
     protected abstract List<SearchProvider> SearchProviders { get; set; }
     protected abstract List<ContentGetter> ContentDownloaders { get; set; }
 
     public virtual async Task<PlatformResult?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
     {
-        foreach (var searchProvider in SearchProviders.OfType<ISupportsID>())
+        foreach (var searchProvider in SearchProviders.OfType<ISupportsId>())
             try
             {
                 var result = await searchProvider.GetByIdAsync(id, cancellationToken);
@@ -40,13 +36,7 @@ public abstract class Platform : ISupportsID
         return null;
     }
 
-    /// <summary>Whether this platform recognises the query as one of its playlist URLs.</summary>
-    public virtual bool IsPlaylistUrl(ReadOnlySpan<char> query)
-    {
-        return false;
-    }
-
-    public virtual void Initialize()
+    public void Initialize()
     {
         SearchProviders = [.. SearchProviders.OrderByDescending(x => x.Priority)];
         ContentDownloaders = [.. ContentDownloaders.OrderByDescending(x => x.Priority)];

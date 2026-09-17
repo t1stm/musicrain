@@ -22,19 +22,19 @@ public class YouTubeDownloadTests(ITestOutputHelper output)
 
         audioManager.RegisterPlatform(new YouTube(Logger.None));
 
-        var result = await audioManager.SearchID("yt://dQw4w9WgXcQ");
+        var result = await audioManager.SearchId("yt://dQw4w9WgXcQ");
         Assert.True(result is not null, "YouTube search for 'dQw4w9WgXcQ' failed.");
 
         output.WriteLine("Found YouTube result.");
 
-        var streamSpreader = await result!.GetContentDataAsync();
+        var streamSpreader = await result.GetContentDataAsync();
         Assert.True(streamSpreader is not null, "YouTube download failed.");
 
         output.WriteLine("Downloading result.");
 
         var bodies = await Task.WhenAll(Enumerable.Range(0, streamCount).Select(async _ =>
         {
-            await using var reader = streamSpreader!.OpenRead();
+            await using var reader = streamSpreader.OpenRead();
             using var sink = new MemoryStream();
             await reader.CopyToAsync(sink);
             return sink.ToArray();

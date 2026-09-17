@@ -62,7 +62,7 @@ internal static class Admin
 
     /// <summary>400 with the reason, rather than a bare failure: the operator needs to know why.</summary>
     private static IResult Answer((bool ok, string? error) result) =>
-        result.ok ? Results.Ok() : Results.BadRequest(new { error = result.error });
+        result.ok ? Results.Ok() : Results.BadRequest(new { result.error });
 
     /// <summary>Same best-effort unlink the playlist controller does, for the same reason.</summary>
     private static void Forget(string directory, string coverFile)

@@ -9,7 +9,7 @@ namespace Gaida.Platforms.YouTube.Getters;
 public class GetterYouTubeExplode(ILogger logger) : ContentGetter(logger)
 {
     public override int Priority => 40;
-    protected static YoutubeClient Client => YouTubeSearchProviderExplode.Client;
+    private static YoutubeClient Client => YouTubeSearchProviderExplode.Client;
 
     public override async Task<StreamSpreader?> GetContentDataAsync(PlatformResult result,
         CancellationToken cancellationToken)
@@ -23,14 +23,14 @@ public class GetterYouTubeExplode(ILogger logger) : ContentGetter(logger)
         try
         {
             var manifest = await Client.Videos.Streams.GetManifestAsync(
-                youtubeResult.GetPureID().ToString(), cancellationToken);
+                youtubeResult.GetPureId().ToString(), cancellationToken);
 
             var chosenAudioOnlyStream = manifest.GetAudioOnlyStreams()
                 .MaxBy(s => s.Bitrate.KiloBitsPerSecond * (s.AudioCodec is "Opus" ? 2 : 1));
 
             if (chosenAudioOnlyStream is null)
             {
-                Logger.Error("Failed to find audio-only stream for YouTube video ID: {ID}", youtubeResult.ID);
+                Logger.Error("Failed to find audio-only stream for YouTube video ID: {ID}", youtubeResult.Id);
                 return null;
             }
 
@@ -41,11 +41,11 @@ public class GetterYouTubeExplode(ILogger logger) : ContentGetter(logger)
                 {
                     await Client.Videos.Streams.CopyToAsync(chosenAudioOnlyStream, streamSpreader,
                         cancellationToken: cancellationToken);
-                    Logger.Debug("Downloaded audio-only stream for YouTube video ID: {ID}", youtubeResult.ID);
+                    Logger.Debug("Downloaded audio-only stream for YouTube video ID: {ID}", youtubeResult.Id);
                 }
                 catch (Exception e)
                 {
-                    Logger.Fatal(e, "Error while copying stream for YouTube video ID: {ID}", youtubeResult.ID);
+                    Logger.Fatal(e, "Error while copying stream for YouTube video ID: {ID}", youtubeResult.Id);
                 }
                 finally
                 {
@@ -57,7 +57,7 @@ public class GetterYouTubeExplode(ILogger logger) : ContentGetter(logger)
         }
         catch (Exception e)
         {
-            Logger.Fatal(e, "Error while processing YouTube video ID: {ID}", youtubeResult.ID);
+            Logger.Fatal(e, "Error while processing YouTube video ID: {ID}", youtubeResult.Id);
             return null;
         }
     }

@@ -35,7 +35,7 @@ public sealed class PlayableResolver(
     /// <returns>The playable result, the input when it already is one, or <c>null</c> when nothing was found.</returns>
     public async Task<PlatformResult?> ResolveOne(PlatformResult result, CancellationToken cancellationToken)
     {
-        if (!managerService.NeedsResolving(result.ID)) return result;
+        if (!managerService.NeedsResolving(result.Id)) return result;
 
         var name = result.OriginalTitle is { Length: > 0 } title ? title : result.Name;
         var artist = result.OriginalArtist is { Length: > 0 } artistName ? artistName : result.Artist;
@@ -66,7 +66,7 @@ public sealed class PlayableResolver(
             await foreach (var hit in youTube.SearchKeywords(term, cancellationToken))
                 return hit;
 
-        logger.LogDebug("Nothing playable for {Id} ({Artist} — {Name})", result.ID, artist, name);
+        logger.LogDebug("Nothing playable for {ID} ({Artist} — {Name})", result.Id, artist, name);
         return null;
     }
 }

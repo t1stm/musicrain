@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ILogger = Serilog.ILogger;
@@ -51,18 +50,18 @@ public sealed class LrcLib
     /// <summary>Set by a 429's <c>Retry-After</c>. The sweep checks it; the on-demand path just fails.</summary>
     public DateTimeOffset? PausedUntil { get; private set; }
 
-    public int Requests { get; private set; }
-    public int Hits { get; private set; }
-    public int Misses { get; private set; }
-    public int RateLimited { get; private set; }
-    public string? LastError { get; private set; }
+    private int Requests { get; set; }
+    private int Hits { get; set; }
+    private int Misses { get; set; }
+    private int RateLimited { get; set; }
+    private string? LastError { get; set; }
 
     /// <summary>
     ///     Everything LRCLIB has for one track: the exact hit, then the fuzzy one, at most two requests.
     /// </summary>
     /// <returns>
     ///     The candidate to use, or <c>null</c> for both "nothing there" and "could not ask" — which
-    ///     <paramref name="clean" /> tells apart: <c>false</c> means write no row.
+    ///     <see cref="LastWasClean" /> tells apart: <c>false</c> means write no row.
     /// </returns>
     public async Task<LrcLibResult?> FindAsync(Track track, CancellationToken ct = default)
     {

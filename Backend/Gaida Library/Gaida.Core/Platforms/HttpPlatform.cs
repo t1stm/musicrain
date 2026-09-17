@@ -6,6 +6,7 @@ using System.Text.Json;
 using Gaida.Core.Platforms.Optional.Supports;
 using Gaida.Core.Streams;
 using Gaida.Core.Utils;
+using JetBrains.Annotations;
 using Serilog;
 
 namespace Gaida.Core.Platforms;
@@ -16,7 +17,7 @@ namespace Gaida.Core.Platforms;
 /// </summary>
 public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist, ISupportsRandomResults
 {
-    private static readonly JsonSerializerOptions jsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HttpClient _http;
 
     public HttpPlatform(ILogger logger, HttpClient http, IReadOnlyCollection<string> ids) : base(logger)
@@ -24,14 +25,12 @@ public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist,
         _http = http;
         var getter = new HttpGetter(logger, http);
 
-        SearchIDIdentifiers = [.. ids];
-        SearchPlaylistIdentifiers = [.. ids];
+        SearchIdIdentifiers = [.. ids];
         SearchProviders = [];
         ContentDownloaders = [getter];
     }
 
-    protected override HashSet<string> SearchIDIdentifiers { get; }
-    protected override HashSet<string> SearchPlaylistIdentifiers { get; }
+    protected override HashSet<string> SearchIdIdentifiers { get; }
     protected override List<SearchProvider> SearchProviders { get; set; }
     protected override List<ContentGetter> ContentDownloaders { get; set; }
 
@@ -104,12 +103,14 @@ public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist,
     ///     is deliberately not routed through <see cref="HttpGetter" />'s <see cref="StreamSpreader" />, since a
     ///     spreader cannot be read from and Gaida.API never fans this out to more than one consumer.
     /// </summary>
+    /// <param name="id">The content ID to fetch, as the pod issued it.</param>
     /// <param name="format">
     ///     What the caller intends to do with the bytes, when that changes what is worth fetching — today only
     ///     <c>"flac"</c>, which asks a pod that has a choice of source qualities for its lossless one. A hint,
     ///     not a demand: a pod that does not know the parameter ignores it and answers as it always did, so
     ///     nothing downstream may assume the response is in the format it asked for.
     /// </param>
+    /// <param name="cancellationToken">Cancels the request.</param>
     public async Task<HttpResponseMessage?> GetContentResponseAsync(string id, string? format = null,
         CancellationToken cancellationToken = default)
     {
@@ -127,7 +128,7 @@ public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist,
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
-            Logger.Warning(e, "Content request failed for {Id}", id);
+            Logger.Warning(e, "Content request failed for {ID}", id);
             return null;
         }
     }
@@ -153,7 +154,7 @@ public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist,
             ClassifyDto? dto;
             try
             {
-                dto = await response.Content.ReadFromJsonAsync<ClassifyDto>(jsonOptions, cancellationToken);
+                dto = await response.Content.ReadFromJsonAsync<ClassifyDto>(JsonOptions, cancellationToken);
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
@@ -166,7 +167,7 @@ public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist,
             if (!response.IsSuccessStatusCode)
                 return new ClassifyClaim(QueryType.Keywords, query, dto.Error ?? "The query is not supported.");
 
-            return new ClassifyClaim(dto.Kind == "playlist" ? QueryType.Playlist : QueryType.ID,
+            return new ClassifyClaim(dto.Kind == "playlist" ? QueryType.Playlist : QueryType.Id,
                 dto.Id ?? query, null);
         }
     }
@@ -179,7 +180,7 @@ public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist,
     {
         return new HttpResult
         {
-            ID = dto.Id ?? "",
+            Id = dto.Id ?? "",
             Name = dto.Name,
             Artist = dto.Artist,
             Album = dto.Album,
@@ -214,7 +215,7 @@ public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist,
         if (!response.IsSuccessStatusCode) yield break;
 
         await using var body = await response.Content.ReadAsStreamAsync(cancellationToken);
-        await foreach (var dto in JsonSerializer.DeserializeAsyncEnumerable<PodResultDto>(body, jsonOptions,
+        await foreach (var dto in JsonSerializer.DeserializeAsyncEnumerable<PodResultDto>(body, JsonOptions,
                            cancellationToken))
             if (dto is not null)
                 yield return ToResult(dto);
@@ -235,7 +236,7 @@ public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist,
         {
             using var response = await _http.GetAsync(path, cancellationToken);
             if (!response.IsSuccessStatusCode) return null;
-            return await response.Content.ReadFromJsonAsync<T>(jsonOptions, cancellationToken);
+            return await response.Content.ReadFromJsonAsync<T>(JsonOptions, cancellationToken);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
@@ -248,28 +249,31 @@ public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist,
 /// <summary>A search/resolve/playlist/random result as a pod hands it over — no <c>contentUrl</c>, no public host.</summary>
 public sealed class PodResultDto
 {
-    public string? Id { get; set; }
-    public string? Name { get; set; }
-    public string? Artist { get; set; }
-    public string? Album { get; set; }
-    public string? Duration { get; set; }
-    public string? ThumbnailUrl { get; set; }
-    public string? OriginalTitle { get; set; }
-    public string? OriginalArtist { get; set; }
+    public string? Id { get; init; }
+    public string? Name { get; init; }
+    public string? Artist { get; init; }
+    public string? Album { get; init; }
+    public string? Duration { get; init; }
+    public string? ThumbnailUrl { get; init; }
+    public string? OriginalTitle { get; init; }
+    public string? OriginalArtist { get; init; }
 }
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed class PodBrowseFolderDto
 {
     public string? Name { get; set; }
     public int Songs { get; set; }
 }
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed class PodBrowseDto
 {
     public List<PodBrowseFolderDto>? Folders { get; set; }
     public List<PodResultDto>? Files { get; set; }
 }
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed class PodVariantDto
 {
     public string? Match { get; set; }
@@ -282,9 +286,9 @@ public sealed class PodVariantDto
 
 internal sealed class ClassifyDto
 {
-    public string? Kind { get; set; }
-    public string? Id { get; set; }
-    public string? Error { get; set; }
+    public string? Kind { get; init; }
+    public string? Id { get; init; }
+    public string? Error { get; init; }
 }
 
 /// <summary>
@@ -297,7 +301,7 @@ public sealed class HttpResult : PlatformResult
 {
     public override string GetDownloadUrl()
     {
-        return ID;
+        return Id;
     }
 }
 
@@ -312,12 +316,12 @@ public sealed class HttpGetter(ILogger logger, HttpClient http) : ContentGetter(
         HttpResponseMessage response;
         try
         {
-            response = await http.GetAsync($"/content?id={Uri.EscapeDataString(result.ID)}",
+            response = await http.GetAsync($"/content?id={Uri.EscapeDataString(result.Id)}",
                 HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
-            Logger.Warning(e, "Content request failed for {Id}", result.ID);
+            Logger.Warning(e, "Content request failed for {ID}", result.Id);
             return null;
         }
 
@@ -340,7 +344,7 @@ public sealed class HttpGetter(ILogger logger, HttpClient http) : ContentGetter(
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
-                Logger.Warning(e, "Streaming content failed for {Id}", result.ID);
+                Logger.Warning(e, "Streaming content failed for {ID}", result.Id);
             }
             finally
             {

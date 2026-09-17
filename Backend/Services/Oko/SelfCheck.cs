@@ -2,7 +2,6 @@ using System.Net;
 using System.Text;
 using Microsoft.Extensions.Primitives;
 using System.Text.Json;
-using Serilog;
 using Serilog.Core;
 
 namespace Oko;

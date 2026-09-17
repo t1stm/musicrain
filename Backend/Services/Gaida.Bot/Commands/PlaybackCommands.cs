@@ -11,7 +11,7 @@ using DSharpPlus.Voice;
 using Gaida.Bot.Gaida;
 using Gaida.Bot.Players;
 using Gaida.Bot.Tools;
-using Serilog;
+using JetBrains.Annotations;
 
 namespace Gaida.Bot.Commands;
 
@@ -19,6 +19,7 @@ namespace Gaida.Bot.Commands;
 /// The playback and queue commands, with the old bot's names, aliases and arguments. Registered on
 /// the master account only — a second account listening for the same prefix would answer twice.
 /// </summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed class PlaybackCommands(PlayerController controller, GaidaClient api, ILogger logger)
 {
     [Command("play")]

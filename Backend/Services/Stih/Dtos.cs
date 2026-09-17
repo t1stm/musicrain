@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using JetBrains.Annotations;
+
 namespace Stih;
 
 // ── The public answer ───────────────────────────────────────────────────────────────────────────
@@ -6,12 +9,14 @@ namespace Stih;
 public sealed record LyricLineDto(double? At, string Text);
 
 /// <summary>What the words actually belong to, which is not always what was asked for.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record MatchedDto(string Title, string? Artist, int Length);
 
 /// <summary>
 ///     The body of <c>GET /Audio/Lyrics/Get</c>. <c>Lines</c> is present for both types so a client renders
 ///     one component either way and only the highlighting branches.
 /// </summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record LyricsDto(
     string Type,
     string? Source,
@@ -19,8 +24,10 @@ public sealed record LyricsDto(
     string Text,
     MatchedDto? Matched);
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record ApiError(string Code, string Message);
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record ApiErrorBody(ApiError Error);
 
 // ── The index on disk ───────────────────────────────────────────────────────────────────────────
@@ -36,7 +43,8 @@ public enum LyricsKind
 public enum LyricsOrigin
 {
     Deezer,
-    LRCLIB
+
+    [JsonStringEnumMemberName("LRCLIB")] Lrclib
 }
 
 /// <summary>Which of the two mounts a row's path is relative to, so moving either does not invalidate it.</summary>
@@ -66,6 +74,7 @@ public sealed record LyricsRow(
 // ── The wire, inbound ───────────────────────────────────────────────────────────────────────────
 
 /// <summary>What a platform pod pushes to <c>POST /register</c> after it downloads a track.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record RegisterDto(string? Id, string? Source, string? Text, string? Lrc);
 
 /// <summary>A pod's <c>/resolve</c> answer. The last three are gaida-local's alone; the others ignore them.</summary>
@@ -83,6 +92,7 @@ public sealed record PodResultDto(
     string? LyricsSource);
 
 /// <summary>One row of gaida-local's <c>/lyrics/missing</c>: everything the sweep needs, with no second call.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record MissingLyricsDto(
     string Id,
     string? Title,
@@ -109,6 +119,7 @@ public sealed record Track(
     LyricsKind? KnownType);
 
 /// <summary>One LRCLIB candidate, exactly as their API shapes it.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record LrcLibResult(
     int Id,
     string? TrackName,

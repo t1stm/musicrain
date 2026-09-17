@@ -3,11 +3,9 @@ using System.Diagnostics.CodeAnalysis;
 using DSharpPlus;
 using DSharpPlus.Entities;
 using DSharpPlus.Voice;
-using Gaida.Bot.Admin;
 using Gaida.Bot.Enums;
 using Gaida.Bot.Gaida;
 using Gaida.Bot.Messages;
-using Serilog;
 
 namespace Gaida.Bot.Players;
 
@@ -43,14 +41,14 @@ public sealed class Player
     public Statusbar Statusbar { get; } = new();
 
     public DiscordChannel? VoiceChannel { get; set; }
-    public DiscordChannel? Channel { get; set; }
-    public DiscordGuild? Guild { get; set; }
+    public DiscordChannel? Channel { get; init; }
+    public DiscordGuild? Guild { get; init; }
     public VoiceConnection? Connection { get; set; }
 
     public LoopMode LoopStatus { get; private set; } = LoopMode.None;
     public bool Paused { get; private set; }
     public bool Started { get; set; }
-    public bool Dead { get; private set; }
+    private bool Dead { get; set; }
     public Track? CurrentItem { get; private set; }
 
     public Stopwatch Stopwatch { get; } = new();
@@ -77,8 +75,6 @@ public sealed class Player
     {
         try
         {
-            Statusbar.Client = Client;
-            Statusbar.Guild = Guild;
             Statusbar.Channel = Channel;
             Statusbar.Player = this;
             _ = Task.Run(Statusbar.StartAsync);
@@ -164,7 +160,7 @@ public sealed class Player
 
             if (response is null)
             {
-                Logger.Warning("Nothing playable for {Id}, skipping it", item.Id);
+                Logger.Warning("Nothing playable for {ID}, skipping it", item.Id);
                 return;
             }
 
@@ -273,7 +269,6 @@ public sealed class Player
     {
         LoopMode.None => LoopMode.WholeQueue,
         LoopMode.WholeQueue => LoopMode.One,
-        LoopMode.One => LoopMode.None,
         _ => LoopMode.None
     };
 

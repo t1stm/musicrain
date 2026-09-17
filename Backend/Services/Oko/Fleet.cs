@@ -2,11 +2,13 @@ using System.Net.Http.Headers;
 using System.Net.ServerSentEvents;
 using System.Text.Json;
 using System.Threading.Channels;
+using JetBrains.Annotations;
 using ILogger = Serilog.ILogger;
 
 namespace Oko;
 
 /// <summary>One service Oko watches. Name is what the panel shows; Url is where it lives.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed class Target
 {
     public required string Name { get; set; }
@@ -27,7 +29,7 @@ public sealed class Fleet(IHttpClientFactory factory, IConfiguration configurati
     /// <summary>How long a target has to answer a snapshot before it is rendered as down.</summary>
     private static readonly TimeSpan SnapshotTimeout = TimeSpan.FromSeconds(5);
 
-    private readonly string token = configuration["ADMIN_TOKEN"] ?? "";
+    private readonly string _token = configuration["ADMIN_TOKEN"] ?? "";
 
     public IReadOnlyList<Target> Targets { get; } =
         configuration.GetSection("Targets").Get<Target[]>() ?? [];
@@ -210,7 +212,7 @@ public sealed class Fleet(IHttpClientFactory factory, IConfiguration configurati
     private HttpRequestMessage Request(Target target, string path)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, target.Url.TrimEnd('/') + path);
-        request.Headers.Add("X-Admin-Token", token);
+        request.Headers.Add("X-Admin-Token", _token);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return request;
     }
@@ -234,6 +236,7 @@ public sealed class Fleet(IHttpClientFactory factory, IConfiguration configurati
 }
 
 /// <summary>Every target as of one fan-out. A concrete type on purpose — see <see cref="ServiceStatus" />.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record FleetSnapshot(DateTimeOffset At, ServiceStatus[] Services);
 
 /// <summary>
@@ -245,7 +248,9 @@ public sealed record FleetSnapshot(DateTimeOffset At, ServiceStatus[] Services);
 ///     with a 200 and no content type — which looks exactly like a working endpoint until the panel
 ///     renders nothing.
 /// </remarks>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record ServiceStatus(string Name, string Url, bool Up, JsonElement? Snapshot, string? Error);
 
 /// <summary>One line of the merged feed: which service it came from, and what it said.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record FeedItem(string Target, string EventType, JsonElement Data);

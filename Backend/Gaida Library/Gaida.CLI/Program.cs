@@ -1,7 +1,6 @@
 ﻿using System.Text.Json;
 using Gaida.Core;
 using Gaida.Core.Platforms;
-using Gaida.Core.Streams;
 using Gaida.Platforms.MusicDatabase;
 using Gaida.Platforms.YouTube;
 using Serilog;
@@ -16,7 +15,7 @@ audioManager.RegisterPlatform(new YouTube(logger));
 audioManager.RegisterPlatform(new MusicDatabase(logger));
 
 // https://www.youtube.com/watch?v=dQw4w9WgXcQ
-var result = await audioManager.SearchID("yt://dQw4w9WgXcQ");
+var result = await audioManager.SearchId("yt://dQw4w9WgXcQ");
 if (result is null)
 {
     logger.Error("Search: not found");

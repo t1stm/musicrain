@@ -21,7 +21,7 @@ public static class YouTubeCacheProvider
         var exportDirectory = Environment.GetEnvironmentVariable("YOUTUBE_CACHE", EnvironmentVariableTarget.Process);
         if (exportDirectory is null) return Task.CompletedTask;
 
-        var filePath = Path.Combine(exportDirectory, $"{youtubeResult.GetPureID()}.webm");
+        var filePath = Path.Combine(exportDirectory, $"{youtubeResult.GetPureId()}.webm");
 
         // Already cached, or already being served straight out of the cache by GetterLocalCache -- in which
         // case the spreader's file IS filePath and moving it onto itself would be nonsense.

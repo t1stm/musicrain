@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using System.Text.RegularExpressions;
 using Gaida.Core.Platforms;
 using Gaida.Core.Platforms.Cross_Platform;
 using Gaida.Core.Platforms.Optional.Supports;
@@ -11,7 +10,7 @@ using Serilog;
 
 namespace Gaida.Platforms.YouTube;
 
-public sealed partial class YouTube : Platform, ISupportsSearch, ISupportsPlaylist, ISupportsRandomResults
+public sealed class YouTube : Platform, ISupportsSearch, ISupportsPlaylist, ISupportsRandomResults
 {
     private readonly YouTubeCacher _cacher;
 
@@ -33,8 +32,7 @@ public sealed partial class YouTube : Platform, ISupportsSearch, ISupportsPlayli
         ];
     }
 
-    protected override HashSet<string> SearchIDIdentifiers => ["yt://"];
-    protected override HashSet<string> SearchPlaylistIdentifiers => ["yt-playlist://"];
+    protected override HashSet<string> SearchIdIdentifiers => ["yt://"];
 
     protected override List<SearchProvider> SearchProviders { get; set; }
     protected override List<ContentGetter> ContentDownloaders { get; set; }
@@ -69,11 +67,6 @@ public sealed partial class YouTube : Platform, ISupportsSearch, ISupportsPlayli
             yield return result;
     }
 
-    public override bool IsPlaylistUrl(ReadOnlySpan<char> query)
-    {
-        return PlaylistRegex().IsMatch(query);
-    }
-
     /// <summary>
     ///     Streams results from the highest priority provider that returns any, caching what it saw on the way out.
     /// </summary>
@@ -98,7 +91,4 @@ public sealed partial class YouTube : Platform, ISupportsSearch, ISupportsPlayli
             yield break;
         }
     }
-
-    [GeneratedRegex(@"\/playlist\?list=[a-zA-Z0-9_-]+")]
-    private static partial Regex PlaylistRegex();
 }

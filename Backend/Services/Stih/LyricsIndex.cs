@@ -54,7 +54,6 @@ public sealed class LyricsIndex : IAsyncDisposable
 
     public int Count => _rows.Count;
 
-    public IReadOnlyCollection<LyricsRow> Rows => [.. _rows.Values];
 
     public LyricsRow? Get(string id)
     {
@@ -93,7 +92,7 @@ public sealed class LyricsIndex : IAsyncDisposable
             synchronized = rows.Count(row => row.Type == LyricsKind.Synchronized),
             unsynchronized = rows.Count(row => row.Type == LyricsKind.Unsynchronized),
             misses = rows.Count(row => row.Type is null),
-            fromLrcLib = rows.Count(row => row.Source == LyricsOrigin.LRCLIB),
+            fromLrcLib = rows.Count(row => row.Source == LyricsOrigin.Lrclib),
             fromDeezer = rows.Count(row => row.Source == LyricsOrigin.Deezer),
             alreadyThere = rows.Count(row => row.Type is not null && row.Source is null),
             inLibrary = rows.Count(row => row.Volume == LyricsVolume.Library),

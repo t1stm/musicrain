@@ -1,5 +1,4 @@
 using Gaida.Admin;
-using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using Gaida.Core.Platforms;
 using Gaida.Core.Streams;
@@ -105,7 +104,7 @@ static string StripScheme(string id)
     return separator < 0 ? id : id[(separator + 3)..];
 }
 
-/// <summary>Guarded exactly where Collect had it: a provider that throws halfway ends the array cleanly.</summary>
+// Guarded exactly where Collect had it: a provider that throws halfway ends the array cleanly.
 static async IAsyncEnumerable<ResultDto> Mapped(IAsyncEnumerable<PlatformResult> source,
     [EnumeratorCancellation] CancellationToken ct)
 {
@@ -114,11 +113,9 @@ static async IAsyncEnumerable<ResultDto> Mapped(IAsyncEnumerable<PlatformResult>
             yield return dto;
 }
 
-/// <summary>
-///     Pumps a stream spreader into the response body until the source closes or the client leaves. The
-///     download may still be writing while this drains it, so the reader follows the body as it grows
-///     rather than stopping at whatever had arrived when it opened.
-/// </summary>
+// Pumps a stream spreader into the response body until the source closes or the client leaves. The
+// download may still be writing while this drains it, so the reader follows the body as it grows
+// rather than stopping at whatever had arrived when it opened.
 static async Task PumpToResponse(StreamSpreader streamSpreader, HttpResponse response,
     CancellationToken cancellationToken)
 {

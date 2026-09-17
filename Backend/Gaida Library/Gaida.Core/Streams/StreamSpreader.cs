@@ -22,10 +22,10 @@ public class StreamSpreader : Stream
 
     private const int BufferSize = 64 * 1024;
 
-    private readonly SemaphoreSlim writeLock = new(1, 1);
-    private FileStream? file;
-    private string? keepAsPath;
-    private TaskCompletionSource signal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private FileStream? _file;
+    private string? _keepAsPath;
+    private TaskCompletionSource _signal = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <param name="path">
     /// Where the body lives. Defaults to a fresh temp file. Pass a path to write straight to its final
@@ -45,7 +45,7 @@ public class StreamSpreader : Stream
     /// <summary>The file backing this body. Stable except across <see cref="KeepAs" />, which moves it on close.</summary>
     public string Path { get; private set; }
 
-    public bool DeleteOnClose { get; private set; }
+    private bool DeleteOnClose { get; set; }
 
     /// <summary>Set once the source data is complete. A reader that observes this and then reads 0 bytes is done.</summary>
     public bool Closed { get; private set; }
@@ -59,7 +59,7 @@ public class StreamSpreader : Stream
     public override long Position { get; set; }
 
     /// <summary>Completes on the next write or on close. Capture it <em>before</em> testing <see cref="Closed" />.</summary>
-    private Task Changed => Volatile.Read(ref signal).Task;
+    private Task Changed => Volatile.Read(ref _signal).Task;
 
     /// <summary>
     ///     Adopts a file that already exists without copying a byte of it. The spreader is complete from the
@@ -82,7 +82,7 @@ public class StreamSpreader : Stream
     /// </summary>
     public void KeepAs(string path)
     {
-        keepAsPath = path;
+        _keepAsPath = path;
     }
 
     /// <summary>A private read handle. Callers own it and must dispose of it.</summary>
@@ -99,26 +99,26 @@ public class StreamSpreader : Stream
     public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer,
         CancellationToken cancellationToken = default)
     {
-        await writeLock.WaitAsync(cancellationToken);
+        await _writeLock.WaitAsync(cancellationToken);
         try
         {
             // Opened lazily so that a spreader nobody writes to -- FromExistingFile, or a getter that bails
             // before its first byte -- never truncates anything.
             // bufferSize 0: no user-space buffering, so the flush below is the only thing between a write
             // and a reader being able to see those bytes.
-            file ??= new FileStream(Path, FileMode.Create, FileAccess.Write, Share, 0, FileOptions.Asynchronous);
+            _file ??= new FileStream(Path, FileMode.Create, FileAccess.Write, Share, 0, FileOptions.Asynchronous);
 
-            await file.WriteAsync(buffer, cancellationToken);
+            await _file.WriteAsync(buffer, cancellationToken);
 
             // To the OS, not fsync. Readers share the page cache, so this is all it takes for them to see
             // the bytes, and a body lost to a power cut is a cache miss rather than data loss.
-            await file.FlushAsync(cancellationToken);
+            await _file.FlushAsync(cancellationToken);
 
             Publish(Position + buffer.Length, false);
         }
         finally
         {
-            writeLock.Release();
+            _writeLock.Release();
         }
     }
 
@@ -130,21 +130,21 @@ public class StreamSpreader : Stream
     /// <summary>Marks the end of the source data. Not to be confused with <see cref="Stream.Close" />, which disposes.</summary>
     public async Task CloseAsync()
     {
-        await writeLock.WaitAsync();
+        await _writeLock.WaitAsync();
         try
         {
             if (Closed) return;
 
-            if (file is not null) await file.DisposeAsync();
-            file = null;
+            if (_file is not null) await _file.DisposeAsync();
+            _file = null;
 
-            if (keepAsPath is not null) Relocate(keepAsPath);
+            if (_keepAsPath is not null) Relocate(_keepAsPath);
 
             Publish(Position, true);
         }
         finally
         {
-            writeLock.Release();
+            _writeLock.Release();
         }
     }
 
@@ -173,7 +173,7 @@ public class StreamSpreader : Stream
     {
         Position = position;
         Closed = closed;
-        Interlocked.Exchange(ref signal,
+        Interlocked.Exchange(ref _signal,
             new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).SetResult();
     }
 
@@ -181,8 +181,8 @@ public class StreamSpreader : Stream
     {
         if (disposing)
         {
-            file?.Dispose();
-            file = null;
+            _file?.Dispose();
+            _file = null;
 
             if (DeleteOnClose)
                 try

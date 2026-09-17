@@ -12,7 +12,7 @@ namespace Dom.Controllers;
 public class Playlists(DomStore store, IConfiguration config) : ControllerBase
 {
     /// <summary>What a cover may be. Anything else is a file the browser would not draw anyway.</summary>
-    private static readonly Dictionary<string, string> coverTypes = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, string> CoverTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         ["image/png"] = "png",
         ["image/jpeg"] = "jpg",
@@ -102,7 +102,7 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
             return Api.Error(400, "invalid_request", "Send an image as multipart form data.");
 
         var file = Request.Form.Files[0];
-        if (!coverTypes.TryGetValue(file.ContentType ?? "", out var extension))
+        if (!CoverTypes.TryGetValue(file.ContentType ?? "", out var extension))
             return Api.Error(400, "invalid_request", "A cover is a PNG, a JPEG or a WebP.");
         if (file.Length > MaxCoverBytes)
             return Api.Error(400, "invalid_request", "A cover is at most 2 MB.");
@@ -164,7 +164,7 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
     }
 
     /// <summary>What a card needs, and nothing more.</summary>
-    internal static object Summary(Playlist playlist) => new
+    private static object Summary(Playlist playlist) => new
     {
         id = playlist.Id,
         name = playlist.Name,

@@ -44,9 +44,9 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
                 return Ok(Array.Empty<SearchResultDto>());
             }
 
-            if (claim.Kind == QueryType.ID)
+            if (claim.Kind == QueryType.Id)
             {
-                var found = await manager.SearchID(claim.Query, cancellationToken);
+                var found = await manager.SearchId(claim.Query, cancellationToken);
 
                 // A Spotify link resolves to a name, not to audio — the playable track is whatever the
                 // library or YouTube has for it.
@@ -82,7 +82,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
         results = resolver.Resolve(results, cancellationToken)
             // A Spotify hit resolved against YouTube lands on the video YouTube itself just returned, one
             // entry earlier in this same stream. Without this the client renders it twice.
-            .DistinctBy(result => result.ID);
+            .DistinctBy(result => result.Id);
 
         return Ok(this.Mapped(results, configuration, environment));
     }
@@ -92,7 +92,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
     [Produces("application/json")]
     [ProducesResponseType<IReadOnlyList<SearchResultDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorBody>(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> RandomResults(
+    public IActionResult RandomResults(
         [FromServices] ManagerService managerService, int count = 10, double? youTubeShare = null)
     {
         if (count is < 1 or > 200)
@@ -134,7 +134,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
     public async Task<IActionResult> DownloadRaw(string id, [FromServices] ManagerService managerService)
     {
         if (string.IsNullOrWhiteSpace(id)) return NotFound();
-        logger.LogInformation("Downloading Raw '{Id}'", id);
+        logger.LogInformation("Downloading Raw '{ID}'", id);
 
         var start = Stopwatch.GetTimestamp();
         var platform = PlatformFor(managerService.Manager, id);
@@ -150,7 +150,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
 
         await upstream.Content.CopyToAsync(Response.Body, HttpContext.RequestAborted);
 
-        logger.LogInformation("Finishing '{Id}' took '{Duration}'", id, Stopwatch.GetElapsedTime(start));
+        logger.LogInformation("Finishing '{ID}' took '{Duration}'", id, Stopwatch.GetElapsedTime(start));
         return new EmptyResult();
     }
 
@@ -162,7 +162,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
     {
         if (bitrate < 8) return BadRequest("Bitrate must be greater than 8");
         if (string.IsNullOrWhiteSpace(id)) return NotFound("No ID provided");
-        logger.LogInformation("Downloading '{Id}' {Codec} {Bitrate}", id, codec, bitrate);
+        logger.LogInformation("Downloading '{ID}' {Codec} {Bitrate}", id, codec, bitrate);
 
         var (contentType, ffmpegCodec, ffmpegOutputFormat) = Encoding(codec);
 

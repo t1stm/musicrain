@@ -38,8 +38,8 @@ public class StreamingTests
         Assert.All(backfilled, item => Assert.StartsWith("local", item));
 
         // Neither source can cover it: short is short, not a hang.
-        var short_ = await Collect(Numbered("yt", 1).RandomMerge(4, Numbered("local", 2), 10));
-        Assert.Equal(3, short_.Count);
+        var tooShort = await Collect(Numbered("yt", 1).RandomMerge(4, Numbered("local", 2), 10));
+        Assert.Equal(3, tooShort.Count);
     }
 
     /// <summary>
@@ -53,13 +53,13 @@ public class StreamingTests
         var peak = 0;
 
         var results = await Collect(Enumerable.Range(0, 20).AsAsync()
-            .SelectParallel(4, async (number, _) =>
+            .SelectParallel(4, async (number, cancellationToken) =>
             {
                 var running = Interlocked.Increment(ref inFlight);
                 peak = Math.Max(peak, running);
 
                 // Later items finish first, so anything that yields on completion would come back reversed.
-                await Task.Delay(20 - number);
+                await Task.Delay(20 - number, cancellationToken);
                 Interlocked.Decrement(ref inFlight);
 
                 return number % 5 == 0 ? null : $"#{number}";
@@ -168,6 +168,7 @@ public class StreamingTests
     }
 
     /// <summary>Counts what the consumer actually drew, so a helper that reads ahead is visible.</summary>
+    // ReSharper disable once AsyncMethodWithoutAwait -- an IAsyncEnumerable iterator has to say 'async'
     private static async IAsyncEnumerable<int> Pulled(int count, Action onPull)
     {
         for (var number = 0; number < count; number++)

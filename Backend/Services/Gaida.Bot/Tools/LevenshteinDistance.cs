@@ -36,7 +36,7 @@ public static class LevenshteinDistance
 
     public static int ComputeStrict(string? s, string? t)
     {
-        if (string.IsNullOrEmpty(s)) return string.IsNullOrEmpty(t) ? 0 : t!.Length;
+        if (string.IsNullOrEmpty(s)) return string.IsNullOrEmpty(t) ? 0 : t.Length;
         if (string.IsNullOrEmpty(t)) return s.Length;
 
         var n = s.Length;

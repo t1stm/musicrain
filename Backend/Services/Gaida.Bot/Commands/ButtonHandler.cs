@@ -2,7 +2,6 @@ using DSharpPlus;
 using DSharpPlus.Entities;
 using DSharpPlus.EventArgs;
 using Gaida.Bot.Players;
-using Serilog;
 
 namespace Gaida.Bot.Commands;
 
@@ -59,13 +58,13 @@ public static class ButtonHandler
                     break;
 
                 default:
-                    logger.Debug("{Account} got an unknown component id {Id}", client.CurrentUser.Username, args.Id);
+                    logger.Debug("{Account} got an unknown component id {ID}", client.CurrentUser.Username, args.Id);
                     break;
             }
         }
         catch (Exception e)
         {
-            logger.Warning(e, "Handling the {Id} button failed", args.Id);
+            logger.Warning(e, "Handling the {ID} button failed", args.Id);
         }
     }
 

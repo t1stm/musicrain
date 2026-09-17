@@ -18,10 +18,10 @@ public static class SelfCheck
 
         Assert(await player.GetCurrentTime() == 0, "clock must be at 0 before anyone has loaded");
 
-        await player.SetLoaded(user1.ID);
+        await player.SetLoaded(user1.Id);
         Assert(await player.GetCurrentTime() == 0, "clock must still be at 0 with only 1 of 2 members loaded");
 
-        await player.SetLoaded(user2.ID);
+        await player.SetLoaded(user2.Id);
         await Task.Delay(20);
         Assert(await player.GetCurrentTime() > 0, "clock must start once every member has loaded");
 

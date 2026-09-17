@@ -1,8 +1,11 @@
+using JetBrains.Annotations;
+
 namespace Gaida.Bot.Admin;
 
 /// <summary>One thing the bot did, or was asked to do.</summary>
 /// <param name="Account">The bot account it happened to — a guild can be running several.</param>
 /// <param name="User">Who asked, where somebody did.</param>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record BotEvent(
     DateTimeOffset At,
     string Kind,

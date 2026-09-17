@@ -24,7 +24,7 @@ public class LocalVariantTests
         // says "Mitnichariu", and the Cyrillic segment is what lands the exact hit instead.
         var song = new MusicInfo
         {
-            ID = "mitnichariu",
+            Id = "mitnichariu",
             Titles = ["Митничарю", "Mitnichariu"],
             Artists = ["Лия", "Lia"]
         };
@@ -84,7 +84,7 @@ public class LocalVariantTests
     {
         return new MusicInfo
         {
-            ID = id,
+            Id = id,
             Titles = [title],
             Artists = [artist]
         };

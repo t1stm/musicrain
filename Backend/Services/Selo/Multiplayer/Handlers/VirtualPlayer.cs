@@ -1,16 +1,17 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using JetBrains.Annotations;
 
 namespace Selo.Multiplayer.Handlers;
 
 public class VirtualPlayer(MessageQueue messageQueue)
 {
     /// <summary>Who reported the current item as played out.</summary>
-    protected readonly HashSet<string> Finished = [];
+    private readonly HashSet<string> _finished = [];
 
     /// <summary>Who reported the current item as buffered.</summary>
-    protected readonly HashSet<string> Loaded = [];
+    private readonly HashSet<string> _loaded = [];
 
     /// <summary>
     ///     Guards every read and write of the room clock, the queue and the two barrier counters, and is held
@@ -25,9 +26,9 @@ public class VirtualPlayer(MessageQueue messageQueue)
     ///     A room is a handful of listeners and MessageQueue already serialises the sends underneath, so this
     ///     costs nothing that was not already serial. Split it per-field if rooms grow past a few dozen members.
     /// </remarks>
-    protected readonly SemaphoreSlim Sync = new(1);
+    private readonly SemaphoreSlim _sync = new(1);
 
-    protected int CurrentIndex;
+    private int _currentIndex;
 
     /// <summary>
     ///     Whether the room is still waiting on everyone to buffer the current track. Only an armed
@@ -35,17 +36,17 @@ public class VirtualPlayer(MessageQueue messageQueue)
     ///     in, and the room does not arm a barrier for a join. That vote used to stand, and the next
     ///     departure made the tally add up — rewinding a mid-track room to zero for everyone left.
     /// </summary>
-    protected bool Loading = true;
+    private bool _loading = true;
 
-    protected TimeSpan? PauseTime;
-    protected bool Playing = true;
+    private TimeSpan? _pauseTime;
+    private bool _playing = true;
 
-    protected long? StartTime;
-    public List<TrackDto> Items { get; set; } = [];
+    private long? _startTime;
+    public List<TrackDto> Items { get; private set; } = [];
 
     public async Task Next()
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
@@ -53,106 +54,106 @@ public class VirtualPlayer(MessageQueue messageQueue)
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
     public async Task Previous()
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
-            if (CurrentIndex > 0)
-                CurrentIndex--;
+            if (_currentIndex > 0)
+                _currentIndex--;
 
             UpdateStart();
             await SetPlayingCore(false);
-            await Broadcast($"current {CurrentIndex}");
+            await Broadcast($"current {_currentIndex}");
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
     public async Task Remove(int index)
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
             if (index < 0 || index >= Items.Count) return;
             Items.RemoveAt(index);
 
-            await ReindexCore(CurrentIndex > index ? CurrentIndex - 1 : CurrentIndex);
+            await ReindexCore(_currentIndex > index ? _currentIndex - 1 : _currentIndex);
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
     public async Task SetNext(int index)
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
-            if (index < 0 || index >= Items.Count || index == CurrentIndex) return;
+            if (index < 0 || index >= Items.Count || index == _currentIndex) return;
 
             var item = Items[index];
             Items.RemoveAt(index);
 
-            var target = index < CurrentIndex ? CurrentIndex - 1 : CurrentIndex;
+            var target = index < _currentIndex ? _currentIndex - 1 : _currentIndex;
             Items.Insert(target + 1, item);
 
             await ReindexCore(target);
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
     public async Task SkipTo(int index)
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
-            if (index < 0 || index >= Items.Count || index == CurrentIndex) return;
-            CurrentIndex = index;
+            if (index < 0 || index >= Items.Count || index == _currentIndex) return;
+            _currentIndex = index;
 
             UpdateStart();
             await SetPlayingCore(false);
-            await Broadcast($"current {CurrentIndex}");
+            await Broadcast($"current {_currentIndex}");
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
     public async Task SetFinished(string id)
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
-            Finished.Add(id);
+            _finished.Add(id);
             await HandleFinishedCore();
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
 
     public async Task Shuffle()
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
@@ -160,7 +161,7 @@ public class VirtualPlayer(MessageQueue messageQueue)
             // list moved the item out from under `CurrentIndex` without touching the index, so
             // the room went on playing a track the queue no longer named there.
             var playing = CurrentItemCore();
-            if (playing is not null) Items.RemoveAt(CurrentIndex);
+            if (playing is not null) Items.RemoveAt(_currentIndex);
 
             Random.Shared.Shuffle(CollectionsMarshal.AsSpan(Items));
 
@@ -175,7 +176,7 @@ public class VirtualPlayer(MessageQueue messageQueue)
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
@@ -185,7 +186,7 @@ public class VirtualPlayer(MessageQueue messageQueue)
     /// </summary>
     public async Task Clear()
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
@@ -196,7 +197,7 @@ public class VirtualPlayer(MessageQueue messageQueue)
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
@@ -207,7 +208,7 @@ public class VirtualPlayer(MessageQueue messageQueue)
     /// </summary>
     public async Task Move(int from, int to)
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
@@ -219,52 +220,38 @@ public class VirtualPlayer(MessageQueue messageQueue)
 
             // whatever is playing keeps playing: only its index moves, and only when the
             // track was carried across it
-            var index = CurrentIndex;
-            if (from == CurrentIndex) index = to;
-            else if (from < CurrentIndex && to >= CurrentIndex) index--;
-            else if (from > CurrentIndex && to <= CurrentIndex) index++;
+            var index = _currentIndex;
+            if (from == _currentIndex) index = to;
+            else if (from < _currentIndex && to >= _currentIndex) index--;
+            else if (from > _currentIndex && to <= _currentIndex) index++;
 
             await ReindexCore(index);
         }
         finally
         {
-            Sync.Release();
-        }
-    }
-
-    public async Task SetPlaying(bool state)
-    {
-        await Sync.WaitAsync();
-
-        try
-        {
-            await SetPlayingCore(state);
-        }
-        finally
-        {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
     public async Task TogglePlaying()
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
-            if (!StartTime.HasValue) return;
+            if (!_startTime.HasValue) return;
 
-            Playing = !Playing;
+            _playing = !_playing;
 
-            switch (Playing)
+            switch (_playing)
             {
                 case false:
-                    PauseTime = Stopwatch.GetElapsedTime(StartTime.Value);
+                    _pauseTime = Stopwatch.GetElapsedTime(_startTime.Value);
                     break;
                 case true:
-                    if (PauseTime.HasValue)
-                        StartTime = Stopwatch.GetTimestamp() - TimeSpanToTimestamp(PauseTime.Value);
-                    PauseTime = null;
+                    if (_pauseTime.HasValue)
+                        _startTime = Stopwatch.GetTimestamp() - TimeSpanToTimestamp(_pauseTime.Value);
+                    _pauseTime = null;
                     break;
             }
 
@@ -274,28 +261,28 @@ public class VirtualPlayer(MessageQueue messageQueue)
             // where the room came back at from the next `sync` — which is a whole round
             // trip of being in the wrong place, on the one transition where everybody
             // is listening for it.
-            await Broadcast($"seek {Stopwatch.GetElapsedTime(StartTime.Value).TotalSeconds} {Stamp()}");
-            await SetPlayingCore(Playing);
+            await Broadcast($"seek {Stopwatch.GetElapsedTime(_startTime.Value).TotalSeconds} {Stamp()}");
+            await SetPlayingCore(_playing);
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
     public async Task Stop()
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
-            Playing = false;
-            PauseTime = null;
+            _playing = false;
+            _pauseTime = null;
             await messageQueue.Add("stop");
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
@@ -306,16 +293,16 @@ public class VirtualPlayer(MessageQueue messageQueue)
     /// </summary>
     public async Task Enqueue(TrackDto result, bool playNext = false)
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
             // current sits past the end of the queue exactly when nothing is playing,
             // so the item going in is the one that becomes current
-            var startsPlayback = CurrentIndex >= Items.Count;
+            var startsPlayback = _currentIndex >= Items.Count;
 
             if (playNext && !startsPlayback)
-                Items.Insert(CurrentIndex + 1, result);
+                Items.Insert(_currentIndex + 1, result);
             else
                 Items.Add(result);
 
@@ -328,23 +315,23 @@ public class VirtualPlayer(MessageQueue messageQueue)
             // seconds into itself.
             UpdateStart();
             await SetPlayingCore(false);
-            await Broadcast($"current {CurrentIndex}");
+            await Broadcast($"current {_currentIndex}");
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
     public async Task Joined(User user)
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
             await user.SendAsync(QueueMessage());
-            await user.SendAsync($"current {CurrentIndex}");
-            await user.SendAsync($"playing {Playing}");
+            await user.SendAsync($"current {_currentIndex}");
+            await user.SendAsync($"playing {_playing}");
 
             if (Items.Count > 0)
                 await user.SendAsync($"seek {CurrentTimeCore()} {Stamp()}");
@@ -353,37 +340,37 @@ public class VirtualPlayer(MessageQueue messageQueue)
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
     public async Task SeekTo(double seconds)
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
-            StartTime = Stopwatch.GetTimestamp() - TimeSpanToTimestamp(TimeSpan.FromSeconds(seconds));
-            await Broadcast($"seek {Stopwatch.GetElapsedTime(StartTime.Value).TotalSeconds} {Stamp()}");
+            _startTime = Stopwatch.GetTimestamp() - TimeSpanToTimestamp(TimeSpan.FromSeconds(seconds));
+            await Broadcast($"seek {Stopwatch.GetElapsedTime(_startTime.Value).TotalSeconds} {Stamp()}");
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
     public async Task SetLoaded(string id)
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
-            Loaded.Add(id);
+            _loaded.Add(id);
             await HandleLoadedCore();
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
@@ -395,26 +382,26 @@ public class VirtualPlayer(MessageQueue messageQueue)
     /// </summary>
     public async Task UserLeft(string id)
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
-            Loaded.Remove(id);
-            Finished.Remove(id);
+            _loaded.Remove(id);
+            _finished.Remove(id);
 
             await HandleLoadedCore();
             await HandleFinishedCore();
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
     /// <summary>Answers one user's <c>sync</c>. The position and the stamp are read in the same critical section.</summary>
     public async Task SyncTo(User user)
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
@@ -425,34 +412,34 @@ public class VirtualPlayer(MessageQueue messageQueue)
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
     /// <summary>
-    ///     What the room is playing, for the admin panel. Under <see cref="Sync" /> like every other read:
+    ///     What the room is playing, for the admin panel. Under <see cref="_sync" /> like every other read:
     ///     <see cref="Items" /> is a plain <c>List&lt;T&gt;</c> and indexing it while another socket removes
     ///     a track is how a monitoring endpoint takes a room down.
     /// </summary>
     public async Task<PlayerSnapshot> Snapshot()
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
-            return new PlayerSnapshot(Playing, Loading, CurrentIndex, Items.Count, CurrentTimeCore(),
-                CurrentIndex >= 0 && CurrentIndex < Items.Count ? Items[CurrentIndex] : null);
+            return new PlayerSnapshot(_playing, _loading, _currentIndex, Items.Count, CurrentTimeCore(),
+                _currentIndex >= 0 && _currentIndex < Items.Count ? Items[_currentIndex] : null);
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
     /// <summary>The room position in seconds, read under the lock.</summary>
     public async Task<double> GetCurrentTime()
     {
-        await Sync.WaitAsync();
+        await _sync.WaitAsync();
 
         try
         {
@@ -460,24 +447,24 @@ public class VirtualPlayer(MessageQueue messageQueue)
         }
         finally
         {
-            Sync.Release();
+            _sync.Release();
         }
     }
 
-    protected async Task NextCore()
+    private async Task NextCore()
     {
-        if (CurrentIndex < Items.Count)
-            CurrentIndex++;
+        if (_currentIndex < Items.Count)
+            _currentIndex++;
 
         UpdateStart();
         await SetPlayingCore(false);
-        await Broadcast($"current {CurrentIndex}");
+        await Broadcast($"current {_currentIndex}");
     }
 
     /// <summary>What is playing, or <c>null</c> when the index sits past the end of the queue.</summary>
-    protected TrackDto? CurrentItemCore()
+    private TrackDto? CurrentItemCore()
     {
-        return CurrentIndex >= 0 && CurrentIndex < Items.Count ? Items[CurrentIndex] : null;
+        return _currentIndex >= 0 && _currentIndex < Items.Count ? Items[_currentIndex] : null;
     }
 
     /// <summary>
@@ -487,36 +474,36 @@ public class VirtualPlayer(MessageQueue messageQueue)
     ///     different track — a restart of a track nobody asked to change. It is not <c>current</c>,
     ///     which arms the loading barrier; nothing here stops the audio.
     /// </summary>
-    protected async Task ReindexCore(int index)
+    private async Task ReindexCore(int index)
     {
-        if (index != CurrentIndex)
+        if (index != _currentIndex)
         {
-            CurrentIndex = index;
-            await Broadcast($"index {CurrentIndex}");
+            _currentIndex = index;
+            await Broadcast($"index {_currentIndex}");
         }
 
         await Broadcast(QueueMessage());
     }
 
-    protected Task SetPlayingCore(bool state)
+    private Task SetPlayingCore(bool state)
     {
-        Playing = state;
-        return Broadcast($"playing {Playing}");
+        _playing = state;
+        return Broadcast($"playing {_playing}");
     }
 
-    protected async Task HandleFinishedCore()
+    private async Task HandleFinishedCore()
     {
         var count = messageQueue.CurrentStore.Count;
         // An empty room has nobody to wait for and nobody to tell. Without the
         // count check `0 < 0` reads as "everybody reported", so the last user
         // leaving advances the room a track on their way out.
-        if (count == 0 || Finished.Count < count) return;
+        if (count == 0 || _finished.Count < count) return;
 
-        Finished.Clear();
+        _finished.Clear();
         await NextCore();
     }
 
-    protected async Task HandleLoadedCore()
+    private async Task HandleLoadedCore()
     {
         var count = messageQueue.CurrentStore.Count;
         // as in HandleFinishedCore: on an empty room `0 < 0` is false, and this
@@ -524,34 +511,34 @@ public class VirtualPlayer(MessageQueue messageQueue)
         // that the next person to join then walks into mid-track. An empty queue
         // is the same mistake in the other direction: starting the clock with
         // nothing to play leaves it running until something is added.
-        if (!Loading || count == 0 || Items.Count == 0 || Loaded.Count < count) return;
+        if (!_loading || count == 0 || Items.Count == 0 || _loaded.Count < count) return;
 
-        Loading = false;
-        Loaded.Clear();
-        StartTime = Stopwatch.GetTimestamp();
+        _loading = false;
+        _loaded.Clear();
+        _startTime = Stopwatch.GetTimestamp();
 
         await Broadcast($"seek {0d} {Stamp()}");
         await SetPlayingCore(true);
     }
 
     /// <summary>The room position in seconds. Both branches touch <c>StartTime</c>, so the lock must be held.</summary>
-    protected double CurrentTimeCore()
+    private double CurrentTimeCore()
     {
-        if (!StartTime.HasValue) return 0;
+        if (!_startTime.HasValue) return 0;
 
-        if (PauseTime.HasValue)
-            StartTime = Stopwatch.GetTimestamp() - TimeSpanToTimestamp(PauseTime.Value);
+        if (_pauseTime.HasValue)
+            _startTime = Stopwatch.GetTimestamp() - TimeSpanToTimestamp(_pauseTime.Value);
 
-        return Stopwatch.GetElapsedTime(StartTime.Value).TotalSeconds;
+        return Stopwatch.GetElapsedTime(_startTime.Value).TotalSeconds;
     }
 
-    protected void UpdateStart()
+    private void UpdateStart()
     {
-        Loading = true;
-        Loaded.Clear();
-        Finished.Clear();
-        StartTime = null;
-        PauseTime = null;
+        _loading = true;
+        _loaded.Clear();
+        _finished.Clear();
+        _startTime = null;
+        _pauseTime = null;
     }
 
     /// <summary>
@@ -560,7 +547,7 @@ public class VirtualPlayer(MessageQueue messageQueue)
     ///     and a third array for the UTF-8 encoding — three copies of the whole queue, all of them
     ///     large enough to reach gen1 on a busy room.
     /// </summary>
-    protected Utf8Message QueueMessage()
+    private Utf8Message QueueMessage()
     {
         var message = new Utf8Message(1024);
         message.Write("queue "u8);
@@ -571,12 +558,12 @@ public class VirtualPlayer(MessageQueue messageQueue)
         return message;
     }
 
-    protected Task Broadcast(Utf8MessageHandler handler)
+    private Task Broadcast(Utf8MessageHandler handler)
     {
         return messageQueue.Add(handler.Message);
     }
 
-    protected Task Broadcast(Utf8Message message)
+    private Task Broadcast(Utf8Message message)
     {
         return messageQueue.Add(message);
     }
@@ -587,7 +574,7 @@ public class VirtualPlayer(MessageQueue messageQueue)
     ///     took rather than the quickest one the link has managed lately — which is what
     ///     half a round trip amounts to, and which understates any frame that got queued.
     /// </summary>
-    public static long Stamp()
+    private static long Stamp()
     {
         return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     }
@@ -606,6 +593,7 @@ public class VirtualPlayer(MessageQueue messageQueue)
 }
 
 /// <summary>The room clock and queue as an operator reads them.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record PlayerSnapshot(
     bool Playing,
     bool Loading,

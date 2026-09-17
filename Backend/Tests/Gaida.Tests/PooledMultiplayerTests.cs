@@ -60,7 +60,7 @@ public class WebSocketTextReaderFrameTests
     [Fact]
     public async Task AMessageSplitAcrossFramesIsReassembledEvenMidCodepoint()
     {
-        var payload = Encoding.UTF8.GetBytes("chat гайда");
+        var payload = "chat гайда"u8.ToArray();
         using var reader = new WebSocketTextReader();
         // one byte at a time puts a frame boundary inside every two-byte character
         var socket = new FramedWebSocket(payload, 1);
@@ -84,7 +84,7 @@ public class WebSocketTextReaderFrameTests
 
     private sealed class FramedWebSocket(byte[] payload, int frameSize) : WebSocket
     {
-        private int offset;
+        private int _offset;
 
         public override WebSocketCloseStatus? CloseStatus => null;
         public override string? CloseStatusDescription => null;
@@ -117,12 +117,12 @@ public class WebSocketTextReaderFrameTests
         public override ValueTask<ValueWebSocketReceiveResult> ReceiveAsync(Memory<byte> buffer,
             CancellationToken cancellationToken)
         {
-            var count = Math.Min(Math.Min(frameSize, buffer.Length), payload.Length - offset);
-            payload.AsSpan(offset, count).CopyTo(buffer.Span);
-            offset += count;
+            var count = Math.Min(Math.Min(frameSize, buffer.Length), payload.Length - _offset);
+            payload.AsSpan(_offset, count).CopyTo(buffer.Span);
+            _offset += count;
 
             return new ValueTask<ValueWebSocketReceiveResult>(
-                new ValueWebSocketReceiveResult(count, WebSocketMessageType.Text, offset >= payload.Length));
+                new ValueWebSocketReceiveResult(count, WebSocketMessageType.Text, _offset >= payload.Length));
         }
 
         public override Task SendAsync(ArraySegment<byte> b, WebSocketMessageType t, bool e, CancellationToken c)

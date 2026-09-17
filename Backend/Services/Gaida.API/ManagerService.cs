@@ -40,7 +40,7 @@ public class ManagerService
     ///     Platform identifiers (<c>spotify://</c> and the like) whose results carry no audio and have to be
     ///     resolved against a platform that does — see <see cref="PlayableResolver" />.
     /// </summary>
-    public IReadOnlySet<string> MetadataOnly { get; }
+    private IReadOnlySet<string> MetadataOnly { get; }
 
     /// <summary>Whether <paramref name="id" /> (or a canonical query) belongs to a metadata-only platform.</summary>
     public bool NeedsResolving(string? id)

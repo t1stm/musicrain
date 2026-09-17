@@ -2,7 +2,6 @@ using DSharpPlus;
 using DSharpPlus.Entities;
 using Gaida.Bot.Admin;
 using Gaida.Bot.Gaida;
-using Serilog;
 
 namespace Gaida.Bot.Players;
 
@@ -18,7 +17,7 @@ public sealed class PlayerController(GaidaClient api, ILogger logger, BotEventLo
     /// <summary>Every connected account, master first — which is also the allocation order.</summary>
     public List<DiscordClient> Clients { get; } = [];
 
-    public DiscordClient? Master => Clients.FirstOrDefault();
+    private DiscordClient? Master => Clients.FirstOrDefault();
 
     /// <summary>Every live player, for the admin snapshot.</summary>
     public IReadOnlyList<Player> Players

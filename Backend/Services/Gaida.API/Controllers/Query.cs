@@ -32,7 +32,7 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
 
             return claim.Kind switch
             {
-                QueryType.ID => await ResolveOne(claim.Query, managerService, resolver),
+                QueryType.Id => await ResolveOne(claim.Query, managerService, resolver),
                 QueryType.Playlist => Ok(PlaylistResolution(claim.Query)),
                 _ => Ok(new QueryResolutionDto { Kind = "search", Query = trimmed })
             };
@@ -90,7 +90,7 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
     private async Task<ActionResult<QueryResolutionDto>> ResolveOne(string id, ManagerService managerService,
         PlayableResolver resolver)
     {
-        var result = await managerService.Manager.SearchID(id, HttpContext.RequestAborted);
+        var result = await managerService.Manager.SearchId(id, HttpContext.RequestAborted);
 
         // A Spotify link resolves to a name; what the client gets back is whatever platform actually has the
         // track, which is also what `kind` then reports. A Deezer link normally passes straight through —
@@ -101,7 +101,7 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
         var mapped = DiscoveryResultMapper.Map(result, Request, configuration, environment);
         return mapped is null
             ? NotFound(Error("not_found", "No result was found for this ID."))
-            : Ok(new QueryResolutionDto { Kind = KindOf(result.ID), Query = id, Result = mapped });
+            : Ok(new QueryResolutionDto { Kind = KindOf(result.Id), Query = id, Result = mapped });
     }
 
     /// <summary>
@@ -109,7 +109,7 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
     ///     YouTube is deliberately absent: its normalized form is not the only shape a claim arrives in, so it
     ///     goes through <see cref="ExtractPlaylistId" /> instead.
     /// </summary>
-    private static readonly (string Scheme, string Kind)[] playlistSchemes =
+    private static readonly (string Scheme, string Kind)[] PlaylistSchemes =
     [
         ("spotify-playlist://", "spotifyPlaylist"),
         ("deezer-playlist://", "deezerPlaylist")
@@ -124,7 +124,7 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
     /// </summary>
     private static QueryResolutionDto PlaylistResolution(string playlistUrl)
     {
-        foreach (var (scheme, kind) in playlistSchemes)
+        foreach (var (scheme, kind) in PlaylistSchemes)
             if (playlistUrl.StartsWith(scheme, StringComparison.OrdinalIgnoreCase))
                 return new QueryResolutionDto
                 {
@@ -147,7 +147,7 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
         // sub-resource (the variant's matched track) needs the same treatment without a full search.
         return DiscoveryResultMapper.Map(new HttpResult
         {
-            ID = dto.Id ?? "",
+            Id = dto.Id ?? "",
             Name = dto.Name,
             Artist = dto.Artist,
             Album = dto.Album,

@@ -10,41 +10,36 @@ namespace Selo.Multiplayer;
 ///     Building one costs no string and no intermediate byte[]; the rental goes back on
 ///     <see cref="Dispose" />, which every send path runs in a finally.
 /// </summary>
-public sealed class Utf8Message : IBufferWriter<byte>, IDisposable
+public sealed class Utf8Message(int capacity = 128) : IBufferWriter<byte>, IDisposable
 {
-    private byte[] buffer;
-    private int written;
-
-    public Utf8Message(int capacity = 128)
-    {
-        buffer = ArrayPool<byte>.Shared.Rent(capacity);
-    }
+    private byte[] _buffer = ArrayPool<byte>.Shared.Rent(capacity);
+    private int _written;
 
     /// <summary>The frame written so far. Only valid until <see cref="Dispose" />.</summary>
-    public ReadOnlyMemory<byte> Memory => buffer.AsMemory(0, written);
+    public ReadOnlyMemory<byte> Memory => _buffer.AsMemory(0, _written);
 
     public void Advance(int count)
     {
-        written += count;
+        _written += count;
     }
 
     public Memory<byte> GetMemory(int sizeHint = 0)
     {
         Reserve(sizeHint > 0 ? sizeHint : 1);
-        return buffer.AsMemory(written);
+        return _buffer.AsMemory(_written);
     }
 
     public Span<byte> GetSpan(int sizeHint = 0)
     {
         Reserve(sizeHint > 0 ? sizeHint : 1);
-        return buffer.AsSpan(written);
+        return _buffer.AsSpan(_written);
     }
 
     public void Dispose()
     {
-        var rented = buffer;
-        buffer = [];
-        written = 0;
+        var rented = _buffer;
+        _buffer = [];
+        _written = 0;
 
         if (rented.Length > 0) ArrayPool<byte>.Shared.Return(rented);
     }
@@ -52,43 +47,40 @@ public sealed class Utf8Message : IBufferWriter<byte>, IDisposable
     public void Write(ReadOnlySpan<byte> value)
     {
         Reserve(value.Length);
-        value.CopyTo(buffer.AsSpan(written));
-        written += value.Length;
+        value.CopyTo(_buffer.AsSpan(_written));
+        _written += value.Length;
     }
 
     public void Write(ReadOnlySpan<char> value)
     {
         Reserve(Encoding.UTF8.GetMaxByteCount(value.Length));
-        written += Encoding.UTF8.GetBytes(value, buffer.AsSpan(written));
+        _written += Encoding.UTF8.GetBytes(value, _buffer.AsSpan(_written));
     }
 
     /// <summary>
-    ///     Formats a value straight to UTF-8. Handing this to
-    ///     <see cref="Utf8.TryWrite(Span{byte},ref
-    /// Utf8.TryWriteInterpolatedStringHandler,out int)" /> keeps the numeric paths
-    ///     on the
-    ///     framework's own UTF-8 formatters and keeps the culture identical to ToString().
+    ///     Formats a value straight to UTF-8. Handing this to <c>Utf8.TryWrite</c> keeps the numeric paths on
+    ///     the framework's own UTF-8 formatters and keeps the culture identical to ToString().
     /// </summary>
     public void Write<T>(T value)
     {
         int count;
         Reserve(32);
 
-        while (!Utf8.TryWrite(buffer.AsSpan(written), $"{value}", out count))
-            Reserve((buffer.Length - written) * 2 + 32);
+        while (!Utf8.TryWrite(_buffer.AsSpan(_written), $"{value}", out count))
+            Reserve((_buffer.Length - _written) * 2 + 32);
 
-        written += count;
+        _written += count;
     }
 
     private void Reserve(int size)
     {
-        if (written + size <= buffer.Length) return;
+        if (_written + size <= _buffer.Length) return;
 
-        var next = ArrayPool<byte>.Shared.Rent(Math.Max(written + size, buffer.Length * 2));
-        buffer.AsSpan(0, written).CopyTo(next);
+        var next = ArrayPool<byte>.Shared.Rent(Math.Max(_written + size, _buffer.Length * 2));
+        _buffer.AsSpan(0, _written).CopyTo(next);
 
-        if (buffer.Length > 0) ArrayPool<byte>.Shared.Return(buffer);
-        buffer = next;
+        if (_buffer.Length > 0) ArrayPool<byte>.Shared.Return(_buffer);
+        _buffer = next;
     }
 }
 
@@ -98,14 +90,9 @@ public sealed class Utf8Message : IBufferWriter<byte>, IDisposable
 ///     encoded into a second throwaway array.
 /// </summary>
 [InterpolatedStringHandler]
-public readonly struct Utf8MessageHandler
+public readonly struct Utf8MessageHandler(int literalLength, int formattedCount)
 {
-    public Utf8MessageHandler(int literalLength, int formattedCount)
-    {
-        Message = new Utf8Message(literalLength + formattedCount * 24);
-    }
-
-    public Utf8Message Message { get; }
+    public Utf8Message Message { get; } = new(literalLength + formattedCount * 24);
 
     public void AppendLiteral(string value)
     {

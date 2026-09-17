@@ -61,11 +61,11 @@ public class Cover(ILogger<Cover> logger, IConfiguration configuration) : Contro
         }
 
         var cancellationToken = HttpContext.RequestAborted;
-        var result = await managerService.Manager.SearchID(id, cancellationToken);
+        var result = await managerService.Manager.SearchId(id, cancellationToken);
         if (result?.ThumbnailUrl is not { Length: > 0 } source)
             return NotFound(new ApiErrorBody(new ApiError("not_found", "This id has no artwork.")));
 
-        logger.LogInformation("Caching cover for '{Id}' from {Source}", id, source);
+        logger.LogInformation("Caching cover for '{ID}' from {Source}", id, source);
 
         try
         {
@@ -92,7 +92,7 @@ public class Cover(ILogger<Cover> logger, IConfiguration configuration) : Contro
         }
         catch (HttpRequestException exception)
         {
-            logger.LogWarning(exception, "Fetching cover for '{Id}' failed", id);
+            logger.LogWarning(exception, "Fetching cover for '{ID}' failed", id);
             if (!Response.HasStarted)
                 return NotFound(new ApiErrorBody(new ApiError("not_found", "The artwork could not be fetched.")));
         }

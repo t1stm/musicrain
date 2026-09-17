@@ -25,7 +25,7 @@ public sealed class Lyrics(
     private string MusicLibrary => configuration["MUSIC_LIBRARY"] ?? "/music";
     private string DataDirectory => configuration["LYRICS_DATA"] ?? "/lyrics";
 
-    public TimeSpan RetryAfter =>
+    private TimeSpan RetryAfter =>
         TimeSpan.FromDays(double.TryParse(configuration["LYRICS_RETRY_DAYS"], out var days) ? days : 30);
 
     /// <summary>The words for one track, or <c>null</c> when there are none anywhere.</summary>
@@ -59,7 +59,7 @@ public sealed class Lyrics(
                     return Answer(stored, row.Source, null);
 
                 // The file has gone -- someone tidied the folder. Drop the row and carry on as if new.
-                _logger.Information("Lyrics file for {Id} is gone; forgetting the row", id);
+                _logger.Information("Lyrics file for {ID} is gone; forgetting the row", id);
                 index.Forget(id);
             }
             // 2. A remembered miss, inside the retry window: no call to anything.
@@ -75,7 +75,7 @@ public sealed class Lyrics(
 
         // A .lrc someone put in the folder by hand, and the path back from a lost index: gaida-local's
         // own Info.json already knows it is there, and the file is the authority either way.
-        if (track.KnownType is { } known && track.RelativeLocation is not null &&
+        if (track is { KnownType: { } known, RelativeLocation: not null } &&
             LibraryPath(track.RelativeLocation, known) is { } beside && File.Exists(beside))
         {
             var existing = await File.ReadAllTextAsync(beside, ct);
@@ -91,7 +91,7 @@ public sealed class Lyrics(
         {
             // 5b. A clean "nothing there" is recorded; a timeout or a 429 is not, so it is retried
             // rather than remembered as a miss.
-            if (lrcLib.Enabled && lrcLib.LastWasClean) await RecordMissAsync(track, ct);
+            if (lrcLib is { Enabled: true, LastWasClean: true }) await RecordMissAsync(track, ct);
             return null;
         }
 
@@ -99,9 +99,9 @@ public sealed class Lyrics(
         var content = found.SyncedLyrics ?? found.PlainLyrics ?? string.Empty;
         var kind = found.SyncedLyrics is not null ? LyricsKind.Synchronized : LyricsKind.Unsynchronized;
 
-        await StoreAsync(track, content, kind, LyricsOrigin.LRCLIB, false, ct);
+        await StoreAsync(track, content, kind, LyricsOrigin.Lrclib, false, ct);
 
-        return Answer(content, LyricsOrigin.LRCLIB, new MatchedDto(
+        return Answer(content, LyricsOrigin.Lrclib, new MatchedDto(
             found.TrackName ?? track.Title, found.ArtistName, (int)Math.Round(found.Duration ?? 0)));
     }
 
@@ -144,24 +144,29 @@ public sealed class Lyrics(
     }
 
     /// <summary>Writes one track's words where they belong and records the row. The sweep shares this.</summary>
+    /// <param name="track">The track the words belong to.</param>
+    /// <param name="content">The lyrics themselves, LRC or plain.</param>
+    /// <param name="kind">Synchronized or not — it decides the file extension.</param>
+    /// <param name="source">Who found them, for the recorded row.</param>
     /// <param name="overwrite">
     ///     Only a <c>/register</c> call passes <c>true</c>. A <c>.lrc</c> in a library folder may be
     ///     someone's own work, and LRCLIB must not quietly replace it.
     /// </param>
+    /// <param name="ct">Cancels the write.</param>
     public async Task StoreAsync(Track track, string content, LyricsKind kind, LyricsOrigin source,
         bool overwrite, CancellationToken ct = default)
     {
         var (absolute, relative, volume) = Destination(track, kind);
         if (absolute is null)
         {
-            _logger.Warning("Refusing to write lyrics for {Id}: no safe path for it", track.Id);
+            _logger.Warning("Refusing to write lyrics for {ID}: no safe path for it", track.Id);
             return;
         }
 
         if (overwrite || !File.Exists(absolute))
             await WriteAsync(absolute, content, ct);
         else
-            _logger.Debug("Leaving the existing lyrics file for {Id} alone", track.Id);
+            _logger.Debug("Leaving the existing lyrics file for {ID} alone", track.Id);
 
         index.Record(new LyricsRow(track.Id, kind, source, volume, relative, DateTimeOffset.UtcNow));
         await StampAsync(track, kind, source, ct);
@@ -188,11 +193,11 @@ public sealed class Lyrics(
             var http = factory.CreateClient("pods");
             using var response = await http.PostAsync($"{url}/lyrics/stamp{query}", null, ct);
             if (!response.IsSuccessStatusCode)
-                _logger.Debug("gaida-local refused the stamp for {Id}: {Status}", track.Id, response.StatusCode);
+                _logger.Debug("gaida-local refused the stamp for {ID}: {Status}", track.Id, response.StatusCode);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
-            _logger.Warning(e, "Stamping {Id} on gaida-local failed", track.Id);
+            _logger.Warning(e, "Stamping {ID} on gaida-local failed", track.Id);
         }
     }
 

@@ -5,15 +5,14 @@ using Serilog;
 
 namespace Gaida.Platforms.YouTube.Search_Providers;
 
-public class YouTubeSearchProviderCached(ILogger logger, YouTubeCacher cacher) : SearchProvider(logger), ISupportsID
+public class YouTubeSearchProviderCached(ILogger logger, YouTubeCacher cacher) : SearchProvider(logger), ISupportsId
 {
-    protected readonly YouTubeCacher YouTubeCacher = cacher;
     public override string PlatformIdentifier => "yt://";
     public override int Priority => 99;
 
     public async Task<PlatformResult?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
     {
-        var result = await YouTubeCacher.GetFromCacheAsync(id);
+        var result = await cacher.GetFromCacheAsync(id);
         if (result is null)
         {
             Logger.Debug("No cached YouTube result for ID: {ID}", id);
@@ -26,6 +25,6 @@ public class YouTubeSearchProviderCached(ILogger logger, YouTubeCacher cacher) :
 
     protected override void Initialize()
     {
-        YouTubeCacher.InitializeAsync().GetAwaiter().GetResult();
+        cacher.InitializeAsync().GetAwaiter().GetResult();
     }
 }

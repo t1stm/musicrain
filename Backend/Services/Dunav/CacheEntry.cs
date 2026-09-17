@@ -19,7 +19,7 @@ public class CacheEntry
     ///     turn it back, so an operator staring at <c>/Admin/snapshot</c> would otherwise see 64 hex
     ///     characters and no way to tell which track they are about to evict.
     /// </summary>
-    public string? Label { get; set; }
+    public string? Label { get; init; }
 
     public string ContentType { get; set; } = "application/octet-stream";
     public string? ContentDisposition { get; set; }

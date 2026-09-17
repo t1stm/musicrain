@@ -144,11 +144,15 @@ public static class OggPacer
     /// unbounded and cannot be cleared, so this is also the tail heard after a skip or a pause, and
     /// the cushion that covers a hiccup mid-track or a track change.
     /// </summary>
-    public static readonly TimeSpan Lookahead = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan Lookahead = TimeSpan.FromSeconds(1);
 
+    /// <param name="source">The Ogg stream to pace out, read to the end.</param>
+    /// <param name="writer">Where the paced pages go — DSharpPlus's voice sink.</param>
+    /// <param name="scanner">Reads each page's granule position, which is what the pacing is against.</param>
     /// <param name="elapsed">How far playback itself has got — the player's clock, paused included.</param>
     /// <param name="waitWhilePaused">Returns once the player is playing again.</param>
     /// <param name="onProgress">Called after every chunk with the audio fed so far.</param>
+    /// <param name="cancellationToken">Stops the feed — a skip, a stop, or the player going away.</param>
     public static async Task FeedAsync
     (
         Stream source,

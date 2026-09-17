@@ -8,31 +8,31 @@ namespace Gaida.Core;
 
 public class AudioManager(ILogger logger)
 {
-    protected readonly Dictionary<string, Platform> SearchIDMap = [];
+    private readonly Dictionary<string, Platform> _searchIdMap = [];
 
-    public ILogger Logger { get; } = logger.ForContext<AudioManager>();
+    private ILogger Logger { get; } = logger.ForContext<AudioManager>();
 
-    public List<Platform> Platforms { get; } = [];
+    private List<Platform> Platforms { get; } = [];
 
-    protected Dictionary<string, Platform>.AlternateLookup<ReadOnlySpan<char>> SearchIDLookup =>
-        SearchIDMap.GetAlternateLookup<ReadOnlySpan<char>>();
+    private Dictionary<string, Platform>.AlternateLookup<ReadOnlySpan<char>> SearchIdLookup =>
+        _searchIdMap.GetAlternateLookup<ReadOnlySpan<char>>();
 
     public void RegisterPlatform(Platform platform)
     {
         platform.Initialize();
         Platforms.Add(platform);
 
-        foreach (var identifier in platform.SearchIDIdentifiersLookup.Set) SearchIDLookup.TryAdd(identifier, platform);
+        foreach (var identifier in platform.SearchIdIdentifiersLookup.Set) SearchIdLookup.TryAdd(identifier, platform);
     }
 
     /// <summary>The registered platform that owns <paramref name="identifier" /> (e.g. <c>"audio://"</c>), if any.</summary>
     public Platform? PlatformFor(string identifier)
     {
-        return SearchIDLookup.TryGetValue(identifier.AsSpan(), out var platform) ? platform : null;
+        return SearchIdLookup.TryGetValue(identifier.AsSpan(), out var platform) ? platform : null;
     }
 
     /// <returns>The result, or <c>null</c> when no platform claims the ID or the lookup fails.</returns>
-    public Task<PlatformResult?> SearchID(string id, CancellationToken cancellationToken = default)
+    public Task<PlatformResult?> SearchId(string id, CancellationToken cancellationToken = default)
     {
         Logger.Information("Searching for ID: {ID}", id);
         var normalizedId = id.Trim();
@@ -44,7 +44,7 @@ public class AudioManager(ILogger logger)
         }
 
         var identifier = normalizedId[..(separator + 3)];
-        if (SearchIDLookup.TryGetValue(identifier.AsSpan(), out var platform))
+        if (SearchIdLookup.TryGetValue(identifier.AsSpan(), out var platform))
             return platform.GetByIdAsync(normalizedId[(separator + 3)..], cancellationToken);
 
         Logger.Warning("No platform found for identifier: {Identifier}", identifier);

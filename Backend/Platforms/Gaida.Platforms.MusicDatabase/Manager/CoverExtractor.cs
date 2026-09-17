@@ -6,21 +6,21 @@ namespace Gaida.Platforms.MusicDatabase.Manager;
 public class CoverExtractor
 {
     private static readonly Lock ExportLock = new();
-    public string ExportLocation = "./Album_Covers";
+    private string _exportLocation = "./Album_Covers";
 
     public void Extract(string location)
     {
-        ExportLocation = Environment.GetEnvironmentVariable("ALBUM_COVERS", EnvironmentVariableTarget.Process) ??
-                         ExportLocation;
+        _exportLocation = Environment.GetEnvironmentVariable("ALBUM_COVERS", EnvironmentVariableTarget.Process) ??
+                         _exportLocation;
 
-        Directory.CreateDirectory(ExportLocation);
+        Directory.CreateDirectory(_exportLocation);
         Parallel.ForEach(
             Directory.GetDirectories(location, "*", SearchOption.AllDirectories)
                 .Where(folder => File.Exists($"{folder}/Info.json")),
             ParseFolder);
     }
 
-    public void ParseFolder(string folder)
+    private void ParseFolder(string folder)
     {
         using var fileStream = File.Open($"{folder}/Info.json", FileMode.Open, FileAccess.ReadWrite,
             FileShare.ReadWrite);
@@ -59,8 +59,8 @@ public class CoverExtractor
     /// <returns>The cover's file name (<c>&lt;hash&gt;.jpg</c>), or <c>null</c> when the file carries none.</returns>
     public string? ExportCover(string location)
     {
-        ExportLocation = Environment.GetEnvironmentVariable("ALBUM_COVERS", EnvironmentVariableTarget.Process) ??
-                         ExportLocation;
+        _exportLocation = Environment.GetEnvironmentVariable("ALBUM_COVERS", EnvironmentVariableTarget.Process) ??
+                         _exportLocation;
 
         // A file that has been deleted since the last scan is not an error worth a crash: Flac and
         // WavPack answer null for a missing path, but Id3V2 throws, and that took the whole library
@@ -95,16 +95,16 @@ public class CoverExtractor
     /// <returns>The cover's file name (<c>&lt;hash&gt;.jpg</c>).</returns>
     public string StoreCover(byte[] image)
     {
-        ExportLocation = Environment.GetEnvironmentVariable("ALBUM_COVERS", EnvironmentVariableTarget.Process) ??
-                         ExportLocation;
+        _exportLocation = Environment.GetEnvironmentVariable("ALBUM_COVERS", EnvironmentVariableTarget.Process) ??
+                         _exportLocation;
 
         var name = $"{Convert.ToHexStringLower(SHA1.HashData(image))}.{Flac.GetImageFiletype(image)}";
-        var filename = $"{ExportLocation}/{name}";
+        var filename = $"{_exportLocation}/{name}";
 
         // ponytail: one lock for every cover write; they are rare and small, split it per-hash if that ever shows up.
         lock (ExportLock)
         {
-            Directory.CreateDirectory(ExportLocation);
+            Directory.CreateDirectory(_exportLocation);
             if (!File.Exists(filename)) File.WriteAllBytes(filename, image);
         }
 

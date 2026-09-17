@@ -23,30 +23,30 @@ public sealed class DomStore
     /// <summary>OWASP's floor for PBKDF2-SHA256. Stored per user, so raising it is not a migration.</summary>
     private const int DefaultIterations = 210_000;
 
-    private static readonly JsonSerializerOptions fileJson = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions FileJson = new() { WriteIndented = true };
 
-    private readonly Dictionary<string, User> byToken = new(StringComparer.Ordinal);
-    private readonly string dataFile;
-    private readonly Lock gate = new();
-    private readonly ILogger log;
-    private readonly Dictionary<string, Playlist> playlists = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, User> users = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, User> _byToken = new(StringComparer.Ordinal);
+    private readonly string _dataFile;
+    private readonly Lock _gate = new();
+    private readonly ILogger _log;
+    private readonly Dictionary<string, Playlist> _playlists = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, User> _users = new(StringComparer.Ordinal);
 
     public DomStore(string dataFile, ILogger log)
     {
-        this.dataFile = dataFile;
-        this.log = log;
+        _dataFile = dataFile;
+        _log = log;
         Load();
     }
 
     /// <summary>How long a fresh token lasts. Fixed, not sliding — see <see cref="Resolve" />.</summary>
-    public static TimeSpan TokenLifetime => TimeSpan.FromDays(30);
+    private static TimeSpan TokenLifetime => TimeSpan.FromDays(30);
 
     public int UserCount
     {
         get
         {
-            lock (gate) return users.Count;
+            lock (_gate) return _users.Count;
         }
     }
 
@@ -61,9 +61,9 @@ public sealed class DomStore
 
         var name = username.Trim();
 
-        lock (gate)
+        lock (_gate)
         {
-            if (users.ContainsKey(User.Normalize(name)))
+            if (_users.ContainsKey(User.Normalize(name)))
                 return (null, null, "username_taken", "That username is taken. Pick another.");
 
             var salt = RandomNumberGenerator.GetBytes(16);
@@ -76,11 +76,11 @@ public sealed class DomStore
                 CreatedUtc = DateTimeOffset.UtcNow
             };
 
-            users[user.Key] = user;
+            _users[user.Key] = user;
             var token = IssueLocked(user);
             SaveLocked();
 
-            log.Information("Registered {Username}", user.Username);
+            _log.Information("Registered {Username}", user.Username);
             return (token, user, null, null);
         }
     }
@@ -93,9 +93,9 @@ public sealed class DomStore
     {
         const string wrong = "Wrong username or password.";
 
-        lock (gate)
+        lock (_gate)
         {
-            if (!users.TryGetValue(User.Normalize(username ?? ""), out var user))
+            if (!_users.TryGetValue(User.Normalize(username ?? ""), out var user))
                 return (null, null, "invalid_credentials", wrong);
 
             var expected = Convert.FromBase64String(user.Hash);
@@ -122,16 +122,16 @@ public sealed class DomStore
     {
         if (string.IsNullOrEmpty(token)) return null;
 
-        lock (gate)
+        lock (_gate)
         {
-            if (!byToken.TryGetValue(token, out var user)) return null;
+            if (!_byToken.TryGetValue(token, out var user)) return null;
 
             var live = user.Tokens.FirstOrDefault(t => t.Value == token);
             if (live is not null && live.ExpiresUtc > DateTimeOffset.UtcNow) return user;
 
             // expired: drop it here rather than waiting for the next login's prune
             user.Tokens.RemoveAll(t => t.Value == token);
-            byToken.Remove(token);
+            _byToken.Remove(token);
             SaveLocked();
 
             return null;
@@ -143,9 +143,9 @@ public sealed class DomStore
     {
         if (string.IsNullOrEmpty(token)) return;
 
-        lock (gate)
+        lock (_gate)
         {
-            if (!byToken.Remove(token, out var user)) return;
+            if (!_byToken.Remove(token, out var user)) return;
 
             user.Tokens.RemoveAll(t => t.Value == token);
             SaveLocked();
@@ -155,8 +155,8 @@ public sealed class DomStore
     /// <summary>Everything the account owns, newest first.</summary>
     public List<Playlist> Mine(User owner)
     {
-        lock (gate)
-            return playlists.Values
+        lock (_gate)
+            return _playlists.Values
                 .Where(p => p.OwnerKey == owner.Key)
                 .OrderByDescending(p => p.UpdatedUtc)
                 .ToList();
@@ -165,8 +165,8 @@ public sealed class DomStore
     /// <summary>Everything anybody made public, newest first.</summary>
     public List<Playlist> Public()
     {
-        lock (gate)
-            return playlists.Values
+        lock (_gate)
+            return _playlists.Values
                 .Where(p => p.IsPublic)
                 .OrderByDescending(p => p.UpdatedUtc)
                 .ToList();
@@ -178,9 +178,9 @@ public sealed class DomStore
     /// </summary>
     public Playlist? Visible(string id, User? viewer)
     {
-        lock (gate)
+        lock (_gate)
         {
-            if (!playlists.TryGetValue(id, out var playlist)) return null;
+            if (!_playlists.TryGetValue(id, out var playlist)) return null;
 
             return playlist.IsPublic || playlist.OwnerKey == viewer?.Key ? playlist : null;
         }
@@ -205,13 +205,13 @@ public sealed class DomStore
             UpdatedUtc = now
         };
 
-        lock (gate)
+        lock (_gate)
         {
-            playlists[playlist.Id] = playlist;
+            _playlists[playlist.Id] = playlist;
             SaveLocked();
         }
 
-        log.Information("{Owner} created playlist {Name} ({Tracks} tracks)",
+        _log.Information("{Owner} created playlist {Name} ({Tracks} tracks)",
             owner.Username, playlist.Name, playlist.Tracks.Count);
 
         return (playlist, null, null);
@@ -227,9 +227,9 @@ public sealed class DomStore
         var (error, message) = ValidatePlaylist(name ?? "unchanged", tracks);
         if (error is not null) return (null, error, message);
 
-        lock (gate)
+        lock (_gate)
         {
-            if (!playlists.TryGetValue(id, out var playlist) || playlist.OwnerKey != owner.Key)
+            if (!_playlists.TryGetValue(id, out var playlist) || playlist.OwnerKey != owner.Key)
                 return (null, "not_found", "No such playlist.");
 
             if (name is not null) playlist.Name = name.Trim();
@@ -246,19 +246,18 @@ public sealed class DomStore
     /// <summary>Removes a playlist the caller owns. Returns the cover file to delete, if there was one.</summary>
     public (bool deleted, string? coverFile) Delete(User owner, string id)
     {
-        lock (gate)
+        lock (_gate)
         {
-            if (!playlists.TryGetValue(id, out var playlist) || playlist.OwnerKey != owner.Key)
+            if (!_playlists.TryGetValue(id, out var playlist) || playlist.OwnerKey != owner.Key)
                 return (false, null);
 
-            playlists.Remove(id);
+            _playlists.Remove(id);
             SaveLocked();
 
             return (true, playlist.CoverFile);
         }
     }
 
-    /// <summary>Points a playlist at an uploaded cover. The file itself is the controller's business.</summary>
     // ── Admin ──────────────────────────────────────────────────────────────────────────────────
     // Owner-agnostic on purpose: everything above asks "does this caller own it", and an operator
     // owns nothing. Every one of these destroys or rewrites real user data that no cache refills,
@@ -272,22 +271,22 @@ public sealed class DomStore
 
         var name = newName!.Trim();
 
-        lock (gate)
+        lock (_gate)
         {
-            if (!users.TryGetValue(User.Normalize(username), out var user)) return (false, "No such account.");
+            if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, "No such account.");
 
             var oldKey = user.Key;
             var newKey = User.Normalize(name);
-            if (newKey != oldKey && users.ContainsKey(newKey)) return (false, "That username is taken.");
+            if (newKey != oldKey && _users.ContainsKey(newKey)) return (false, "That username is taken.");
 
             // Playlist.Owner holds the display name and OwnerKey derives from it, so the playlists
             // have to move with the account or every one of them orphans on rename.
-            foreach (var playlist in playlists.Values.Where(playlist => playlist.OwnerKey == oldKey))
+            foreach (var playlist in _playlists.Values.Where(playlist => playlist.OwnerKey == oldKey))
                 playlist.Owner = name;
 
-            users.Remove(oldKey);
+            _users.Remove(oldKey);
             user.Username = name;
-            users[user.Key] = user;
+            _users[user.Key] = user;
 
             SaveLocked();
             return (true, null);
@@ -303,9 +302,9 @@ public sealed class DomStore
         var invalid = ValidatePassword(password);
         if (invalid is not null) return (false, invalid);
 
-        lock (gate)
+        lock (_gate)
         {
-            if (!users.TryGetValue(User.Normalize(username), out var user)) return (false, "No such account.");
+            if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, "No such account.");
 
             var salt = RandomNumberGenerator.GetBytes(16);
             user.Salt = Convert.ToBase64String(salt);
@@ -322,9 +321,9 @@ public sealed class DomStore
     /// <summary>Revokes every token an account holds. Returns how many sessions ended.</summary>
     public (bool ok, int revoked) AdminSignOut(string username)
     {
-        lock (gate)
+        lock (_gate)
         {
-            if (!users.TryGetValue(User.Normalize(username), out var user)) return (false, 0);
+            if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, 0);
 
             var revoked = user.Tokens.Count;
             RevokeLocked(user);
@@ -338,17 +337,17 @@ public sealed class DomStore
     ///     Deletes an account and everything it owns. Returns the cover files left behind, which are
     ///     the caller's to unlink — the store owns the accounts file and nothing else on disk.
     /// </summary>
-    public (bool ok, List<string> covers, int playlists) AdminDeleteUser(string username)
+    public (bool ok, List<string> covers, int _playlists) AdminDeleteUser(string username)
     {
-        lock (gate)
+        lock (_gate)
         {
-            if (!users.TryGetValue(User.Normalize(username), out var user)) return (false, [], 0);
+            if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, [], 0);
 
-            var owned = playlists.Values.Where(playlist => playlist.OwnerKey == user.Key).ToList();
-            foreach (var playlist in owned) playlists.Remove(playlist.Id);
+            var owned = _playlists.Values.Where(playlist => playlist.OwnerKey == user.Key).ToList();
+            foreach (var playlist in owned) _playlists.Remove(playlist.Id);
 
             RevokeLocked(user);
-            users.Remove(user.Key);
+            _users.Remove(user.Key);
 
             SaveLocked();
             return (true, owned.Where(p => p.CoverFile is not null).Select(p => p.CoverFile!).ToList(), owned.Count);
@@ -361,9 +360,9 @@ public sealed class DomStore
     /// </summary>
     public (bool ok, string? error) AdminUpdatePlaylist(string id, string? name, bool? isPublic, int? removeTrack)
     {
-        lock (gate)
+        lock (_gate)
         {
-            if (!playlists.TryGetValue(id, out var playlist)) return (false, "No such playlist.");
+            if (!_playlists.TryGetValue(id, out var playlist)) return (false, "No such playlist.");
 
             if (name is not null)
             {
@@ -390,11 +389,9 @@ public sealed class DomStore
     /// <summary>Deletes any playlist. Returns its cover file for the caller to unlink.</summary>
     public (bool ok, string? cover) AdminDeletePlaylist(string id)
     {
-        lock (gate)
+        lock (_gate)
         {
-            if (!playlists.TryGetValue(id, out var playlist)) return (false, null);
-
-            playlists.Remove(id);
+            if (!_playlists.Remove(id, out var playlist)) return (false, null);
 
             SaveLocked();
             return (true, playlist.CoverFile);
@@ -404,7 +401,7 @@ public sealed class DomStore
     /// <summary>Drops every token an account holds, from the account and from the lookup.</summary>
     private void RevokeLocked(User user)
     {
-        foreach (var token in user.Tokens) byToken.Remove(token.Value);
+        foreach (var token in user.Tokens) _byToken.Remove(token.Value);
         user.Tokens.Clear();
     }
 
@@ -417,21 +414,21 @@ public sealed class DomStore
     {
         var now = DateTimeOffset.UtcNow;
 
-        lock (gate)
+        lock (_gate)
         {
-            var counts = playlists.Values.GroupBy(playlist => playlist.OwnerKey)
+            var counts = _playlists.Values.GroupBy(playlist => playlist.OwnerKey)
                 .ToDictionary(group => group.Key, group => group.Count());
 
             return new
             {
-                users = users.Values.Select(user => new
+                _users = _users.Values.Select(user => new
                 {
                     username = user.Username,
                     createdUtc = user.CreatedUtc,
                     activeTokens = user.Tokens.Count(token => token.ExpiresUtc > now),
-                    playlists = counts.GetValueOrDefault(user.Key, 0)
+                    _playlists = counts.GetValueOrDefault(user.Key, 0)
                 }).OrderBy(user => user.username).ToList(),
-                playlists = playlists.Values.Select(playlist => new
+                _playlists = _playlists.Values.Select(playlist => new
                 {
                     id = playlist.Id,
                     name = playlist.Name,
@@ -447,17 +444,16 @@ public sealed class DomStore
         }
     }
 
-    public Playlist? SetCover(User owner, string id, string? coverFile)
+    /// <summary>Points a playlist at an uploaded cover. The file itself is the controller's business.</summary>
+    public void SetCover(User owner, string id, string? coverFile)
     {
-        lock (gate)
+        lock (_gate)
         {
-            if (!playlists.TryGetValue(id, out var playlist) || playlist.OwnerKey != owner.Key) return null;
+            if (!_playlists.TryGetValue(id, out var playlist) || playlist.OwnerKey != owner.Key) return;
 
             playlist.CoverFile = coverFile;
             playlist.UpdatedUtc = DateTimeOffset.UtcNow;
             SaveLocked();
-
-            return playlist;
         }
     }
 
@@ -537,7 +533,7 @@ public sealed class DomStore
         // whoever just signed in is the natural moment to sweep their dead tokens
         foreach (var dead in user.Tokens.Where(t => t.ExpiresUtc <= now).ToList())
         {
-            byToken.Remove(dead.Value);
+            _byToken.Remove(dead.Value);
             user.Tokens.Remove(dead);
         }
 
@@ -549,7 +545,7 @@ public sealed class DomStore
         };
 
         user.Tokens.Add(token);
-        byToken[token.Value] = user;
+        _byToken[token.Value] = user;
 
         return token;
     }
@@ -560,41 +556,41 @@ public sealed class DomStore
 
     private void Load()
     {
-        if (!File.Exists(dataFile))
+        if (!File.Exists(_dataFile))
         {
-            log.Information("No accounts file at {Path} yet; starting empty", dataFile);
+            _log.Information("No accounts file at {Path} yet; starting empty", _dataFile);
             return;
         }
 
-        var state = JsonSerializer.Deserialize<DomState>(File.ReadAllText(dataFile), fileJson)
+        var state = JsonSerializer.Deserialize<DomState>(File.ReadAllText(_dataFile), FileJson)
                     ?? new DomState();
 
-        lock (gate)
+        lock (_gate)
         {
             foreach (var user in state.Users)
             {
-                users[user.Key] = user;
-                foreach (var token in user.Tokens) byToken[token.Value] = user;
+                _users[user.Key] = user;
+                foreach (var token in user.Tokens) _byToken[token.Value] = user;
             }
 
-            foreach (var playlist in state.Playlists) playlists[playlist.Id] = playlist;
+            foreach (var playlist in state.Playlists) _playlists[playlist.Id] = playlist;
         }
 
-        log.Information("Loaded {Users} account(s) and {Playlists} playlist(s) from {Path}",
-            state.Users.Count, state.Playlists.Count, dataFile);
+        _log.Information("Loaded {Users} account(s) and {Playlists} playlist(s) from {Path}",
+            state.Users.Count, state.Playlists.Count, _dataFile);
     }
 
-    /// <summary>Caller holds <see cref="gate" />.</summary>
+    /// <summary>Caller holds <see cref="_gate" />.</summary>
     private void SaveLocked()
     {
-        var directory = Path.GetDirectoryName(dataFile);
+        var directory = Path.GetDirectoryName(_dataFile);
         if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
         // Same directory as the target, so the move is a rename within one filesystem and therefore
         // atomic. A temp file in /tmp would be a copy, which is exactly the torn write to avoid.
-        var temporary = dataFile + ".tmp";
-        var state = new DomState { Users = [.. users.Values], Playlists = [.. playlists.Values] };
-        File.WriteAllText(temporary, JsonSerializer.Serialize(state, fileJson));
-        File.Move(temporary, dataFile, true);
+        var temporary = _dataFile + ".tmp";
+        var state = new DomState { Users = [.. _users.Values], Playlists = [.. _playlists.Values] };
+        File.WriteAllText(temporary, JsonSerializer.Serialize(state, FileJson));
+        File.Move(temporary, _dataFile, true);
     }
 }

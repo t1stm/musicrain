@@ -9,7 +9,7 @@ using YoutubeExplode.Common;
 namespace Gaida.Platforms.YouTube.Search_Providers;
 
 public sealed class YouTubeSearchProviderExplode(ILogger logger) : SearchProvider(logger),
-    ISupportsID, ISupportsPlaylist, ISupportsSearch
+    ISupportsId, ISupportsPlaylist, ISupportsSearch
 {
     private const int MaxKeywordResults = 15;
     public static YoutubeClient Client { get; } = new();
@@ -22,7 +22,7 @@ public sealed class YouTubeSearchProviderExplode(ILogger logger) : SearchProvide
 
         return new YouTubeResult
         {
-            ID = PlatformIdentifier + id,
+            Id = PlatformIdentifier + id,
             Name = video.Title,
             Artist = video.Author.ChannelTitle,
             Duration = video.Duration.GetValueOrDefault(TimeSpan.Zero),
@@ -34,17 +34,17 @@ public sealed class YouTubeSearchProviderExplode(ILogger logger) : SearchProvide
     public async IAsyncEnumerable<PlatformResult> SearchPlaylist(string playlistUrl,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var playlistID = playlistUrl.StartsWith("yt-playlist://", StringComparison.OrdinalIgnoreCase)
+        var playlistId = playlistUrl.StartsWith("yt-playlist://", StringComparison.OrdinalIgnoreCase)
             ? playlistUrl["yt-playlist://".Length..]
             : playlistUrl.AsSpan().SliceAfter("list=").SliceTo("&").ToString();
 
-        if (string.IsNullOrWhiteSpace(playlistID)) yield break;
+        if (string.IsNullOrWhiteSpace(playlistId)) yield break;
 
-        await foreach (var batch in Client.Playlists.GetVideoBatchesAsync(playlistID, cancellationToken))
+        await foreach (var batch in Client.Playlists.GetVideoBatchesAsync(playlistId, cancellationToken))
         foreach (var video in batch.Items)
             yield return new YouTubeResult
             {
-                ID = PlatformIdentifier + video.Id,
+                Id = PlatformIdentifier + video.Id,
                 Name = video.Title,
                 Artist = video.Author.ChannelTitle,
                 Duration = video.Duration.GetValueOrDefault(TimeSpan.Zero),
@@ -61,7 +61,7 @@ public sealed class YouTubeSearchProviderExplode(ILogger logger) : SearchProvide
         {
             yield return new YouTubeResult
             {
-                ID = PlatformIdentifier + video.Id,
+                Id = PlatformIdentifier + video.Id,
                 Name = video.Title,
                 Artist = video.Author.ChannelTitle,
                 Duration = video.Duration.GetValueOrDefault(TimeSpan.Zero),

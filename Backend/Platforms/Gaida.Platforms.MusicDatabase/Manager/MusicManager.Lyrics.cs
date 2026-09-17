@@ -39,6 +39,7 @@ public partial class MusicManager
     }
 
     /// <summary>Records what stih found, or that it found nothing. Never overwrites existing lyrics.</summary>
+    /// <param name="id">The entry whose lyrics state this records.</param>
     /// <param name="kind">What was written beside the audio, or <c>null</c> for "looked, found nothing".</param>
     /// <param name="source">Who found it. <c>null</c> means the file was already in the folder.</param>
     /// <remarks>
@@ -49,7 +50,7 @@ public partial class MusicManager
     public async Task<(MusicInfo? entry, string? error)> StampLyricsAsync(string id, LyricsKind? kind,
         LyricsOrigin? source)
     {
-        await editGate.WaitAsync();
+        await _editGate.WaitAsync();
 
         try
         {
@@ -63,17 +64,18 @@ public partial class MusicManager
             if (kind is null) entry.LyricsChecked = DateOnly.FromDateTime(DateTime.UtcNow);
 
             await SaveFolderAsync(entry.RelativeLocation);
-            Logger.Information("Stamped lyrics on {Id}: {Kind} from {Source}", id, kind, source);
+            Logger.Information("Stamped lyrics on {ID}: {Kind} from {Source}", id, kind, source);
 
             return (entry, null);
         }
         finally
         {
-            editGate.Release();
+            _editGate.Release();
         }
     }
 
     /// <summary>Tracks with no lyrics beside them, oldest-checked first, for stih's sweep.</summary>
+    /// <param name="take">How many tracks to return at most.</param>
     /// <param name="retryBefore">A miss recorded before this day is offered again; LRCLIB grows.</param>
     public IReadOnlyList<MusicInfo> MissingLyrics(int take, DateOnly retryBefore)
     {
@@ -84,7 +86,7 @@ public partial class MusicManager
                                    && song.LyricsType is null
                                    && (song.LyricsChecked is null || song.LyricsChecked < retryBefore))
                 .OrderBy(song => song.LyricsChecked ?? DateOnly.MinValue)
-                .ThenBy(song => song.ID, StringComparer.Ordinal)
+                .ThenBy(song => song.Id, StringComparer.Ordinal)
                 .Take(Math.Clamp(take, 1, 500))
         ];
     }

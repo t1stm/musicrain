@@ -1,13 +1,11 @@
-using Gaida.Admin;
-using System.Collections.Concurrent;
 using System.Globalization;
-using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
+using Gaida.Admin;
 using Gaida.Core.Platforms;
 using Gaida.Core.Streams;
-using Gaida.Core.Utils;
 using Gaida.Platforms.MusicDatabase;
 using Gaida.Platforms.MusicDatabase.Manager;
+using JetBrains.Annotations;
 using Serilog;
 
 // `dotnet run -- selftest` runs the pure-logic check below without needing a library or a
@@ -46,7 +44,7 @@ var app = builder.Build();
 
 // Unlike the other pods, this one owns state an operator edits: the library's names and albums.
 // No-op without ADMIN_TOKEN. See ADMIN_PLAN.md.
-var admin = app.MapAdmin(() => platform.Summary());
+var admin = app.MapAdmin(platform.Summary);
 
 // The rows to edit. A GET, so it goes through Oko's read proxy rather than its audited action one.
 admin?.MapGet("/library", IResult (string? q, int? take, MusicDatabase db) =>
@@ -89,7 +87,7 @@ admin?.MapPost("/import-deezer", async Task<IResult> (string? id, MusicDatabase 
     }
     catch (Exception exception) when (exception is not OperationCanceledException)
     {
-        Log.Warning(exception, "Deezer would not describe {Id}", id);
+        Log.Warning(exception, "Deezer would not describe {ID}", id);
         return Results.BadRequest(new ErrorDto("The Deezer pod does not know that track."));
     }
 
@@ -119,7 +117,7 @@ admin?.MapPost("/import-deezer", async Task<IResult> (string? id, MusicDatabase 
 
     if (error is not null) return Results.BadRequest(new ErrorDto(error));
 
-    Log.Information("Imported Deezer track {Id} as {Entry}", id, entry!.ID);
+    Log.Information("Imported Deezer track {ID} as {Entry}", id, entry!.Id);
     return Results.Ok(LibraryRow(entry));
 });
 
@@ -164,7 +162,7 @@ app.MapGet("/lyrics/missing", IResult (int? take, int? retryDays, MusicDatabase 
 {
     var retryBefore = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-Math.Max(0, retryDays ?? 30));
     return Results.Ok(db.MissingLyrics(take ?? 200, retryBefore).Select(song => new MissingLyricsDto(
-        "audio://" + song.ID,
+        "audio://" + song.Id,
         song.Title,
         song.Artist,
         song.Album,
@@ -187,7 +185,7 @@ app.MapPost("/lyrics/stamp", async Task<IResult> (string? id, string? type, stri
     if (error is not null)
         return error == "No song with that ID." ? Results.NotFound() : Results.BadRequest(new ErrorDto(error));
 
-    return Results.Ok(new LyricsRowDto("audio://" + entry!.ID, entry.LyricsType?.ToString(),
+    return Results.Ok(new LyricsRowDto("audio://" + entry!.Id, entry.LyricsType?.ToString(),
         entry.LyricsSource?.ToString(), entry.LyricsChecked?.ToString("O")));
 });
 
@@ -304,10 +302,8 @@ return;
 
 // ── Admin helpers ──────────────────────────────────────────────────────────────────────────────
 
-/// <summary>
-///     The cover image a pod's <c>thumbnailUrl</c> points at, or <c>null</c> for anything that does not
-///     fetch. Never throws: artwork is the one part of an import worth losing rather than failing over.
-/// </summary>
+// The cover image a pod's thumbnailUrl points at, or null for anything that does not fetch. Never
+// throws: artwork is the one part of an import worth losing rather than failing over.
 static async Task<byte[]?> CoverBytesAsync(HttpClient http, string? url, CancellationToken ct)
 {
     if (string.IsNullOrWhiteSpace(url)) return null;
@@ -324,10 +320,8 @@ static async Task<byte[]?> CoverBytesAsync(HttpClient http, string? url, Cancell
     }
 }
 
-/// <summary>
-///     The library extension for what the Deezer pod says it is sending, or <c>null</c> for anything this
-///     library does not index. Deezer only ever serves these two — see Gaida.Pods.Deezer/stream.py.
-/// </summary>
+// The library extension for what the Deezer pod says it is sending, or null for anything this
+// library does not index. Deezer only ever serves these two — see Gaida.Pods.Deezer/stream.py.
 static string? ExtensionFor(string? contentType) => contentType switch
 {
     "audio/flac" => ".flac",
@@ -342,14 +336,12 @@ static List<string>? Variants(HttpRequest request, string name)
         : null;
 }
 
-/// <summary>
-///     One editable row. Every variant, not just the display one: the whole point of the editor is the
-///     list <see cref="ResultDto" /> flattens down to a single name.
-/// </summary>
-static LibraryRowDto LibraryRow(MusicInfo song) => new(song.ID ?? "", [.. song.Titles], [.. song.Artists],
+// One editable row. Every variant, not just the display one: the whole point of the editor is the
+// list ResultDto flattens down to a single name.
+static LibraryRowDto LibraryRow(MusicInfo song) => new(song.Id ?? "", [.. song.Titles], [.. song.Artists],
     song.Album, song.RelativeLocation, song.Duration.ToString("c", CultureInfo.InvariantCulture), song.CoverUrl);
 
-/// <summary>An omitted or empty value is the <c>null</c> case, not a bad request. Anything else must parse.</summary>
+// An omitted or empty value is the null case, not a bad request. Anything else must parse.
 static bool TryParseLyrics<T>(string? value, out T? parsed) where T : struct, Enum
 {
     if (string.IsNullOrWhiteSpace(value))
@@ -375,9 +367,9 @@ static async IAsyncEnumerable<ResultDto> Mapped(IAsyncEnumerable<PlatformResult>
 
 static ResultDto? Map(PlatformResult result)
 {
-    if (string.IsNullOrWhiteSpace(result.ID)) return null;
+    if (string.IsNullOrWhiteSpace(result.Id)) return null;
     var duration = result.Duration < TimeSpan.Zero ? TimeSpan.Zero : result.Duration;
-    return new ResultDto(result.ID, result.Name, result.Artist, result.Album,
+    return new ResultDto(result.Id, result.Name, result.Artist, result.Album,
         duration.ToString("c", CultureInfo.InvariantCulture), result.ThumbnailUrl,
         result.OriginalTitle, result.OriginalArtist);
 }
@@ -426,11 +418,9 @@ static string MapKind(LocalMatchKind kind)
 
 // ── /content helpers. ──
 
-/// <summary>
-///     The library holds .wv, .mp3, .ogg and .flac (see MUSICDB_FORMAT_PLAN.md), plus whatever else
-///     MusicManager.IsAudioBasedOnFileExtension accepts. Gaida and Dunav relay this verbatim, so a
-///     wrong value here breaks playback downstream.
-/// </summary>
+// The library holds .wv, .mp3, .ogg and .flac (see MUSICDB_FORMAT_PLAN.md), plus whatever else
+// MusicManager.IsAudioBasedOnFileExtension accepts. Gaida and Dunav relay this verbatim, so a wrong
+// value here breaks playback downstream.
 static string ContentTypeFor(string extension)
 {
     return extension.ToLowerInvariant() switch
@@ -447,7 +437,8 @@ static string ContentTypeFor(string extension)
     };
 }
 
-/// <summary>The ID without its platform protocol, safe to put in a header — mirrors Gaida.API/Controllers/Content.cs's FileId.</summary>
+// The ID without its platform protocol, safe to put in a header — mirrors
+// Gaida.API/Controllers/Content.cs's FileId.
 static string FileId(string id)
 {
     var separator = id.IndexOf("://", StringComparison.Ordinal);
@@ -455,11 +446,9 @@ static string FileId(string id)
     return Uri.EscapeDataString(value);
 }
 
-/// <summary>
-///     Pumps a stream spreader into the response body until the source closes or the client leaves.
-///     The source (MusicGetter, a download) may still be writing while this drains it -- the reader follows
-///     the body as it grows rather than stopping at whatever had arrived when it opened.
-/// </summary>
+// Pumps a stream spreader into the response body until the source closes or the client leaves. The
+// source (MusicGetter, a download) may still be writing while this drains it -- the reader follows
+// the body as it grows rather than stopping at whatever had arrived when it opened.
 static async Task PumpToResponse(StreamSpreader spreader, HttpResponse response, CancellationToken ct)
 {
     await using var reader = spreader.OpenRead();
@@ -509,17 +498,15 @@ static async Task RunSelfCheck()
     }
 }
 
-/// <summary>
-///     The Deezer import, against a throwaway library. Four things would go wrong quietly: the file has to
-///     land where the rest of the library lives (Deezer/&lt;artist&gt;/&lt;artist&gt; - &lt;title&gt;), the
-///     artist folder is what keeps "Deezer" out of the entry's own artist list, the entry has to reach
-///     Info.json (otherwise it is gone on the next restart), and a second import of the same track must be
-///     refused rather than overwrite a file whose entry someone may already have renamed.
-/// </summary>
-/// <remarks>
-///     The bytes are not real audio, which is the point: ffprobe reads no tags out of them, so what is under
-///     test is the filename-and-folder path every import falls back to rather than one particular encoder.
-/// </remarks>
+// The Deezer import, against a throwaway library. Four things would go wrong quietly: the file has
+// to land where the rest of the library lives (Deezer/<artist>/<artist> - <title>), the artist
+// folder is what keeps "Deezer" out of the entry's own artist list, the entry has to reach
+// Info.json (otherwise it is gone on the next restart), and a second import of the same track must
+// be refused rather than overwrite a file whose entry someone may already have renamed.
+//
+// The bytes are not real audio, which is the point: ffprobe reads no tags out of them, so what is
+// under test is the filename-and-folder path every import falls back to rather than one particular
+// encoder.
 static async Task ImportCheck(Action<bool, string> assert)
 {
     var root = Path.Combine(Path.GetTempPath(), "gaida-local-import-" + Guid.NewGuid().ToString("n"));
@@ -543,7 +530,7 @@ static async Task ImportCheck(Action<bool, string> assert)
         assert(!File.Exists(Path.Combine(root, entry.RelativeLocation! + ".part")),
             "import: no half-written .part is left behind");
         assert(entry.Album == "Discovery", "import: the album Deezer supplied fills in for the missing tag");
-        assert(entry.ID is { Length: > 0 }, "import: the entry got an ID, so it is addressable as audio://");
+        assert(entry.Id is { Length: > 0 }, "import: the entry got an ID, so it is addressable as audio://");
 
         // ParseFile reads the containing folder as an artist variant, so a file sitting directly in
         // Deezer/ would be indexed with "Deezer" as one of its artists -- and answer a search for it.
@@ -589,13 +576,11 @@ static async Task ImportCheck(Action<bool, string> assert)
     }
 }
 
-/// <summary>
-///     The album backfill, against a throwaway library whose one entry predates the tag being read.
-///     The thing that would go wrong quietly is the ID: <c>RereadTags</c> re-rolls it, and re-rolling
-///     every ID in the library to fill an album would orphan every playlist, cache key and
-///     recently-played entry that holds one. The media file does not exist here, so the ffprobe read is
-///     skipped and only the bookkeeping is under test.
-/// </summary>
+// The album backfill, against a throwaway library whose one entry predates the tag being read. The
+// thing that would go wrong quietly is the ID: RereadTags re-rolls it, and re-rolling every ID in
+// the library to fill an album would orphan every playlist, cache key and recently-played entry
+// that holds one. The media file does not exist here, so the ffprobe read is skipped and only the
+// bookkeeping is under test.
 static async Task BackfillCheck(Action<bool, string> assert)
 {
     var root = Path.Combine(Path.GetTempPath(), "gaida-local-backfill-" + Guid.NewGuid().ToString("n"));
@@ -617,7 +602,7 @@ static async Task BackfillCheck(Action<bool, string> assert)
 
         var songs = database.FindForAdmin("Duran Duran", 10);
         assert(songs.Count == 1, "backfill: the throwaway library loaded one song");
-        assert(songs[0].ID == "ducome-un", "backfill: the ID survives it -- playlists and cache keys hold it");
+        assert(songs[0].Id == "ducome-un", "backfill: the ID survives it -- playlists and cache keys hold it");
         assert(songs[0].Scan == MusicManager.ScanVersion, "backfill: the entry is stamped with the pass that read it");
 
         var saved = await File.ReadAllTextAsync(info);
@@ -630,11 +615,9 @@ static async Task BackfillCheck(Action<bool, string> assert)
     }
 }
 
-/// <summary>
-///     The admin edit path, against a throwaway library built from one Info.json. Covers the two things
-///     that would go wrong quietly: an edit must not re-roll the ID that playlists and cache keys hold,
-///     and the saved file must keep the <c>$[DOMAIN]</c> placeholder rather than this host's domain.
-/// </summary>
+// The admin edit path, against a throwaway library built from one Info.json. Covers the two things
+// that would go wrong quietly: an edit must not re-roll the ID that playlists and cache keys hold,
+// and the saved file must keep the $[DOMAIN] placeholder rather than this host's domain.
 static async Task EditCheck(Action<bool, string> assert)
 {
     var root = Path.Combine(Path.GetTempPath(), "gaida-local-selfcheck-" + Guid.NewGuid().ToString("n"));
@@ -665,7 +648,7 @@ static async Task EditCheck(Action<bool, string> assert)
             ["You're My Best Friend", "You_re My Best Friend"], ["Queen", "Freddie Mercury"], "A Night at the Opera");
 
         assert(error is null && edited is not null, $"edit: the edit succeeded ({error})");
-        assert(edited!.ID == "quyoure-ab", "edit: the ID survives an edit -- playlists and cache keys hold it");
+        assert(edited!.Id == "quyoure-ab", "edit: the ID survives an edit -- playlists and cache keys hold it");
         assert(edited.Title == "You're My Best Friend", "edit: the first title becomes the display name");
         assert(edited.Artists.Count == 2, "edit: every artist variant is kept");
 
@@ -693,6 +676,7 @@ static async Task EditCheck(Action<bool, string> assert)
 // ── DTO shapes. Deliberately not shared with Gaida.API/Contracts/DiscoveryContracts.cs: this pod
 // doesn't know the public host (no contentUrl), and Gaida.API adds fields (contentUrl) this must not. ──
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record ResultDto(
     string Id,
     string? Name,
@@ -708,6 +692,7 @@ public sealed record ResultDto(
     string? LyricsSource = null);
 
 /// <summary>One track stih's sweep has not found words for yet.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record MissingLyricsDto(
     string Id,
     string? Title,
@@ -717,8 +702,10 @@ public sealed record MissingLyricsDto(
     string? RelativeLocation);
 
 /// <summary>What one track's lyrics state became, after a stamp.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record LyricsRowDto(string Id, string? Type, string? Source, string? Checked);
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record LibraryRowDto(
     string Id,
     IReadOnlyList<string> Titles,
@@ -728,14 +715,19 @@ public sealed record LibraryRowDto(
     string Duration,
     string? CoverUrl);
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record ClassifyDto(string? Kind, string? Id, string? Error);
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record ErrorDto(string Error);
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record BrowseFolderDto(string Name, string Path, int Songs);
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record BrowseDto(string Path, IReadOnlyList<BrowseFolderDto> Folders, IReadOnlyList<ResultDto> Files);
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record VariantDto(
     string Match,
     double Score,

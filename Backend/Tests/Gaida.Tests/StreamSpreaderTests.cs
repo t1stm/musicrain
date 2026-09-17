@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using Gaida.Core.Streams;
 using Xunit.Abstractions;
 
 namespace Gaida.Tests;
@@ -10,7 +9,7 @@ public class StreamSpreaderTests(ITestOutputHelper output)
     [Fact]
     public async Task CorrectDataOrder()
     {
-        using var streamSpreader = new StreamSpreader();
+        await using var streamSpreader = new StreamSpreader();
         var randomBytes = RandomNumberGenerator.GetBytes(1048576);
 
         var readers = Enumerable.Range(0, 16).Select(async _ =>
@@ -53,7 +52,7 @@ public class StreamSpreaderTests(ITestOutputHelper output)
         // Opened before the dispose, exactly as an in-flight response would be.
         var readers = Enumerable.Range(0, 8).Select(_ => streamSpreader.OpenRead()).ToArray();
 
-        streamSpreader.Dispose();
+        await streamSpreader.DisposeAsync();
 
         foreach (var reader in readers)
         {
@@ -91,7 +90,7 @@ public class StreamSpreaderTests(ITestOutputHelper output)
                 Assert.Equal(randomBytes, sink.ToArray());
             }
 
-            streamSpreader.Dispose();
+            await streamSpreader.DisposeAsync();
             Assert.True(File.Exists(path), "Disposing an adopted spreader must not delete the source file.");
         }
         finally
@@ -108,7 +107,7 @@ public class StreamSpreaderTests(ITestOutputHelper output)
         var scratchPath = scratch.Path;
         await scratch.WriteAsync(RandomNumberGenerator.GetBytes(4096));
         await scratch.CloseAsync();
-        scratch.Dispose();
+        await scratch.DisposeAsync();
         Assert.False(File.Exists(scratchPath), "A scratch body must delete itself on dispose.");
 
         var destination = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
@@ -126,7 +125,7 @@ public class StreamSpreaderTests(ITestOutputHelper output)
             Assert.Equal(randomBytes, await File.ReadAllBytesAsync(destination));
             Assert.False(File.Exists(temporaryPath), "The body was moved, not copied.");
 
-            kept.Dispose();
+            await kept.DisposeAsync();
             Assert.True(File.Exists(destination), "A kept body must survive dispose.");
         }
         finally
@@ -139,7 +138,7 @@ public class StreamSpreaderTests(ITestOutputHelper output)
     [Fact]
     public async Task ClosedCopyTest()
     {
-        using var streamSpreader = new StreamSpreader();
+        await using var streamSpreader = new StreamSpreader();
         var randomBytes = RandomNumberGenerator.GetBytes(4096);
 
         await streamSpreader.WriteAsync(randomBytes);
@@ -161,10 +160,13 @@ public class StreamSpreaderTests(ITestOutputHelper output)
     [Fact]
     public async Task FaultingReaderDoesNotStarveOthers()
     {
-        using var streamSpreader = new StreamSpreader();
+        await using var streamSpreader = new StreamSpreader();
         var randomBytes = RandomNumberGenerator.GetBytes(1 << 16);
 
         using var poisonedSource = new CancellationTokenSource();
+
+        // ReSharper disable AccessToDisposedClosure -- both readers are awaited below, before the `using`
+        // declarations at the top of the test dispose the spreader and the token source.
         var poisoned = Task.Run(async () =>
         {
             await using var reader = streamSpreader.OpenRead();
@@ -184,6 +186,7 @@ public class StreamSpreaderTests(ITestOutputHelper output)
 
         await Assert.ThrowsAnyAsync<Exception>(() => poisoned);
         Assert.Equal(randomBytes, await healthy);
+        // ReSharper restore AccessToDisposedClosure
     }
 
     /// <summary>Stands in for a response whose client has gone: every write throws.</summary>

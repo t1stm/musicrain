@@ -28,7 +28,7 @@ public class MultiplayerManagerTests
         var roomId = await manager.CreateNewRoom();
 
         var room = Assert.IsType<Room>(manager.GetRoom(roomId));
-        Assert.Equal(roomId, room.RoomID);
+        Assert.Equal(roomId, room.RoomId);
         Assert.Equal(roomId.ToString(), room.RoomName);
         Assert.Empty(room.RoomDescription);
         Assert.Equal([room], manager.GetRooms());
@@ -86,7 +86,7 @@ public class MultiplayerManagerTests
         var roomId = await manager.CreateNewRoom();
         var room = Assert.IsType<Room>(manager.GetRoom(roomId));
         var socket = new RecordingWebSocket();
-        var user = new User { ID = "host", Username = "Host", WebSocket = socket };
+        var user = new User { Id = "host", Username = "Host", WebSocket = socket };
         var changeCount = 0;
         manager.RoomsChanged += () =>
         {
@@ -169,8 +169,8 @@ public class MultiplayerUserTests
     public void ChatUsernameUsesExplicitNameOrStableAnonymousName()
     {
         var socket = new RecordingWebSocket();
-        var named = new User { ID = "one:trace", Username = "Ada", WebSocket = socket };
-        var anonymous = new User { ID = "two:trace", WebSocket = socket };
+        var named = new User { Id = "one:trace", Username = "Ada", WebSocket = socket };
+        var anonymous = new User { Id = "two:trace", WebSocket = socket };
 
         Assert.Equal("Ada", named.ChatUsername);
         Assert.Equal("Anonymous two", anonymous.ChatUsername);
@@ -702,7 +702,7 @@ public class MultiplayerControllerTests
 
         var json = Assert.IsType<JsonResult>(result);
         var room = Assert.IsType<Room>(json.Value);
-        Assert.Same(room, manager.GetRoom(room.RoomID));
+        Assert.Same(room, manager.GetRoom(room.RoomId));
     }
 
     [Fact]

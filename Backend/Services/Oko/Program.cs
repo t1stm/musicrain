@@ -72,7 +72,7 @@ var audit = app.Services.GetRequiredService<AuditLog>();
 // empty body. CancellationToken binds to RequestAborted on its own, so HttpContext is not needed here.
 app.MapGet("/api/targets", () => fleet.Targets.Select(target => target.Name));
 
-app.MapGet("/api/snapshot", (CancellationToken cancellationToken) => fleet.SnapshotAsync(cancellationToken));
+app.MapGet("/api/snapshot", fleet.SnapshotAsync);
 
 app.MapGet("/api/requests/{name}", async Task<IResult> (string name, CancellationToken cancellationToken) =>
 {

@@ -1,6 +1,9 @@
+using JetBrains.Annotations;
+
 namespace Oko;
 
 /// <summary>One action an operator asked for, and what came back.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record AuditEntry(
     DateTimeOffset At,
     string Who,
@@ -27,21 +30,21 @@ public sealed class AuditLog
 {
     private const int Capacity = 1000;
 
-    private readonly Lock gate = new();
-    private readonly Queue<AuditEntry> entries = new(Capacity);
+    private readonly Lock _gate = new();
+    private readonly Queue<AuditEntry> _entries = new(Capacity);
 
     public void Record(AuditEntry entry)
     {
-        lock (gate)
+        lock (_gate)
         {
-            if (entries.Count == Capacity) entries.Dequeue();
-            entries.Enqueue(entry);
+            if (_entries.Count == Capacity) _entries.Dequeue();
+            _entries.Enqueue(entry);
         }
     }
 
     public AuditEntry[] Recent()
     {
-        lock (gate) return entries.ToArray();
+        lock (_gate) return _entries.ToArray();
     }
 
     /// <summary>

@@ -19,8 +19,7 @@ public sealed class MusicDatabase : Platform, ISupportsSearch, ISupportsRandomRe
         ContentDownloaders = [new MusicGetter(logger)];
     }
 
-    protected override HashSet<string> SearchIDIdentifiers { get; } = ["audio://"];
-    protected override HashSet<string> SearchPlaylistIdentifiers { get; } = [];
+    protected override HashSet<string> SearchIdIdentifiers { get; } = ["audio://"];
 
     protected override List<SearchProvider> SearchProviders { get; set; }
     protected override List<ContentGetter> ContentDownloaders { get; set; }

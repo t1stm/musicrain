@@ -3,17 +3,17 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Channels;
+using JetBrains.Annotations;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Gaida.Admin;
 
 /// <summary>
 ///     The half of the admin surface that is identical in every service: the shared-secret check, the
-///     request ring, and the live feed. A service calls <see cref="MapAdmin" /> once and adds its own
+///     request ring, and the live feed. A service calls <see cref="MapAdmin(WebApplication,Func{object})" /> once and adds its own
 ///     routes to the group it gets back.
 /// </summary>
 /// <remarks>
@@ -35,6 +35,7 @@ public static class AdminApi
     ///     Installs the request ring and maps <c>/Admin/snapshot</c>, <c>/Admin/requests</c> and
     ///     <c>/Admin/events</c>. Call it before <c>MapControllers</c> so the ring sees the whole pipeline.
     /// </summary>
+    /// <param name="app">The service's application, before <c>MapControllers</c>.</param>
     /// <param name="snapshot">
     ///     Whatever this service wants an operator to see, serialised as JSON on demand. Called per request
     ///     and never cached: the service's own state is the only copy, and a second one would just be staler.
@@ -117,6 +118,7 @@ public static class AdminApi
 }
 
 /// <summary>One handled request, as an operator wants to read it.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record RequestEntry(DateTimeOffset At, string Method, string Path, int Status, long Ms);
 
 /// <summary>
@@ -132,27 +134,27 @@ public sealed class AdminFeed
     /// <summary>~50 KB. Long enough to see what just happened, short enough to never be a memory question.</summary>
     private const int Capacity = 500;
 
-    private readonly Lock gate = new();
-    private readonly Queue<RequestEntry> recent = new(Capacity);
-    private readonly List<Channel<RequestEntry>> subscribers = [];
+    private readonly Lock _gate = new();
+    private readonly Queue<RequestEntry> _recent = new(Capacity);
+    private readonly List<Channel<RequestEntry>> _subscribers = [];
 
     public void Record(RequestEntry entry)
     {
-        lock (gate)
+        lock (_gate)
         {
-            if (recent.Count == Capacity) recent.Dequeue();
-            recent.Enqueue(entry);
+            if (_recent.Count == Capacity) _recent.Dequeue();
+            _recent.Enqueue(entry);
 
             // TryWrite on a DropOldest channel never blocks and never fails, so a subscriber that has
             // stopped reading costs the request path nothing. This is the whole reason the panel pulls:
             // there is no queue here that a slow or absent watcher can grow.
-            foreach (var subscriber in subscribers) subscriber.Writer.TryWrite(entry);
+            foreach (var subscriber in _subscribers) subscriber.Writer.TryWrite(entry);
         }
     }
 
     public RequestEntry[] Recent()
     {
-        lock (gate) return recent.ToArray();
+        lock (_gate) return _recent.ToArray();
     }
 
     /// <summary>Requests as they happen, for as long as the caller stays connected.</summary>
@@ -163,7 +165,7 @@ public sealed class AdminFeed
             FullMode = BoundedChannelFullMode.DropOldest
         });
 
-        lock (gate) subscribers.Add(channel);
+        lock (_gate) _subscribers.Add(channel);
 
         try
         {
@@ -171,7 +173,7 @@ public sealed class AdminFeed
         }
         finally
         {
-            lock (gate) subscribers.Remove(channel);
+            lock (_gate) _subscribers.Remove(channel);
         }
     }
 }

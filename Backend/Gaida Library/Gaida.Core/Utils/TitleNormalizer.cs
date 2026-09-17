@@ -22,7 +22,7 @@ public static partial class TitleNormalizer
     ///     close to even by construction; a separator inside a name leaves one side a fragment.
     /// </summary>
     // ponytail: calibration knob, same as MusicManager's strong/weak. 0.54 is the 65/35 split from the plan.
-    public static readonly double BalanceRatio = 0.54;
+    private static readonly double BalanceRatio = 0.54;
 
     /// <summary>Dropped from the text, no effect on the verdict. A remaster is the same performance, so it sits here.</summary>
     private static readonly string[] Noise =

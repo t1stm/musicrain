@@ -1,11 +1,13 @@
 using System.Globalization;
 using System.Text.Json.Serialization;
 using Gaida.Core.Platforms;
+using JetBrains.Annotations;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gaida.API.Contracts;
 
 /// <summary>The public result shape shared by every discovery endpoint.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record SearchResultDto(
     string Id,
     string Name,
@@ -20,6 +22,7 @@ public sealed record SearchResultDto(
 /// <summary>What the local library has to say about a YouTube result the roll landed on.</summary>
 /// <param name="Match"><c>same</c>, <c>variant</c> (a tagged upload, a plain library copy) or <c>weak</c>.</param>
 /// <param name="DurationDeltaSeconds">Library minus upload. Reported, never a reason to reject a strong match.</param>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record LocalVariantDto(
     string Match,
     double Score,
@@ -30,18 +33,23 @@ public sealed record LocalVariantDto(
 
 /// <summary>A subfolder of the library tree.</summary>
 /// <param name="Songs">Songs anywhere beneath this folder, not only directly in it.</param>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record BrowseFolderDto(string Name, string Path, int Songs);
 
 /// <summary>One level of the library tree: what is directly inside <paramref name="Path" />.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record BrowseDto(
     string Path,
     IReadOnlyList<BrowseFolderDto> Folders,
     IReadOnlyList<SearchResultDto> Files);
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record ApiErrorBody(ApiError Error);
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record ApiError(string Code, string Message);
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record QueryResolutionDto
 {
     public required string Kind { get; init; }
@@ -81,10 +89,10 @@ public static class DiscoveryResultMapper
     public static SearchResultDto? Map(PlatformResult result, HttpRequest request, IConfiguration configuration,
         IHostEnvironment environment)
     {
-        if (string.IsNullOrWhiteSpace(result.ID)) return null;
+        if (string.IsNullOrWhiteSpace(result.Id)) return null;
 
         var publicBaseUrl = GetPublicBaseUrl(request, configuration, environment);
-        var contentUrl = $"{publicBaseUrl}/Audio/DownloadRaw?id={Uri.EscapeDataString(result.ID)}";
+        var contentUrl = $"{publicBaseUrl}/Audio/DownloadRaw?id={Uri.EscapeDataString(result.Id)}";
 
         // The untransliterated title/artist is the display value when the platform has one; the romanized
         // form no longer goes out on the wire in that case — it stays server-side, for matching only
@@ -101,7 +109,7 @@ public static class DiscoveryResultMapper
                 : result.Artist;
 
         return new SearchResultDto(
-            result.ID,
+            result.Id,
             name,
             artist,
             result.Album,

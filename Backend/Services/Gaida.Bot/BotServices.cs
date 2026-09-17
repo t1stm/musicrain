@@ -1,7 +1,5 @@
 using Gaida.Bot.Gaida;
 using Gaida.Bot.Players;
-using Microsoft.Extensions.DependencyInjection;
-using Serilog;
 
 namespace Gaida.Bot;
 

@@ -70,16 +70,6 @@ public sealed class Playlist
         }
     }
 
-    public Track RemoveFromQueue(string name)
-    {
-        lock (_gate)
-        {
-            var item = _items.First(vi => LevenshteinDistance.ComputeStrict(vi.DisplayName, name) < 3);
-            _items.Remove(item);
-            return item;
-        }
-    }
-
     public Track GetWithString(string name)
     {
         lock (_gate)

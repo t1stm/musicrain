@@ -8,7 +8,7 @@ namespace Gaida.Platforms.MusicDatabase.Manager;
 
 public partial class MusicManager(ILogger logger)
 {
-    protected readonly CoverExtractor CoverExtractor = new();
+    private readonly CoverExtractor _coverExtractor = new();
 
     /// <summary>
     ///     Serialises admin edits against each other and against their own file writes.
@@ -18,10 +18,10 @@ public partial class MusicManager(ILogger logger)
     ///     a person clicks Save, and the work under it is a dictionary lookup plus one small file write.
     ///     Split it per folder if a bulk re-tagging tool ever shows up.
     /// </remarks>
-    private readonly SemaphoreSlim editGate = new(1, 1);
+    private readonly SemaphoreSlim _editGate = new(1, 1);
 
     protected List<MusicInfo> Songs = [];
-    public ILogger Logger { get; } = logger;
+    private ILogger Logger { get; } = logger;
 
     public static string Domain =>
         Environment.GetEnvironmentVariable("DOMAIN", EnvironmentVariableTarget.Process) ?? string.Empty;
@@ -60,7 +60,7 @@ public partial class MusicManager(ILogger logger)
 
         await Load();
         Logger.Debug("Extracting covers from {StorageDirectory}", StorageDirectory);
-        CoverExtractor.Extract(StorageDirectory);
+        _coverExtractor.Extract(StorageDirectory);
         Logger.Information("MusicManager initialization complete. Loaded {Count} songs", Songs.Count);
     }
 
@@ -163,7 +163,7 @@ public partial class MusicManager(ILogger logger)
 
         var tagged = await MediaInfo.GetInformation(path);
         entry.PreferTags(tagged);
-        entry.ID = entry.UpdateRandomId();
+        entry.Id = entry.UpdateRandomId();
 
         // The pipe deadlock in MediaInfo left a couple of entries with no duration at all, and the weak
         // match gates on it. The re-read is the one place that can repair them.
@@ -210,14 +210,14 @@ public partial class MusicManager(ILogger logger)
         var entry = await MediaInfo.GetInformation(location);
         entry.AddNames(title, author, folder);
         entry.RelativeLocation ??= RelativeLocation(location);
-        entry.ID = entry.UpdateRandomId();
+        entry.Id = entry.UpdateRandomId();
         entry.Scan = ScanVersion;
         ReconcileLyrics(entry);
 
         return entry;
     }
 
-    protected static bool IsAudioBasedOnFileExtension(ReadOnlySpan<char> fileName)
+    private static bool IsAudioBasedOnFileExtension(ReadOnlySpan<char> fileName)
     {
         return fileName.EndsWith(".flac") || fileName.EndsWith(".ogg") ||
                fileName.EndsWith(".mp3") || fileName.EndsWith(".wav") ||
@@ -266,20 +266,20 @@ public partial class MusicManager(ILogger logger)
     /// <returns>The song, or <c>null</c> when the ID isn't known.</returns>
     public MusicInfo? SearchById(string id)
     {
-        Logger.Debug("MusicManager: Searching by ID: {Id}", id);
-        var search = Songs.AsParallel().FirstOrDefault(r => r.ID == id);
+        Logger.Debug("MusicManager: Searching by ID: {ID}", id);
+        var search = Songs.AsParallel().FirstOrDefault(r => r.Id == id);
 
         // Second pass for regenerated infos, whose last two characters are re-rolled.
         if (search is null && id.Length > 2)
-            search = Songs.AsParallel().FirstOrDefault(r => r.ID?.Length > 2 && r.ID[..^2] == id[..^2]);
+            search = Songs.AsParallel().FirstOrDefault(r => r.Id?.Length > 2 && r.Id[..^2] == id[..^2]);
 
         if (search is null)
         {
-            Logger.Information("MusicManager: ID not found: {Id}", id);
+            Logger.Information("MusicManager: ID not found: {ID}", id);
             return null;
         }
 
-        Logger.Debug("MusicManager: Found song for ID {Id}: {Title}", id, search.Title);
+        Logger.Debug("MusicManager: Found song for ID {ID}: {Title}", id, search.Title);
         return search;
     }
 
@@ -347,7 +347,7 @@ public partial class MusicManager(ILogger logger)
                 || song.Artists.Any(artist => artist.Contains(needle, StringComparison.OrdinalIgnoreCase))
                 || song.Album?.Contains(needle, StringComparison.OrdinalIgnoreCase) == true
                 || song.RelativeLocation?.Contains(needle, StringComparison.OrdinalIgnoreCase) == true
-                || song.ID == needle);
+                || song.Id == needle);
 
         return [.. matched
             .OrderBy(song => song.Artist, StringComparer.OrdinalIgnoreCase)
@@ -405,10 +405,11 @@ public partial class MusicManager(ILogger logger)
     ///         regenerates because a bulk migration has no such links to keep.
     ///     </para>
     /// </remarks>
+    /// <param name="id">The entry to edit. Kept as-is — see the remark on regeneration.</param>
     public async Task<(MusicInfo? entry, string? error)> EditAsync(string id, IReadOnlyList<string>? titles,
         IReadOnlyList<string>? artists, string? album)
     {
-        await editGate.WaitAsync();
+        await _editGate.WaitAsync();
 
         try
         {
@@ -427,13 +428,13 @@ public partial class MusicManager(ILogger logger)
             if (album is not null) entry.Album = album.Trim() is { Length: > 0 } name ? name : null;
 
             await SaveFolderAsync(entry.RelativeLocation);
-            Logger.Information("Admin edited {Id}: {Title} — {Artist}", id, entry.Title, entry.Artist);
+            Logger.Information("Admin edited {ID}: {Title} — {Artist}", id, entry.Title, entry.Artist);
 
             return (entry, null);
         }
         finally
         {
-            editGate.Release();
+            _editGate.Release();
         }
     }
 
@@ -444,7 +445,7 @@ public partial class MusicManager(ILogger logger)
     ///     answer available at import time. An operator moving the artist folder under a real genre is a
     ///     move, not a re-import.
     /// </remarks>
-    public const string ImportFolder = "Deezer";
+    private const string ImportFolder = "Deezer";
 
     /// <summary>The name an artist folder gets when the source gave no usable artist at all.</summary>
     private const string UnknownArtistFolder = "Unknown artist";
@@ -471,11 +472,16 @@ public partial class MusicManager(ILogger logger)
     ///         already renamed is the one outcome that cannot be undone from the editor.
     ///     </para>
     /// </remarks>
+    /// <param name="artist">The performer, as the entry's folder and artist list will read.</param>
+    /// <param name="title">The track title, as the entry and its filename will read.</param>
+    /// <param name="album">The album, or <c>null</c> when the source names none.</param>
     /// <param name="extension">Including the dot; must be one this library plays.</param>
+    /// <param name="content">The audio itself, read to the end.</param>
     /// <param name="cover">
     ///     Artwork to fall back on when the file carries none embedded — a Deezer FLAC usually does not.
     ///     Stored and hashed exactly like an extracted cover, so the library holds its own copy.
     /// </param>
+    /// <param name="cancellationToken">Cancels the read and the import.</param>
     /// <returns>The indexed entry, or an error naming what stopped it.</returns>
     public async Task<(MusicInfo? entry, string? error)> ImportAsync(string artist, string title, string? album,
         string extension, Stream content, byte[]? cover = null, CancellationToken cancellationToken = default)
@@ -490,7 +496,7 @@ public partial class MusicManager(ILogger logger)
         var filename = $"{folder} - {cleanTitle}{extension}";
         var location = $"{directory}/{filename}";
 
-        await editGate.WaitAsync(cancellationToken);
+        await _editGate.WaitAsync(cancellationToken);
 
         try
         {
@@ -514,8 +520,8 @@ public partial class MusicManager(ILogger logger)
             // The file's own artwork first, the source's only when it has none. The substituted form,
             // not the $[DOMAIN] placeholder: this entry is going straight into the in-memory library,
             // and MusicInfo.StoredCoverUrl puts the placeholder back on the way to disk.
-            var artwork = CoverExtractor.ExportCover(location) ??
-                          (cover is { Length: > 0 } ? CoverExtractor.StoreCover(cover) : null);
+            var artwork = _coverExtractor.ExportCover(location) ??
+                          (cover is { Length: > 0 } ? _coverExtractor.StoreCover(cover) : null);
             if (artwork is not null) entry.CoverUrl = $"{AlbumCoverLocation}/{artwork}";
 
             // Copy-on-write rather than Add: SearchById and Browse read this list from other threads and
@@ -528,7 +534,7 @@ public partial class MusicManager(ILogger logger)
         }
         finally
         {
-            editGate.Release();
+            _editGate.Release();
         }
     }
 

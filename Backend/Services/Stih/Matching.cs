@@ -20,7 +20,7 @@ namespace Stih;
 public static class Matching
 {
     /// <summary>The library's own bar — <c>MusicManager.StrongMatch</c>. Below it, nothing is offered.</summary>
-    public const double StrongMatch = 0.80;
+    private const double StrongMatch = 0.80;
 
     private const double TitleWeight = 0.65;
     private const double ArtistWeight = 0.35;
@@ -30,7 +30,7 @@ public static class Matching
     ///     rounding on nearly every track. One second either way is the specified gate, and it is what
     ///     throws out the live version that shares a title.
     /// </summary>
-    public const double DurationToleranceSeconds = 1;
+    private const double DurationToleranceSeconds = 1;
 
     /// <summary>
     ///     The candidate that is this track, or <c>null</c> when none of them is.

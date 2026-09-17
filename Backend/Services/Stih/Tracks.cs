@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Globalization;
-using System.Net.Http.Json;
 using ILogger = Serilog.ILogger;
 
 namespace Stih;
@@ -62,7 +61,7 @@ public sealed class Tracks(IHttpClientFactory factory, IConfiguration configurat
         if (url is null)
         {
             // yt:// lands here, and so does a prefix whose pod is not configured in this deployment.
-            _logger.Debug("No configured pod owns {Id}", id);
+            _logger.Debug("No configured pod owns {ID}", id);
             return null;
         }
 
@@ -76,7 +75,7 @@ public sealed class Tracks(IHttpClientFactory factory, IConfiguration configurat
         catch (Exception e) when (e is not OperationCanceledException)
         {
             LastError = $"{url}: {e.Message}";
-            _logger.Warning(e, "Resolving {Id} against {Url} failed", id, url);
+            _logger.Warning(e, "Resolving {ID} against {Url} failed", id, url);
             return null;
         }
 

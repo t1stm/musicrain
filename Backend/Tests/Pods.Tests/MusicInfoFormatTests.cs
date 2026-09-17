@@ -40,7 +40,7 @@ public class MusicInfoFormatTests
     [Fact]
     public void WritesArraysAndNeverTheOldFieldNames()
     {
-        var song = new MusicInfo { ID = "id", Titles = ["До вчера", "Do vchera"], Artists = ["Братя Аргирови"] };
+        var song = new MusicInfo { Id = "id", Titles = ["До вчера", "Do vchera"], Artists = ["Братя Аргирови"] };
 
         var json = JsonSerializer.Serialize(song, MusicInfo.SerializerOptions);
 
@@ -81,7 +81,7 @@ public class MusicInfoFormatTests
     {
         var song = new MusicInfo
         {
-            ID = "id", Titles = ["Come Undone"], Artists = ["Duran Duran"],
+            Id = "id", Titles = ["Come Undone"], Artists = ["Duran Duran"],
             Album = "Duran Duran", Scan = MusicManager.ScanVersion
         };
 

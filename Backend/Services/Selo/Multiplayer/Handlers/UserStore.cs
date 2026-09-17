@@ -14,13 +14,13 @@ public class UserStore
 
     public int Count => Users.Count;
 
-    public ValueTask<User> GetOrAddUser(string id, WebSocket webSocket, Func<User, Task>? onAdd = default)
+    public ValueTask<User> GetOrAddUser(string id, WebSocket webSocket, Func<User, Task>? onAdd = null)
     {
         // the common case is a member who is already here — every message after their first
         // takes this branch, which now costs neither a semaphore wait nor a Task
         if (Users.TryGetValue(id, out var user)) return new ValueTask<User>(user);
 
-        user = new User { ID = id, WebSocket = webSocket };
+        user = new User { Id = id, WebSocket = webSocket };
         if (!Users.TryAdd(id, user))
             return new ValueTask<User>(Users.TryGetValue(id, out var raced) ? raced : user);
 

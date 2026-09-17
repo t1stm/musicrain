@@ -1,7 +1,9 @@
+using JetBrains.Annotations;
 using Serilog;
 
 namespace Gaida.Core.Platforms;
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public abstract class SearchProvider
 {
     protected SearchProvider(ILogger logger)

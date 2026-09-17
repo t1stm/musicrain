@@ -5,7 +5,7 @@ namespace Dunav;
 /// <summary>
 ///     Dunav's half of the admin surface: what is in the cache, and the two ways to take it out again.
 ///     The shared half — the token check, the request ring, the live feed — comes from
-///     <see cref="AdminApi.MapAdmin" />.
+///     <see cref="AdminApi.MapAdmin(WebApplication,Func{object})" />.
 /// </summary>
 internal static class Admin
 {

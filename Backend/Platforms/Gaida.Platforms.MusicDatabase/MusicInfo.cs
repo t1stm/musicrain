@@ -14,7 +14,7 @@ public sealed record SearchVariants(string[] Titles, string[] Artists, IReadOnly
 public enum LyricsKind { Unsynchronized, Synchronized }
 
 /// <summary>Who found the words. Enums rather than strings: a file carrying "synced" should fail at load.</summary>
-public enum LyricsOrigin { Deezer, LRCLIB }
+public enum LyricsOrigin { Deezer, [JsonStringEnumMemberName("LRCLIB")] Lrclib }
 
 public class MusicInfo : IJsonOnDeserialized
 {
@@ -28,11 +28,9 @@ public class MusicInfo : IJsonOnDeserialized
     };
 
     private readonly string?[] _legacy = new string?[4];
-    private List<string> _artists = [];
     private SearchVariants? _search;
-    private List<string> _titles = [];
 
-    public string? ID { get; set; }
+    [JsonPropertyName("ID")] public string? Id { get; set; }
 
     /// <summary>
     ///     Every reading of the name, original first. Later entries are alternates — a romanization when the
@@ -41,13 +39,13 @@ public class MusicInfo : IJsonOnDeserialized
     /// </summary>
     public List<string> Titles
     {
-        get => _titles;
+        get;
         set
         {
-            _titles = value;
+            field = value;
             _search = null;
         }
-    }
+    } = [];
 
     /// <summary>
     ///     As <see cref="Titles" />. Compound names stay joined here; <see cref="TitleNormalizer.SplitArtists" /> splits
@@ -55,13 +53,13 @@ public class MusicInfo : IJsonOnDeserialized
     /// </summary>
     public List<string> Artists
     {
-        get => _artists;
+        get;
         set
         {
-            _artists = value;
+            field = value;
             _search = null;
         }
-    }
+    } = [];
 
     public string? Album { get; set; }
 
@@ -103,7 +101,7 @@ public class MusicInfo : IJsonOnDeserialized
                 ? CoverUrl
                 : CoverUrl.Replace(host, "$[DOMAIN]");
         }
-        set => CoverUrl = value;
+        init => CoverUrl = value;
     }
 
     public string? RelativeLocation { get; set; }
@@ -285,7 +283,7 @@ public class MusicInfo : IJsonOnDeserialized
     {
         return new MusicResult
         {
-            ID = "audio://" + (ID ??= UpdateRandomId()),
+            Id = "audio://" + (Id ??= UpdateRandomId()),
             Downloaders = getters,
             Name = DisplayTitle,
             Artist = DisplayArtist,

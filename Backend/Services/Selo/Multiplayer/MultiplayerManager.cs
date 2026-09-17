@@ -6,7 +6,7 @@ public class MultiplayerManager(HttpClient gaida)
 {
     // concurrent so the room-list socket can serialise the collection while another request
     // creates a room, which the dictionary-plus-semaphore pair never actually guarded
-    protected readonly ConcurrentDictionary<Guid, Room> Rooms = new();
+    private readonly ConcurrentDictionary<Guid, Room> _rooms = new();
 
     /// <summary>Raised when the room list or any room's info changes.</summary>
     public event Func<Task>? RoomsChanged;
@@ -15,7 +15,7 @@ public class MultiplayerManager(HttpClient gaida)
     {
         var guid = Guid.NewGuid();
 
-        Rooms.TryAdd(guid, new Room(guid, gaida)
+        _rooms.TryAdd(guid, new Room(guid, gaida)
         {
             OnInfoModified = () => RoomsChanged?.Invoke(),
             OnEmptied = () => RemoveRoom(guid)
@@ -25,23 +25,23 @@ public class MultiplayerManager(HttpClient gaida)
         return Task.FromResult(guid);
     }
 
-    public Room? GetRoom(Guid roomID)
+    public Room? GetRoom(Guid roomId)
     {
-        return Rooms.GetValueOrDefault(roomID);
+        return _rooms.GetValueOrDefault(roomId);
     }
 
     public ICollection<Room> GetRooms()
     {
-        return Rooms.Values;
+        return _rooms.Values;
     }
 
     /// <summary>
     ///     Drops a room and tells the room-list sockets. Idempotent: two members dropping at once
     ///     both see an empty store, and only the one that wins <c>TryRemove</c> announces it.
     /// </summary>
-    public void RemoveRoom(Guid roomID)
+    public void RemoveRoom(Guid roomId)
     {
-        if (!Rooms.TryRemove(roomID, out _)) return;
+        if (!_rooms.TryRemove(roomId, out _)) return;
 
         RoomsChanged?.Invoke();
     }
