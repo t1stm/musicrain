@@ -54,7 +54,8 @@ internal static class SelfCheck
     {
         var fetchCount = 0;
         var handler = new CountingHandler(() => Interlocked.Increment(ref fetchCount));
-        using var http = new HttpClient(handler) { BaseAddress = new Uri("http://unit-test.local") };
+        using var http = new HttpClient(handler);
+        http.BaseAddress = new Uri("http://unit-test.local");
         using var scratch = new ScratchDir();
         var cache = new CacheService(http, Log.Logger, scratch.Configuration);
 

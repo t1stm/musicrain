@@ -33,7 +33,6 @@ public sealed class LyricsIndex : IAsyncDisposable
     private readonly ILogger _logger;
     private readonly string _path;
     private readonly SemaphoreSlim _writing = new(1, 1);
-    private readonly TimeSpan _debounce;
 
     private DateTimeOffset _dirtySince = DateTimeOffset.MaxValue;
     private Timer? _timer;
@@ -42,14 +41,14 @@ public sealed class LyricsIndex : IAsyncDisposable
     {
         _logger = logger.ForContext<LyricsIndex>();
         _path = Path.Combine(dataDirectory, "Lyrics.json");
-        _debounce = debounce ?? TimeSpan.FromSeconds(5);
-
         Directory.CreateDirectory(dataDirectory);
         Load();
 
+        debounce ??= TimeSpan.FromSeconds(5);
+
         // The sweep produces a row a second and each one is not worth a file write, so the saves are
         // debounced. Shutdown flushes — see DisposeAsync.
-        _timer = new Timer(_ => _ = FlushIfDirtyAsync(), null, _debounce, _debounce);
+        _timer = new Timer(state => _ = FlushIfDirtyAsync(), null, debounce.Value, debounce.Value);
     }
 
     public int Count => _rows.Count;

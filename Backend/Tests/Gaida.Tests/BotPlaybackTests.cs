@@ -353,7 +353,7 @@ public class BotPlaybackTests
 
         // Exactly one master, and prefixes only on it: a secondary that listens for the same prefix
         // answers every command a second time.
-        Assert.Single(accounts.Where(account => account.Master));
+        Assert.Single(accounts, account => account.Master);
         Assert.All(accounts.Where(account => !account.Master), account => Assert.Empty(account.Prefixes));
         Assert.NotEmpty(accounts.First(account => account.Master).Prefixes);
     }

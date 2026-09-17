@@ -191,6 +191,7 @@ public class VirtualPlayerTests
         await player.Joined(user);
 
         Assert.Collection(socket.Messages,
+            // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local -- asserting is the point
             queue =>
             {
                 Assert.StartsWith("queue ", queue);
@@ -817,6 +818,7 @@ internal static class TestObjects
 
 internal sealed class RecordingWebSocket(
     WebSocketState initialState = WebSocketState.Open,
+    // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local -- the throw is the behaviour under test
     bool sendFails = false,
     Exception? receiveFailure = null) : WebSocket
 {

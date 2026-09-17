@@ -34,7 +34,7 @@ if (botInlineConfiguration is null && !File.Exists(botConfigurationLocation))
 {
     // The state of a fresh checkout, and of the stack brought up without a token. Not an error
     // worth a stack trace, and not something to crash-loop over under a restart policy.
-    logger.Fatal("No bot accounts configured: set BOT_CONFIGURATION, or put a file at {Location}.",
+    logger.Fatal("No bot accounts configured: set BOT_CONFIGURATION, or put a file at {Location}",
         botConfigurationLocation);
     return;
 }
@@ -48,14 +48,14 @@ catch (Exception e)
 {
     // No tokens is the ordinary state of a fresh checkout, so say what is missing and stop rather
     // than dying on an unhandled exception and crash-looping under a restart policy.
-    logger.Fatal(e, "Could not read the bot configuration from {Source}.",
+    logger.Fatal(e, "Could not read the bot configuration from {Source}",
         botInlineConfiguration is not null ? "BOT_CONFIGURATION" : botConfigurationLocation);
     return;
 }
 
 if (botsConfig is null || botsConfig.Length == 0)
 {
-    logger.Fatal("Failed to read the bot configuration from {Source}.",
+    logger.Fatal("Failed to read the bot configuration from {Source}",
         botInlineConfiguration is not null ? "BOT_CONFIGURATION" : botConfigurationLocation);
     return;
 }
@@ -65,7 +65,7 @@ if (botsConfig is null || botsConfig.Length == 0)
 var masters = botsConfig.Where(bot => bot.Master).ToArray();
 if (masters.Length > 1)
 {
-    logger.Warning("{Count} accounts are marked as master. {Name} is the master; the rest are not.",
+    logger.Warning("{Count} accounts are marked as master. {Name} is the master; the rest are not",
         masters.Length, masters[0].Name);
 }
 
@@ -84,7 +84,7 @@ foreach (var config in bots)
 {
     if (config.Token is null)
     {
-        logger.Fatal("Token is missing from configuration for {Name}.", config.Name);
+        logger.Fatal("Token is missing from configuration for {Name}", config.Name);
         return;
     }
 
@@ -92,7 +92,7 @@ foreach (var config in bots)
 
     if (!isMaster && config.Prefixes.Length > 0)
     {
-        logger.Warning("{Name} is not the master account, so its prefixes are ignored.", config.Name);
+        logger.Warning("{Name} is not the master account, so its prefixes are ignored", config.Name);
     }
 
     // Every client builds its own service provider, so the shared services are registered as
@@ -126,7 +126,7 @@ foreach (var config in bots)
                         return;
                     }
 
-                    if (args.Before?.ChannelId == args.After.ChannelId) return;
+                    if (args.Before.ChannelId == args.After.ChannelId) return;
                     if (!client.Guilds.TryGetValue(args.GuildId.Value, out var guild)) return;
                     if (!guild.Channels.TryGetValue(args.After.ChannelId.Value, out var channel)) return;
 
@@ -183,11 +183,11 @@ foreach (var config in bots)
         // A dead master means nothing would listen for commands at all.
         if (isMaster)
         {
-            logger.Fatal(e, "The master account {Name} could not connect.", config.Name);
+            logger.Fatal(e, "The master account {Name} could not connect", config.Name);
             return;
         }
 
-        logger.Error(e, "{Name} could not connect and is being skipped.", config.Name);
+        logger.Error(e, "{Name} could not connect and is being skipped", config.Name);
         continue;
     }
 
@@ -200,7 +200,7 @@ foreach (var config in bots)
 
 if (controller.Clients.Count == 0)
 {
-    logger.Fatal("No accounts connected.");
+    logger.Fatal("No accounts connected");
     return;
 }
 

@@ -248,7 +248,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
 
         if (string.IsNullOrWhiteSpace(search))
         {
-            var channelId = ctx.Member?.VoiceState?.ChannelId;
+            var channelId = ctx.Member?.VoiceState.ChannelId;
             if (channelId is null || ctx.Guild is null || !ctx.Guild.Channels.TryGetValue(channelId.Value, out var voice))
             {
                 await RefuseAsync(ctx, Text.UserNotInChannelLyrics());
@@ -390,8 +390,8 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
             return null;
         }
 
-        var options = results.Select((track, index) => new DiscordSelectComponentOption(
-            Truncate(track.Name, 100), index.ToString(CultureInfo.InvariantCulture),
+        var options = results.Select((track, idx) => new DiscordSelectComponentOption(
+            Truncate(track.Name, 100), idx.ToString(CultureInfo.InvariantCulture),
             Truncate(track.Artist, 100))).ToList();
 
         var channel = player.Channel ?? ctx.Channel;
@@ -517,7 +517,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
 
     private static async ValueTask<DiscordChannel?> UserVoiceChannelAsync(CommandContext ctx, string command)
     {
-        var channelId = ctx.Member?.VoiceState?.ChannelId;
+        var channelId = ctx.Member?.VoiceState.ChannelId;
 
         if (channelId is not null && ctx.Guild is not null && ctx.Guild.Channels.TryGetValue(channelId.Value, out var channel))
         {

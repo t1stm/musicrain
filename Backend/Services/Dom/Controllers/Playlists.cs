@@ -102,7 +102,7 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
             return Api.Error(400, "invalid_request", "Send an image as multipart form data.");
 
         var file = Request.Form.Files[0];
-        if (!CoverTypes.TryGetValue(file.ContentType ?? "", out var extension))
+        if (!CoverTypes.TryGetValue(file.ContentType, out var extension))
             return Api.Error(400, "invalid_request", "A cover is a PNG, a JPEG or a WebP.");
         if (file.Length > MaxCoverBytes)
             return Api.Error(400, "invalid_request", "A cover is at most 2 MB.");

@@ -177,7 +177,7 @@ internal static class SelfCheck
         var silent = Client(new Stub((_, _) => Reply(HttpStatusCode.OK, "[]")), url: string.Empty);
 
         return Check("an exact hit is used as it is", exact?.Id == 1)
-               & Check("a 404 falls through to the search", fuzzy?.Id == 1 && falling.Paths.Count == 2)
+               & Check("a 404 falls through to the search", fuzzy?.Id == 1 && falling.Requested.Count == 2)
                & Check("every request identifies the client",
                    direct.Agents.Count > 0 && direct.Agents.All(agent => agent is { Length: > 0 }))
                & Check("a 429 pauses the sweep and writes no row",
@@ -218,13 +218,13 @@ internal static class SelfCheck
     /// <summary>One canned transport, recording what was asked and with which User-Agent.</summary>
     private sealed class Stub(Func<string, HttpRequestMessage, HttpResponseMessage> answer) : HttpMessageHandler
     {
-        public List<string> Paths { get; } = [];
+        public List<string> Requested { get; } = [];
         public List<string?> Agents { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             var path = request.RequestUri!.PathAndQuery;
-            Paths.Add(path);
+            Requested.Add(path);
             Agents.Add(request.Headers.UserAgent.ToString());
 
             return Task.FromResult(answer(path, request));

@@ -171,17 +171,17 @@ public class StreamSpreaderTests(ITestOutputHelper output)
         {
             await using var reader = streamSpreader.OpenRead();
             await reader.CopyToAsync(new ThrowingStream(), poisonedSource.Token);
-        });
+        }, poisonedSource.Token);
 
         var healthy = Task.Run(async () =>
         {
             await using var reader = streamSpreader.OpenRead();
             using var sink = new MemoryStream();
-            await reader.CopyToAsync(sink);
+            await reader.CopyToAsync(sink, poisonedSource.Token);
             return sink.ToArray();
-        });
+        }, poisonedSource.Token);
 
-        await new MemoryStream(randomBytes).CopyToAsync(streamSpreader, 1 << 12);
+        await new MemoryStream(randomBytes).CopyToAsync(streamSpreader, 1 << 12, poisonedSource.Token);
         await streamSpreader.CloseAsync();
 
         await Assert.ThrowsAnyAsync<Exception>(() => poisoned);

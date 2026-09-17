@@ -95,11 +95,11 @@ public sealed class DomStore
 
         lock (_gate)
         {
-            if (!_users.TryGetValue(User.Normalize(username ?? ""), out var user))
+            if (!_users.TryGetValue(User.Normalize(username), out var user))
                 return (null, null, "invalid_credentials", wrong);
 
             var expected = Convert.FromBase64String(user.Hash);
-            var actual = Derive(password ?? "", Convert.FromBase64String(user.Salt), user.Iterations);
+            var actual = Derive(password, Convert.FromBase64String(user.Salt), user.Iterations);
             if (!CryptographicOperations.FixedTimeEquals(expected, actual))
                 return (null, null, "invalid_credentials", wrong);
 
@@ -484,7 +484,7 @@ public sealed class DomStore
         {
             Id = t.Id.Trim(),
             Name = t.Name.Trim(),
-            Artist = (t.Artist ?? "").Trim(),
+            Artist = t.Artist.Trim(),
             Album = string.IsNullOrWhiteSpace(t.Album) ? null : t.Album.Trim(),
             Duration = TimeSpan.TryParse(t.Duration, out var length) ? length.ToString("c") : "00:00:00",
             ThumbnailUrl = string.IsNullOrWhiteSpace(t.ThumbnailUrl) ? null : t.ThumbnailUrl.Trim()

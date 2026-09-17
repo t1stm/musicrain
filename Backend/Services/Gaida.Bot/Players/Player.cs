@@ -184,7 +184,7 @@ public sealed class Player
             if (!Stopwatch.IsRunning) Stopwatch.Start();
 
             await OggPacer.FeedAsync(stream, _writer, scanner, () => Stopwatch.Elapsed,
-                WaitWhilePausedAsync, fed => OnProgressAsync(item, fed), token);
+                WaitWhilePausedAsync, _ => OnProgressAsync(item), token);
         }
         catch (OperationCanceledException)
         {
@@ -214,7 +214,7 @@ public sealed class Player
     }
 
     /// <summary>Warms the next encode, then opens its body before this one ends.</summary>
-    private async Task OnProgressAsync(Track item, TimeSpan fed)
+    private async Task OnProgressAsync(Track item)
     {
         if (item.Length <= TimeSpan.Zero) return;
 

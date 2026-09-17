@@ -36,12 +36,12 @@ var password = builder.Configuration["ADMIN_PASSWORD"];
 // its token is missing because the rest of Dunav still has a job to do; Oko has no job but this one.
 if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
 {
-    Log.Fatal("ADMIN_USERNAME and ADMIN_PASSWORD must both be set. Refusing to start an unauthenticated admin panel.");
+    Log.Fatal("ADMIN_USERNAME and ADMIN_PASSWORD must both be set. Refusing to start an unauthenticated admin panel");
     return 1;
 }
 
 if (string.IsNullOrWhiteSpace(builder.Configuration["ADMIN_TOKEN"]))
-    Log.Warning("ADMIN_TOKEN is not set — every target will answer 404 and render as down.");
+    Log.Warning("ADMIN_TOKEN is not set — every target will answer 404 and render as down");
 
 var app = builder.Build();
 

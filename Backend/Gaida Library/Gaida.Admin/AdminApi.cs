@@ -60,7 +60,7 @@ public static class AdminApi
         var token = app.Configuration["ADMIN_TOKEN"];
         if (string.IsNullOrWhiteSpace(token))
         {
-            app.Logger.LogInformation("ADMIN_TOKEN is not set — the /Admin surface is disabled.");
+            app.Logger.LogInformation("ADMIN_TOKEN is not set — the /Admin surface is disabled");
             return null;
         }
 

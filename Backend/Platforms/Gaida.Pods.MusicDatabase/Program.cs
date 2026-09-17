@@ -201,7 +201,7 @@ app.MapGet("/random", IResult (int? count, MusicDatabase db, CancellationToken c
     Results.Ok(Mapped(db.GetRandomResults(Math.Max(0, count ?? 10), ct), ct)));
 
 // This platform has no playlists — nothing here ever claims a query.
-app.MapGet("/playlist", IResult (string? url) => Results.NotFound());
+app.MapGet("/playlist", IResult (string? _) => Results.NotFound());
 
 app.MapGet("/content", async Task<IResult> (string? id, MusicDatabase db, HttpResponse response,
     CancellationToken ct) =>

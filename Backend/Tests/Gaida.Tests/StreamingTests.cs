@@ -152,6 +152,7 @@ public class StreamingTests
         await Task.Yield();
         throw new InvalidOperationException("pod is down");
 #pragma warning disable CS0162 // the sequence exists only to fail
+        // ReSharper disable once HeuristicUnreachableCode -- the yield is what makes this an iterator
         yield break;
 #pragma warning restore CS0162
     }

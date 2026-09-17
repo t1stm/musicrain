@@ -45,7 +45,7 @@ public class YouTubeCacher(ILogger logger)
         }
         catch (Exception e)
         {
-            Logger.Fatal("Error while saving YouTube cache: '{@Exception}'", e);
+            Logger.Fatal(e, "Error while saving YouTube cache");
         }
         finally
         {
@@ -81,7 +81,7 @@ public class YouTubeCacher(ILogger logger)
         }
         catch (Exception e)
         {
-            Logger.Fatal("Error while loading YouTube cache: '{@Exception}'", e);
+            Logger.Fatal(e, "Error while loading YouTube cache");
         }
         finally
         {
