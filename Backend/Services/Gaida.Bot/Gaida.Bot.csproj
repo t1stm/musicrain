@@ -1,25 +1,45 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <!-- The DSharpPlus.Natives.Opus pin below is a deliberate downgrade from what DSharpPlus.Voice
+         asks for, which NuGet reports as NU1605 and the SDK escalates to an error. -->
+    <NoWarn>$(NoWarn);NU1605</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../DSharpPlus/DSharpPlus/DSharpPlus.csproj"/>
-    <ProjectReference Include="../../DSharpPlus/DSharpPlus.Commands/DSharpPlus.Commands.csproj"/>
-    <ProjectReference Include="../../DSharpPlus/DSharpPlus.Interactivity/DSharpPlus.Interactivity.csproj"/>
-    <ProjectReference Include="../../DSharpPlus/DSharpPlus.Voice/DSharpPlus.Voice.csproj"/>
-
-    <ProjectReference Include="..\..\Platforms\Gaida.Platforms.MusicDatabase\Gaida.Platforms.MusicDatabase.csproj"/>
-    <ProjectReference Include="..\..\Platforms\Gaida.Platforms.YouTube\Gaida.Platforms.YouTube.csproj"/>
-    <ProjectReference Include="..\..\Gaida Library\Gaida.Core\Gaida.Core.csproj"/>
+    <!-- Microsoft.NET.Sdk.Web's implicit usings bring in Microsoft.Extensions.Logging, which makes a
+         bare ILogger ambiguous with Serilog's. The bot logs through Serilog everywhere. -->
+    <Using Include="Serilog.ILogger" Alias="ILogger"/>
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The shared /Admin surface every service here answers, so Oko can watch this one too. It is
+         not Gaida.Core: it carries the token check and the request ring and nothing else. -->
+    <ProjectReference Include="..\..\Gaida Library\Gaida.Admin\Gaida.Admin.csproj"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DSharpPlus" Version="5.0.0-nightly-02609"/>
+    <PackageReference Include="DSharpPlus.Commands" Version="5.0.0-nightly-02609"/>
+    <PackageReference Include="DSharpPlus.Interactivity" Version="5.0.0-nightly-02609"/>
+    <PackageReference Include="DSharpPlus.Voice" Version="5.0.0-nightly-02609"/>
+    <!-- Pinned below what DSharpPlus.Voice asks for. 1.6.1.34's libopus.so is built against
+         GLIBC_2.43, which no current container base image has (Ubuntu 24.04 is 2.39), so it cannot
+         load and every voice connect dies in opus_encoder_create. 1.6.1.31 needs only GLIBC_2.29
+         and exports every dsharpplus_* wrapper 1.6.1.34 does, plus set_bandwidth. Stock libopus is
+         not a substitute: these wrappers exist because opus_encoder_ctl is variadic. Drop this pin
+         when upstream builds the native against an older glibc again. -->
+    <PackageReference Include="DSharpPlus.Natives.Opus" Version="1.6.1.31"/>
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Gaida.Tests"/>
   </ItemGroup>
 
   <ItemGroup>

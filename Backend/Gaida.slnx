@@ -1,20 +1,4 @@
 <Solution>
-  <Folder Name="/DSharpPlus/">
-    <Project Path="DSharpPlus/DSharpPlus/DSharpPlus.csproj" />
-    <Project Path="DSharpPlus/DSharpPlus.Commands/DSharpPlus.Commands.csproj" />
-    <Project Path="DSharpPlus/DSharpPlus.CommandsNext/DSharpPlus.CommandsNext.csproj" />
-    <Project Path="DSharpPlus/DSharpPlus.Http.AspNetCore/DSharpPlus.Http.AspNetCore.csproj" />
-    <Project Path="DSharpPlus/DSharpPlus.Interactivity/DSharpPlus.Interactivity.csproj" />
-    <Project Path="DSharpPlus/DSharpPlus.Voice/DSharpPlus.Voice.csproj" />
-    <Project Path="DSharpPlus/DSharpPlus.Tests/DSharpPlus.Tests.csproj" />
-  </Folder>
-  <Folder Name="/DSharpPlus/Analyzers/">
-    <Project Path="DSharpPlus/DSharpPlus.Analyzers/DSharpPlus.Analyzers/DSharpPlus.Analyzers.csproj" />
-    <Project Path="DSharpPlus/DSharpPlus.Analyzers/DSharpPlus.Analyzers.Test/DSharpPlus.Analyzers.Test.csproj" />
-  </Folder>
-  <Folder Name="/DSharpPlus/obsolete/">
-    <Project Path="DSharpPlus/obsolete/DSharpPlus.SlashCommands/DSharpPlus.SlashCommands.csproj" />
-  </Folder>
   <Folder Name="/Gaida Library/">
     <Project Path="Gaida Library/Gaida.CLI/Gaida.CLI.csproj" />
     <Project Path="Gaida Library/Gaida.Admin/Gaida.Admin.csproj" />
