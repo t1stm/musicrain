@@ -294,11 +294,19 @@
 
     if (!response.ok) { alert(`${action} failed (${response.status})\n\n${await failure(response)}`); return; }
 
-    // Dropped rather than kept: the next render seeds the controls from what the bot now reports,
-    // which is the only copy that matters.
-    delete statusDraft[account];
+    // Reseeded, not dropped. Dropping it left the row that was just submitted on screen with nothing
+    // behind it — the repaint below is the only thing that rebuilds those controls, and draw() skips
+    // it while the keyboard is still in them — so the next Set posted presence=undefined.
+    statusDraft[account] = clear
+      ? { presence: "Online", activity: "none", text: "", url: "" }
+      : { ...draft };
+
     await refresh();
-    render();
+
+    // Painted straight rather than through draw(), for that same reason: the Status column and the
+    // Clear button have to follow the change that was just made, focus or no focus.
+    const service = (latest?.services ?? []).find((candidate) => candidate.name === selected);
+    if (service) el("body").innerHTML = renderState(service); else render();
   }
 
   // What the Deezer cache table is filtered by. Module state rather than the input's own value: the
