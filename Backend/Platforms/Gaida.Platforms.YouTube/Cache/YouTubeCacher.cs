@@ -18,7 +18,8 @@ public class YouTubeCacher(ILogger logger)
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        WriteIndented = true
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true
     };
 
     private readonly SemaphoreSlim _sync = new(1, 1);
