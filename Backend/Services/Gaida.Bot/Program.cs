@@ -5,6 +5,7 @@ using DSharpPlus.Commands;
 using DSharpPlus.Commands.Processors.SlashCommands;
 using DSharpPlus.Commands.Processors.TextCommands;
 using DSharpPlus.Commands.Processors.TextCommands.Parsing;
+using DSharpPlus.Entities;
 using DSharpPlus.Interactivity.Extensions;
 using DSharpPlus.Voice;
 using Gaida.Bot;
@@ -78,9 +79,18 @@ var api = new GaidaClient(logger);
 var events = new BotEventLog();
 var controller = new PlayerController(api, logger, events);
 
+// The one thing the bot writes down. Same shape as CONFIGURATION_LOCATION: a path, defaulted for
+// `dotnet run` and pointed at a volume in compose. Read once here and applied at connect, so an
+// account never flashes as plain Online on the way up.
+var statuses = new BotStatusStore(Environment.GetEnvironmentVariable("STATUS_LOCATION") ?? ".status.json", logger);
+
+// Which account is which, for /Admin/set-status. Keyed the way the statuses are — by the configured
+// name, which is stable across a rename in the developer portal and known before the account connects.
+var accounts = new Dictionary<string, DiscordClient>();
+
 logger.Information("Talking to the Gaida instance at {BaseUrl}", api.BaseUrl);
 
-foreach (var config in bots)
+foreach (var (index, config) in bots.Index())
 {
     if (config.Token is null)
     {
@@ -89,6 +99,11 @@ foreach (var config in bots)
     }
 
     var isMaster = config == master;
+    // A name of its own where it has a unique one, and name#index where it does not: two accounts
+    // sharing a key would collide in the map below, and the second would vanish from the panel.
+    var key = config.Name is not null && bots.Count(other => other.Name == config.Name) == 1
+        ? config.Name
+        : $"{config.Name}#{index}";
 
     if (!isMaster && config.Prefixes.Length > 0)
     {
@@ -175,7 +190,10 @@ foreach (var config in bots)
 
     try
     {
-        await client.ConnectAsync();
+        // The overload that carries the presence in the IDENTIFY, rather than a second round-trip
+        // after it — a restart brings the account back already wearing what the operator set.
+        var (activity, presence) = BotStatusStore.Build(statuses.For(key));
+        await client.ConnectAsync(activity!, presence);
     }
     catch (Exception e)
     {
@@ -192,6 +210,7 @@ foreach (var config in bots)
     }
 
     controller.Register(client);
+    accounts[key] = client;
     logger.Information("{Name} connected as {Account}{Role}", config.Name, client.CurrentUser.Username,
         isMaster ? " (master)" : "");
     events.Record("connected", client.CurrentUser.Username,
@@ -214,6 +233,42 @@ admin.Logging.ClearProviders();
 var app = admin.Build();
 var masterNames = controller.Clients.Take(1).Select(client => client.CurrentUser.Username).ToArray();
 
-app.MapAdmin(() => BotSnapshot.Build(controller, events, masterNames, api.BaseUrl));
+var adminApi = app.MapAdmin(() => BotSnapshot.Build(controller, events, masterNames, api.BaseUrl, accounts, statuses));
+
+// The bot's only mutations. Named operations with a reason on every rejection, like Dom's — Oko
+// forwards a query string and knows nothing about what any of it means.
+if (adminApi is not null)
+{
+    adminApi.MapPost("/set-status", async Task<IResult> (string account, string presence,
+        string? activity, string? text, string? url) =>
+    {
+        if (!accounts.TryGetValue(account, out var client)) return Results.NotFound();
+
+        var (entry, error) = BotStatusStore.Parse(presence, activity, text, url);
+        if (entry is null) return Results.BadRequest(new { error });
+
+        // Applied first, remembered second: a gateway that refuses the update leaves nothing written
+        // for the next restart to put back.
+        var (discordActivity, discordPresence) = BotStatusStore.Build(entry);
+        await client.UpdateStatusAsync(discordActivity!, discordPresence);
+        statuses.Set(account, entry);
+
+        events.Record("status", client.CurrentUser.Username,
+            detail: entry.Activity is null ? entry.Presence : $"{entry.Presence}, {entry.Activity} {entry.Text}");
+
+        return Results.Ok(entry);
+    });
+
+    adminApi.MapPost("/clear-status", async Task<IResult> (string account) =>
+    {
+        if (!accounts.TryGetValue(account, out var client)) return Results.NotFound();
+
+        await client.UpdateStatusAsync(null!, DiscordUserStatus.Online);
+        statuses.Clear(account);
+        events.Record("status", client.CurrentUser.Username, detail: "cleared");
+
+        return Results.Ok();
+    });
+}
 
 await app.RunAsync();

@@ -359,11 +359,17 @@ services:
       # Encode bitrate in kbps. Unset, each player asks for what its voice channel advertises.
       GAIDA_OPUS_BITRATE: ${GAIDA_OPUS_BITRATE:-}
       GAIDA_STATUSBAR_INTERVAL_MS: ${GAIDA_STATUSBAR_INTERVAL_MS:-3200}
+      # Where the per-account Discord status set in Oko is remembered. Also set in the Dockerfile, so
+      # a plain `docker run` behaves the same; `dotnet run` falls back to .status.json beside the code.
+      STATUS_LOCATION: /data/status.json
     volumes:
       # The same file `dotnet run` reads, so a bot developed locally and a bot in compose are
       # configured once. Read-only, and gitignored like Backend/.env — the Dockerfile never copies
       # it, so no token is ever baked into an image. BOT_CONFIGURATION above overrides it.
       - ${BOT_CONFIG_FILE:-./Services/Gaida.Bot/.env.json}:/config/.env.json:ro
+      # The statuses, and the only thing the bot writes anywhere. Losing it brings every account back
+      # plain Online — no tokens, no playback state, nothing that is not set again in two clicks.
+      - bot-data:/data
     depends_on:
       - gaida-api
 
@@ -374,3 +380,5 @@ volumes:
   # Lyrics for tracks with no library folder, plus Lyrics.json. The library's own words are in
   # MUSIC_LIBRARY_PATH beside the audio, so losing this costs re-fetches and nothing else.
   lyrics-data:
+  # The bot's per-account Discord statuses. Only created under the bot profile.
+  bot-data:

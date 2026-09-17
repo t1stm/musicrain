@@ -14,7 +14,7 @@ namespace Gaida.Bot.Admin;
 public static class BotSnapshot
 {
     public static object Build(PlayerController controller, BotEventLog events, IReadOnlyList<string> masters,
-        string apiBaseUrl)
+        string apiBaseUrl, IReadOnlyDictionary<string, DiscordClient> accounts, BotStatusStore statuses)
     {
         var players = controller.Players;
 
@@ -22,21 +22,29 @@ public static class BotSnapshot
         {
             service = "gaida-bot",
             api = apiBaseUrl,
-            accounts = controller.Clients.Select(client => Account(client, players, masters)),
+            // Over the key map rather than the controller's clients: same clients, same order, but
+            // these carry the configured name /Admin/set-status is addressed by.
+            accounts = accounts.Select(account =>
+                Account(account.Key, account.Value, players, masters, statuses.For(account.Key))),
             players = players.Select(Player),
             events = events.Recent()
         };
     }
 
-    private static object Account(DiscordClient client, IReadOnlyList<Player> players, IReadOnlyList<string> masters)
+    private static object Account(string name, DiscordClient client, IReadOnlyList<Player> players,
+        IReadOnlyList<string> masters, BotStatusEntry? status)
     {
         return new
         {
+            name,
             username = client.CurrentUser.Username,
             id = client.CurrentUser.Id.ToString(CultureInfo.InvariantCulture),
             master = masters.Contains(client.CurrentUser.Username),
             guilds = client.Guilds.Count,
-            playing = players.Count(player => player.Client == client)
+            playing = players.Count(player => player.Client == client),
+            // Null until an operator sets one: the account is online with no activity, as it was
+            // before any of this existed.
+            status
         };
     }
 

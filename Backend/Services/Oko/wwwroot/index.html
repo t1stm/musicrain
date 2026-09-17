@@ -93,6 +93,15 @@
     /* A field the selection does not agree on. Dashed and dim so it reads as "nothing to show yet"
        rather than as a value — typing over it is what turns it into one. */
     .editor .mixed { border-style: dashed; color: var(--dim); }
+    /* One account's Discord status controls. Same furniture as .rowbar, one row per account. */
+    .statusrow { display: flex; gap: 8px; align-items: center; padding: 7px 12px; border-bottom: 1px solid var(--line); }
+    .statusrow:last-child { border-bottom: 0; }
+    .statusrow b { font-size: 13px; min-width: 110px; }
+    .statusrow select, .statusrow input {
+      background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 5px;
+      padding: 4px 8px; font: inherit; font-size: 12px;
+    }
+    .statusrow input { flex: 1; max-width: 320px; font-family: var(--mono); }
     .batch {
       background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
       padding: 10px 14px 12px; margin-bottom: 10px;
@@ -214,13 +223,82 @@
       `/api/action/${encodeURIComponent(button.dataset.t)}/${encodeURIComponent(button.dataset.a)}?${query}`,
       { method: "POST" });
 
-    if (!response.ok) {
-      let detail = await response.text();
-      try { detail = JSON.parse(detail).error ?? detail; } catch { /* not JSON; show it raw */ }
-      alert(`${button.dataset.a} failed (${response.status})\n\n${detail}`);
-    }
+    if (!response.ok) alert(`${button.dataset.a} failed (${response.status})\n\n${await failure(response)}`);
     await refresh();
     if (page || tab !== "state") render();
+  }
+
+  // What a refused action said, for the two places that report one. The body is this stack's
+  // {"error":"…"} everywhere, but a 502 from a target that is down is not JSON at all.
+  async function failure(response) {
+    let detail = await response.text();
+    try { detail = JSON.parse(detail).error ?? detail; } catch { /* not JSON; show it raw */ }
+    return detail;
+  }
+
+  // ── the bot's Discord status ─────────────────────────────────────────────────
+  // What the controls are showing per account, keyed by the configured name /Admin/set-status takes.
+  // Module state for the same reason `deezerFilter` is: the State tab repaints every poll, so a value
+  // living only in the DOM is gone in two seconds.
+  const statusDraft = {};
+
+  const PRESENCES = ["Online", "Idle", "DoNotDisturb", "Invisible"];
+  // Custom is missing on purpose: Discord reads a custom status from `state`, and DSharpPlus exposes
+  // no way to set that — the bot refuses it too, with that as the reason.
+  const ACTIVITIES = ["none", "Playing", "ListeningTo", "Watching", "Competing", "Streaming"];
+
+  const options = (values, chosen) => values
+    .map((value) => `<option value="${esc(value)}"${value === chosen ? " selected" : ""}>${esc(value)}</option>`)
+    .join("");
+
+  const draftFor = (account) => (statusDraft[account.name] ??= {
+    presence: account.status?.presence ?? "Online",
+    activity: account.status?.activity ?? "none",
+    text: account.status?.text ?? "",
+    url: account.status?.url ?? ""
+  });
+
+  function statusRow(account) {
+    const draft = draftFor(account);
+
+    return `<div class="statusrow" data-account="${esc(account.name)}">
+        <b>${esc(account.name)}</b>
+        <select data-st="presence">${options(PRESENCES, draft.presence)}</select>
+        <select data-st="activity">${options(ACTIVITIES, draft.activity)}</select>
+        ${draft.activity === "none" ? "" :
+          `<input data-st="text" placeholder="what it is doing" value="${esc(draft.text)}" maxlength="128">`}
+        ${draft.activity === "Streaming" ? `<input data-st="url" placeholder="https://twitch.tv/…" value="${esc(draft.url)}">` : ""}
+        <button class="act" data-setstatus="${esc(account.name)}">Set</button>
+        ${account.status ? `<button class="act" data-clearstatus="${esc(account.name)}">Clear</button>` : ""}
+      </div>`;
+  }
+
+  const statusText = (status) => !status ? "—"
+    : status.activity ? `${status.presence}, ${status.activity} ${status.text}` : status.presence;
+
+  async function saveStatus(account, clear) {
+    const target = selected;
+    const draft = statusDraft[account] ?? {};
+    const params = { account };
+
+    if (!clear) {
+      params.presence = draft.presence;
+      params.activity = draft.activity;
+      if (draft.activity !== "none") params.text = draft.text;
+      if (draft.activity === "Streaming") params.url = draft.url;
+    }
+
+    const action = clear ? "clear-status" : "set-status";
+    const response = await fetch(
+      `/api/action/${encodeURIComponent(target)}/${action}?${new URLSearchParams(params)}`, { method: "POST" });
+
+    if (!response.ok) { alert(`${action} failed (${response.status})\n\n${await failure(response)}`); return; }
+
+    // Dropped rather than kept: the next render seeds the controls from what the bot now reports,
+    // which is the only copy that matters.
+    delete statusDraft[account];
+    await refresh();
+    render();
   }
 
   // What the Deezer cache table is filtered by. Module state rather than the input's own value: the
@@ -566,7 +644,8 @@
 
     // The Discord bot. Unlike every other target it serves no traffic of its own, so its Requests tab
     // stays empty and its audit trail — joins, moves, departures, commands, buttons — comes down in
-    // the snapshot instead. Read-only: nothing here acts on a guild somebody is listening in.
+    // the snapshot instead. The one thing that can be changed from here is each account's Discord
+    // status: nothing else acts on a guild somebody is listening in.
     bot(s) {
       const players = s.players ?? [];
       const events = s.events ?? [];
@@ -578,10 +657,13 @@
           <div class="card"><b>${esc(s.api ?? "—")}</b><span>reading from</span></div>
         </div>` +
         `<h3 class="section">Accounts</h3>` +
-        table(["Account", "Role", "Guilds", "Playing in"], (s.accounts ?? []).map((a) => [
+        table(["Account", "Role", "Guilds", "Playing in", "Status"], (s.accounts ?? []).map((a) => [
           cell(a.username, "wrap"), cell(a.master ? "master" : "secondary"),
-          cell(a.guilds, "mono"), cell(a.playing, "mono")
+          cell(a.guilds, "mono"), cell(a.playing, "mono"), cell(statusText(a.status), "wrap")
         ])) +
+        `<h3 class="section">Discord status</h3>` +
+        `<div class="scroll">${(s.accounts ?? []).map(statusRow).join("") ||
+          `<div class="empty">No accounts connected.</div>`}</div>` +
         `<h3 class="section">Players</h3>` +
         table(["Account", "Guild", "Channel", "Listeners", "Playing", "Queue", "Position", "Loop"],
           players.map((p) => [
@@ -754,7 +836,10 @@
     // in: the State tab is redrawn on every poll, and replacing the body under an open editor, a
     // selection or a focused input takes all three with it.
     const libraryBusy = el("lib") && (editing || batch || picked.size || el("lib").contains(document.activeElement));
-    if (tab === "state" && document.activeElement?.id !== "dzq" && !libraryBusy)
+    // Same rule for the bot's status controls: the values survive a repaint in `statusDraft`, the
+    // caret does not.
+    const statusBusy = document.activeElement?.closest?.(".statusrow");
+    if (tab === "state" && document.activeElement?.id !== "dzq" && !libraryBusy && !statusBusy)
       el("body").innerHTML = renderState(service);
 
     // Keyed on what the service reports about itself, not on what the target is called in config.
@@ -836,6 +921,8 @@
       renderLibrary();
       return;
     }
+    if (button.dataset.setstatus) return void saveStatus(button.dataset.setstatus, false);
+    if (button.dataset.clearstatus) return void saveStatus(button.dataset.clearstatus, true);
     if (button.dataset.batch) return void openBatch();
     if (button.dataset.batchcancel) { batch = draft = null; return void renderLibrary(); }
     if (button.dataset.batchsave) return void saveBatch();
@@ -844,6 +931,23 @@
   });
 
   el("body").addEventListener("change", (e) => {
+    // A picked activity decides which of the two text fields are there at all, so this one redraws —
+    // and puts the keyboard back on the control that was just used, like the row checkboxes below.
+    const field = e.target.closest("[data-st]");
+    if (field) {
+      const account = field.closest(".statusrow").dataset.account;
+      statusDraft[account][field.dataset.st] = field.value;
+      if (field.tagName !== "SELECT") return;
+
+      const service = (latest?.services ?? []).find((x) => x.name === selected);
+      if (!service) return;
+
+      el("body").innerHTML = renderState(service);
+      document.querySelector(
+        `.statusrow[data-account="${CSS.escape(account)}"] [data-st="${field.dataset.st}"]`)?.focus();
+      return;
+    }
+
     const box = e.target.closest("input[data-pick]");
     if (!box) return;
 
@@ -862,6 +966,13 @@
   // It redraws the body itself rather than through draw(), which deliberately holds off while this
   // input has focus — and then puts the caret back, the same trick the row checkboxes use above.
   el("body").addEventListener("input", (e) => {
+    // Typing in a status field only feeds the draft: no redraw, so no caret to put back.
+    const field = e.target.closest("input[data-st]");
+    if (field) {
+      statusDraft[field.closest(".statusrow").dataset.account][field.dataset.st] = field.value;
+      return;
+    }
+
     if (e.target.id !== "dzq") return;
 
     deezerFilter = e.target.value;

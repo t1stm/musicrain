@@ -3,6 +3,8 @@ bin/
 obj/
 .env
 .env.json
+# The bot's per-account Discord statuses, written beside the code by `dotnet run`.
+.status.json
 *.user
 Services/Gaida.API/cache/
 

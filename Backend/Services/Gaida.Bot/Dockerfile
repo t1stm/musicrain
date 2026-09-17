@@ -44,6 +44,9 @@ RUN ln -sf /usr/lib/x86_64-linux-gnu/libcrypto.so.3 /usr/lib/x86_64-linux-gnu/li
 # The accounts. Either the whole array inline here (what compose passes), or a file mounted at
 # CONFIGURATION_LOCATION. Unset, the bot says so and exits instead of crash-looping.
 ENV CONFIGURATION_LOCATION=/config/.env.json
+# The one thing the bot writes: the Discord status an operator set for each account, remembered
+# across restarts. Losing the volume behind it loses the statuses and nothing else.
+ENV STATUS_LOCATION=/data/status.json
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
 

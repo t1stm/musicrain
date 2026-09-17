@@ -26,6 +26,7 @@ With no account marked, the first one is the master.
 | `GAIDA_API_BASE_URL` | `http://localhost:5340` | The running instance |
 | `GAIDA_OPUS_BITRATE` | the voice channel's own bitrate | Encode bitrate in kbps, 8–256 |
 | `GAIDA_STATUSBAR_INTERVAL_MS` | `3200` | How often the player message is edited |
+| `STATUS_LOCATION` | `.status.json` | Where the Discord status set in Oko is remembered |
 
 ## In compose
 
@@ -87,9 +88,25 @@ The bot answers the same `/Admin` surface every other service here does — `/Ad
 watches it like any other target. It is the one thing the bot listens for; everything else it does
 is outbound.
 
-The snapshot carries the connected accounts (which one is master, how many guilds each is in), every
-live player (guild, channel, listeners, what is playing, queue position, loop, elapsed) and the audit
-trail. `/Admin/requests` stays empty: nothing makes HTTP requests to the bot.
+The snapshot carries the connected accounts (which one is master, how many guilds each is in, the
+status an operator set it to), every live player (guild, channel, listeners, what is playing, queue
+position, loop, elapsed) and the audit trail. `/Admin/requests` stays empty: nothing makes HTTP
+requests to the bot.
+
+Two routes act rather than report, and they are the only things in the stack that change what the
+bot is doing from outside Discord:
+
+| Route | Parameters |
+| --- | --- |
+| `POST /Admin/set-status` | `account`, `presence` (`Online`, `Idle`, `DoNotDisturb`, `Invisible`), `activity` (`none`, `Playing`, `ListeningTo`, `Watching`, `Competing`, `Streaming`), `text`, `url` for streaming |
+| `POST /Admin/clear-status` | `account` |
+
+`account` is the configured name — `name#index` where two accounts share one, or have none. The
+status is applied to the live connection and written to `STATUS_LOCATION`, so a restart brings the
+account back wearing it: it rides the gateway IDENTIFY rather than being set after connecting.
+Discord's own rules are enforced here rather than in Oko — an activity needs text, text stops at 128
+characters, `Streaming` needs a twitch.tv or youtube.com URL, and `Custom` is refused because
+DSharpPlus exposes no way to set the `state` field it is read from.
 
 The audit trail is the bot's own, because Oko's audit log records what an operator changed through
 the panel and nothing a watched service can write into. It keeps the last 500 of:
@@ -106,6 +123,7 @@ the panel and nothing a watched service can write into. It keeps the last 500 of
 | `track` | a track started, and who queued it |
 | `command` / `command-failed` | who ran which command, where |
 | `button` | who pressed which player button |
+| `status` | an operator set or cleared this account's Discord status |
 
 In memory, capped, gone on restart — like Oko's own log and the request ring in `Gaida.Admin`.
 
