@@ -91,6 +91,8 @@ public static class Text
 
     public static string Playing() => "Playing";
 
+    public static string Loading() => "Loading";
+
     public static string RequestedBy() => "Requested by";
 
     public static string NextUp() => "Next";

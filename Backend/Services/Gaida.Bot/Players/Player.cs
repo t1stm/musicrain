@@ -47,6 +47,13 @@ public sealed class Player
 
     public LoopMode LoopStatus { get; private set; } = LoopMode.None;
     public bool Paused { get; private set; }
+
+    /// <summary>
+    /// Between asking the API for a track and the first audio coming back. The body's headers do
+    /// not arrive until the source is actually producing — a rate-limited YouTube fetch can sit
+    /// there for a minute — so the clock has nothing to show and the statusbar animates instead.
+    /// </summary>
+    public bool Loading { get; private set; }
     public bool Started { get; set; }
     private bool Dead { get; set; }
     public Track? CurrentItem { get; private set; }
@@ -156,6 +163,7 @@ public sealed class Player
 
         try
         {
+            Loading = true;
             response = await TakePrefetchedAsync(item.Id) ?? await Api.OpenAudioAsync(item.Id, Bitrate, token);
 
             if (response is null)
@@ -196,6 +204,7 @@ public sealed class Player
         }
         finally
         {
+            Loading = false;
             response?.Dispose();
         }
     }
@@ -216,6 +225,9 @@ public sealed class Player
     /// <summary>Warms the next encode, then opens its body before this one ends.</summary>
     private async Task OnProgressAsync(Track item)
     {
+        // The first chunk is the one that says the request is no longer waiting on the source.
+        Loading = false;
+
         if (item.Length <= TimeSpan.Zero) return;
 
         var remaining = item.Length - Stopwatch.Elapsed;

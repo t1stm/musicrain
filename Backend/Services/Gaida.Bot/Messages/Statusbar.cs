@@ -176,11 +176,17 @@ public sealed class Statusbar
         var length = player.CurrentItem?.Length ?? TimeSpan.Zero;
         var time = player.Stopwatch.Elapsed;
 
+        // Nothing has arrived yet, so the clock is meaningless: run the unknown-length animation
+        // and say what it is waiting for instead of a bar frozen at zero.
+        var progress = player.Loading
+            ? $"{GenerateProgressbar(0, 0)} ( ⏳ {Text.Loading()} )"
+            : $"{GenerateProgressbar((long)time.TotalMilliseconds, (long)length.TotalMilliseconds)} " +
+              $"( {(player.Paused ? "⏸️" : "▶️")} {Time(time)} - {(length == TimeSpan.Zero ? "∞" : Time(length))} )";
+
         return
             $"```{Text.Playing()}: \"{player.CurrentItem?.Kind}\"\n" +
             $"({player.Queue.Current + 1} - {player.Queue.Count}) {player.CurrentItem?.DisplayName ?? "Something's broken."}\n" +
-            $"{GenerateProgressbar((long)time.TotalMilliseconds, (long)length.TotalMilliseconds)} " +
-            $"( {(player.Paused ? "⏸️" : "▶️")} {Time(time)} - {(length == TimeSpan.Zero ? "∞" : Time(length))} )" +
+            progress +
             $"{player.LoopStatus switch { LoopMode.One => " ( 🔂 )", LoopMode.WholeQueue => " ( 🔁 )", _ => "" }}" +
             $"{(requester is null ? "" : $"\n{Text.RequestedBy()}: {requester.Username}")}" +
             $"{(next is null ? "" : $"\n\n{Text.NextUp()}: ({player.Queue.Current + 2}) {next.DisplayName}")}```";
@@ -243,5 +249,5 @@ public sealed class Statusbar
         return progress.ToString();
     }
 
-    public static string Time(TimeSpan timeSpan) => timeSpan.ToString("hh\\:mm\\:ss", CultureInfo.InvariantCulture);
+    public static string Time(TimeSpan timeSpan) => timeSpan.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
 }
