@@ -182,6 +182,11 @@
     : `<div class="scroll"><div class="empty">Nothing here right now.</div></div>`;
   const cell = (v, cls = "") => `<td class="${cls}">${esc(v)}</td>`;
 
+  // Paths arrive percent-encoded, and every interesting one here is a search: a Cyrillic or Japanese
+  // query is a wall of %D0%A0 otherwise. Malformed input is left exactly as it came — a path that is
+  // not valid UTF-8 escaping is still worth reading, and decodeURIComponent throws on it.
+  const dec = (path) => { try { return decodeURIComponent(path); } catch { return path; } };
+
   // ── actions ──────────────────────────────────────────────────────────────────
   // Every button carries its target, its action and its parameters. `ask` names a parameter to
   // prompt for at click time; `confirm` is the sentence the operator has to agree with first.
@@ -559,6 +564,43 @@
         <div id="lib">${libHtml || `<div class="scroll"><div class="empty">Loading…</div></div>`}</div>`;
     },
 
+    // The Discord bot. Unlike every other target it serves no traffic of its own, so its Requests tab
+    // stays empty and its audit trail — joins, moves, departures, commands, buttons — comes down in
+    // the snapshot instead. Read-only: nothing here acts on a guild somebody is listening in.
+    bot(s) {
+      const players = s.players ?? [];
+      const events = s.events ?? [];
+
+      return `<div class="cards">
+          <div class="card"><b>${(s.accounts ?? []).length}</b><span>accounts</span></div>
+          <div class="card"><b>${players.length}</b><span>playing</span></div>
+          <div class="card"><b>${players.reduce((n, p) => n + p.listeners, 0)}</b><span>listeners</span></div>
+          <div class="card"><b>${esc(s.api ?? "—")}</b><span>reading from</span></div>
+        </div>` +
+        `<h3 class="section">Accounts</h3>` +
+        table(["Account", "Role", "Guilds", "Playing in"], (s.accounts ?? []).map((a) => [
+          cell(a.username, "wrap"), cell(a.master ? "master" : "secondary"),
+          cell(a.guilds, "mono"), cell(a.playing, "mono")
+        ])) +
+        `<h3 class="section">Players</h3>` +
+        table(["Account", "Guild", "Channel", "Listeners", "Playing", "Queue", "Position", "Loop"],
+          players.map((p) => [
+            cell(p.account, "wrap"), cell(p.guild ?? "—", "wrap"), cell(p.channel ?? "—", "wrap"),
+            cell(p.listeners, "mono"),
+            cell(p.track ? `${p.track}${p.requester ? ` (${p.requester})` : ""}` : "—", "wrap"),
+            cell(p.queueLength ? `${p.currentIndex + 1}/${p.queueLength}` : "empty", "mono"),
+            cell(p.paused ? `${p.elapsed} paused` : `${p.elapsed}${p.length ? " / " + p.length : ""}`, "mono"),
+            cell(p.loop === "None" ? "—" : p.loop)
+          ])) +
+        `<h3 class="section">Audit</h3>` +
+        table(["When", "What", "Account", "Guild", "Channel", "Who", "Detail"],
+          events.slice().reverse().map((e) => [
+            cell(ago(e.at) + " ago"), cell(e.kind, "mono"), cell(e.account, "wrap"),
+            cell(e.guild ?? "—", "wrap"), cell(e.channel ?? "—", "wrap"), cell(e.user ?? "—", "wrap"),
+            cell(e.detail, "wrap")
+          ]));
+    },
+
     selo(s, name) {
       return `<div class="cards"><div class="card"><b>${s.count}</b><span>rooms</span></div>
           <div class="card"><b>${s.rooms.reduce((n, r) => n + r.users.length, 0)}</b><span>listeners</span></div></div>` +
@@ -649,7 +691,7 @@
     }
     if (page || tab !== "requests" || selected !== name) return;
     el("body").innerHTML = table(["When", "Method", "Path", "Status", "Time"], rows.slice().reverse().map((r) => [
-      cell(ago(r.at) + " ago"), cell(r.method, "mono"), cell(r.path, "mono wrap"),
+      cell(ago(r.at) + " ago"), cell(r.method, "mono"), cell(dec(r.path), "mono wrap"),
       `<td class="mono s${String(r.status)[0]}">${r.status}</td>`, cell(r.ms + " ms", "mono")
     ]));
   }
@@ -760,7 +802,7 @@
       const request = item.data;
       pushFeed(`<div class="line"><span class="who">${esc(item.target)}</span>` +
         `<span class="s${String(request.status)[0]}">${esc(request.status)}</span> ` +
-        `${esc(request.method)} ${esc(request.path)} <span class="who">${esc(request.ms)}ms</span></div>`);
+        `${esc(request.method)} ${esc(dec(request.path))} <span class="who">${esc(request.ms)}ms</span></div>`);
     });
     events.onopen = () => el("feedstate").textContent = "";
     events.onerror = () => el("feedstate").textContent = "— reconnecting";
