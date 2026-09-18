@@ -72,9 +72,24 @@ Every host-specific value and every secret lives in `.env` beside [compose.yaml]
 | `YOUTUBE_RANDOM_SHARE` | `0.4` | Share of `RandomResults` drawn from YouTube, the library backfilling the rest. |
 | `BOT_CONFIG_FILE` | `./Services/Gaida.Bot/.env.json` | The Discord bot's accounts, mounted read-only — the same file `dotnet run` reads. |
 | `BOT_CONFIGURATION` | *(unset)* | Those accounts as a JSON array instead, overriding the file. With neither, `gaida-bot` says so and exits. |
+| `SERVICE_MEMORY_LIMIT` | `2g` | Memory ceiling every pod runs under, swap included. |
+| `BOT_MEMORY_LIMIT` | `2g` | The bot's own ceiling — the one pod that has run away. |
+| `DUNAV_MEMORY_LIMIT` | `1g` | Dunav's, tighter because its cache is on disk rather than on the heap. |
 
 > [!NOTE]
 > A missing secret disables a surface rather than exposing it. Without `ADMIN_TOKEN` the whole admin surface is 404 and Oko renders every target as down; without `DEEZER_ARL` every Deezer route works except `/content`. Both are what a fresh checkout runs on.
+
+### When a pod dies
+
+Every pod has a memory ceiling and no swap allowance: `mem_limit` and `memswap_limit` are both set, in the shared `x-service` block. Only setting the first is the trap — Docker then grants the container that much swap on top, and a pod leaking its way through gigabytes of swap freezes the host long before anything kills it. With both set, the leak ends as an OOM kill inside that pod's own cgroup, printed in `dmesg`, followed by a restart.
+
+Container logs go to the journal rather than to a per-container JSON file, because the JSON file is deleted along with the container that `docker compose up -d` replaces — so the ordinary reflex of restarting a sick pod destroys the record of what made it sick. The journal keeps it:
+
+```bash
+scripts/postmortem.sh gaida-bot          # logs, kernel OOM kills and the container's exit state
+journalctl CONTAINER_NAME=gaida-dunav-1 --since '-2h'
+docker compose logs gaida-api            # still works; it reads the journal back
+```
 
 ## Tests
 

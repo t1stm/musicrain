@@ -19,6 +19,25 @@ name: gaida
 
 x-service: &service
   restart: unless-stopped
+  # Every pod gets a ceiling, and no pod gets to swap. A leak inside one container then ends as a
+  # cgroup OOM kill named in dmesg and a restart a few seconds later, instead of the whole host
+  # thrashing on swap until it is unusable — which is exactly how 2026-09-18 went, when gaida-bot
+  # grew to 16 GB unbounded. memswap_limit matters as much as mem_limit: left out, Docker gives the
+  # container that much swap on top, and swap is what freezes the machine.
+  #
+  # Sized against idle draw (25-165 MB per pod, `docker stats`), so this is a runaway detector, not
+  # a budget. A pod that legitimately needs more gets its own knob, the way dunav and gaida-bot do.
+  mem_limit: ${SERVICE_MEMORY_LIMIT:-2g}
+  memswap_limit: ${SERVICE_MEMORY_LIMIT:-2g}
+  # Logs go to the journal instead of a per-container JSON file, because a JSON file is deleted with
+  # the container: `docker compose up -d` on a sick pod destroys the evidence of what made it sick.
+  # journald outlives the container, and the whole history of a name is one query:
+  #   journalctl CONTAINER_NAME=gaida-gaida-bot-1 --since '-2h'
+  # `docker compose logs` keeps working — it reads the journal back.
+  logging:
+    driver: journald
+    options:
+      tag: "{{.Name}}"
   environment: &env
     ASPNETCORE_URLS: http://+:8080
     ASPNETCORE_ENVIRONMENT: Production
@@ -197,7 +216,9 @@ services:
       - "127.0.0.1:${DUNAV_PORT:-5341}:8080"
     # Was 6g when the cache lived on the heap. Resident memory is now the runtime plus roughly
     # 64 KiB per in-flight connection, independent of catalog size. Watch it before trimming further.
+    # Tighter than the stack default above, and its own swap ceiling with it.
     mem_limit: ${DUNAV_MEMORY_LIMIT:-1g}
+    memswap_limit: ${DUNAV_MEMORY_LIMIT:-1g}
 
   # ── Rooms ──────────────────────────────────────────────────────────────────────
 
@@ -372,6 +393,12 @@ services:
       - bot-data:/data
     depends_on:
       - gaida-api
+    # Its own knob, because this is the pod that has actually run away: on 2026-09-18 it reached 16 GB
+    # and took the host down with it through swap. Idle it sits at ~160 MB with every account
+    # connected, so this is room for a busy queue and nothing like room for a leak. .NET reads the
+    # cgroup limit itself and sizes the heap against it, so no DOTNET_GCHeapHardLimit is needed here.
+    mem_limit: ${BOT_MEMORY_LIMIT:-2g}
+    memswap_limit: ${BOT_MEMORY_LIMIT:-2g}
 
 volumes:
   thumbnails:
