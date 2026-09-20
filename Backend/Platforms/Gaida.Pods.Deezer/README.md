@@ -55,3 +55,7 @@ pytest                               # test_deezer.py, pytest installed separate
 The pod is flat: [main.py](main.py) for the routes, [stream.py](stream.py) for downloading, decrypting and fetching the artwork and lyrics, [cache.py](cache.py) for the on-disk cache, [tags.py](tags.py) for writing them into the file, [classify.py](classify.py) for recognising Deezer URLs and IDs, [mapper.py](mapper.py) for the shared DTO, [admin.py](admin.py) for the admin surface, [test_deezer.py](test_deezer.py) for the tests, and a [Dockerfile](Dockerfile).
 
 Finding an ARL cookie is documented in [streamrip's wiki](https://github.com/nathom/streamrip/wiki/Finding-Your-Deezer-ARL-Cookie), which is also where this pod's download logic comes from.
+
+## License
+
+This pod is licensed [GPL-3.0-only](LICENSE), unlike the rest of the repository, which is public domain under the Unlicense. The download and decrypt logic in [stream.py](stream.py) and the tag mapping in [tags.py](tags.py) are vendored from [streamrip](https://github.com/nathom/streamrip) by nathom, which is GPL-3.0-only; the original function names are recorded in each module's docstring. The pod runs as its own container and speaks to the rest of the stack over HTTP, so the copyleft ends at this directory.

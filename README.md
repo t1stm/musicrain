@@ -113,3 +113,7 @@ Host-specific values and secrets live in `Backend/.env`, which compose reads on 
 
 [Backend/data](Backend/data) is where the compose defaults mount their volumes — the music library, extracted album art served as `/Album_Covers`, and the YouTube and Deezer audio caches. All of it is gitignored, and only the album covers are ever served directly by nginx.
 
+
+## License
+
+Everything in this repository is released into the public domain under [the Unlicense](LICENSE), with one exception: [Backend/Platforms/Gaida.Pods.Deezer](Backend/Platforms/Gaida.Pods.Deezer) is under [GPL-3.0-only](Backend/Platforms/Gaida.Pods.Deezer/LICENSE), because its download and decrypt logic is vendored from [streamrip](https://github.com/nathom/streamrip). That pod is a container of its own and talks to the rest over HTTP, so nothing else here inherits the copyleft.
