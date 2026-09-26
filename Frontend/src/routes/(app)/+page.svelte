@@ -447,25 +447,27 @@
 							</div>
 						</div>
 					{:else}
+						<!-- On a phone each button grows into its line: when Roll again wraps it takes the
+						     whole second line, and the two above it split the first. -->
 						<div class="mt-4 flex flex-wrap gap-2">
 							<!-- in a room nobody plays anything directly, so queueing is the only verb and it takes the accent -->
 							{#if !session.inRoom}
 								<button
 									type="button"
-									class="inline-flex min-h-11 items-center gap-2 rounded-row bg-primary-600 px-3 py-2 text-sm font-semibold text-white"
+									class="inline-flex min-h-11 items-center justify-center gap-2 rounded-row bg-primary-600 px-3 py-2 text-sm font-semibold text-white max-sm:grow"
 									onclick={(event) => press('play', event)}><Icon src={Play} mini size="16" /> Play</button
 								>
 							{/if}
 							<button
 								type="button"
-								class="min-h-11 rounded-row px-3 py-2 text-sm font-semibold {session.inRoom
+								class="min-h-11 rounded-row px-3 py-2 text-sm font-semibold max-sm:grow {session.inRoom
 									? 'bg-primary-600 text-white'
 									: 'border border-haze text-chalk hover:bg-surface-200'}"
 								onclick={(event) => press('queue', event)}>Add to queue</button
 							>
 							<button
 								type="button"
-								class="inline-flex min-h-11 items-center gap-2 rounded-row border border-haze px-3 py-2 text-sm font-semibold text-chalk hover:bg-surface-200 disabled:opacity-60"
+								class="inline-flex min-h-11 items-center justify-center gap-2 rounded-row border border-haze px-3 py-2 text-sm font-semibold text-chalk hover:bg-surface-200 disabled:opacity-60 max-sm:grow"
 								onclick={rollAgain}
 								disabled={rolling}
 								><Icon src={ArrowPath} mini size="16" class={rolling ? 'animate-spin' : ''} /> Roll again</button
