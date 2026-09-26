@@ -54,3 +54,42 @@ export function logout(token: string) {
 export function bearer(token: string) {
 	return { Authorization: `Bearer ${token}` };
 }
+
+/** An authenticated request with a JSON body. */
+function authed(token: string, body: unknown, method = 'POST'): RequestInit {
+	return {
+		method,
+		headers: { ...bearer(token), 'Content-Type': 'application/json' },
+		body: JSON.stringify(body),
+	};
+}
+
+/** `settings` is `null` for an account that never saved any, which is not the same as `{}`. */
+export type SavedSettings = { settings: Record<string, unknown> | null; updatedUtc: string | null };
+
+export function getSettings(token: string) {
+	return send<SavedSettings>('/Settings', { headers: bearer(token) });
+}
+
+/** Merges: the keys sent replace theirs, a key sent as `null` is removed, the rest stay. */
+export function patchSettings(token: string, patch: Record<string, unknown>) {
+	return send<SavedSettings>('/Settings', authed(token, patch, 'PATCH'));
+}
+
+/** Every token but this one. */
+export function signOutEverywhere(token: string) {
+	return send<{ revoked: number }>('/SignOutEverywhere', { method: 'POST', headers: bearer(token) });
+}
+
+/** Revokes every token, this one included, and answers with a fresh session for this device. */
+export function changePassword(token: string, current: string, password: string) {
+	return send<Session>('/Password', authed(token, { current, password }));
+}
+
+export function rename(token: string, username: string, password: string) {
+	return send<{ username: string }>('/Rename', authed(token, { username, password }));
+}
+
+export function deleteAccount(token: string, password: string) {
+	return send<null>('/Delete', authed(token, { password }));
+}

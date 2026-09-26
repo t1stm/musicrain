@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using JetBrains.Annotations;
 
@@ -22,6 +23,15 @@ public sealed class User
     ///     was written to the file and never read back — every restart signed everybody out.
     /// </summary>
     public List<Token> Tokens { get; init; } = [];
+
+    /// <summary>
+    ///     The frontend's preferences, as it sent them. Opaque here on purpose: a new preference is a
+    ///     frontend change, and the frontend validates every value it reads back. <c>null</c> until the
+    ///     account first saves any, which the client needs to tell apart from an empty object.
+    /// </summary>
+    public JsonObject? Settings { get; set; }
+
+    public DateTimeOffset? SettingsUpdatedUtc { get; set; }
 
     /// <summary>Two accounts may not differ only by case. Derived, so it is not written to the file.</summary>
     [JsonIgnore]

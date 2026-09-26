@@ -1,7 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import account from './account.svelte';
 import { login, logout, me } from '$requests/accounts';
-import user from './user.svelte';
 import { AudioApiError } from '$requests/songs';
 
 vi.mock('$requests/accounts', () => ({
@@ -30,7 +29,6 @@ beforeEach(() => {
 	kept.clear();
 	account.token = null;
 	account.username = null;
-	user.source = 'local';
 	vi.mocked(me).mockReset();
 	vi.mocked(me).mockRejectedValue(new Error('offline'));
 });
@@ -119,16 +117,4 @@ it('signs out locally even when Dom cannot be reached', async () => {
 
 	expect(account.signedIn).toBe(false);
 	expect(kept.get('musicrain.token')).toBe(undefined);
-});
-
-// the room identity is a name for a socket, but nobody wants to be `kris` here and
-// `Anonymous 4` in a room
-it('offers the account name to the room identity, unless Discord already named you', async () => {
-	vi.mocked(login).mockResolvedValue(session(new Date(Date.now() + 86_400_000).toISOString()));
-	await account.signIn('kris', 'correct horse battery');
-	expect(user.username).toBe('kris');
-
-	user.adopt('discord_name', null);
-	await account.signIn('kris', 'correct horse battery');
-	expect(user.username).toBe('discord_name');
 });

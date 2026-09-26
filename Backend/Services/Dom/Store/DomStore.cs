@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ILogger = Serilog.ILogger;
 
 namespace Dom.Store;
@@ -24,6 +25,11 @@ public sealed class DomStore
     private const int DefaultIterations = 210_000;
 
     private static readonly JsonSerializerOptions FileJson = new() { WriteIndented = true };
+
+    /// <summary>What a password-gated change says when the password is wrong.</summary>
+    private const string WrongPassword = "That password is wrong.";
+
+    private const string SignInFirst = "Sign in first.";
 
     private readonly Dictionary<string, User> _byToken = new(StringComparer.Ordinal);
     private readonly string _dataFile;
@@ -103,12 +109,7 @@ public sealed class DomStore
 
         lock (_gate)
         {
-            if (!_users.TryGetValue(User.Normalize(username), out var user))
-                return (null, null, "invalid_credentials", wrong);
-
-            var expected = Convert.FromBase64String(user.Hash);
-            var actual = Derive(password, Convert.FromBase64String(user.Salt), user.Iterations);
-            if (!CryptographicOperations.FixedTimeEquals(expected, actual))
+            if (!_users.TryGetValue(User.Normalize(username), out var user) || !Verify(user, password))
                 return (null, null, "invalid_credentials", wrong);
 
             var token = IssueLocked(user);
@@ -323,6 +324,113 @@ public sealed class DomStore
         }
     }
 
+    // ── Self-service ───────────────────────────────────────────────────────────────────────────
+    // The account holder's own versions of the admin actions below. Everything that could lock the
+    // owner out asks for the password as well as the token: a stolen token alone is not enough.
+
+    /// <summary>The account's settings and when they last changed. Both <c>null</c> if it never saved any.</summary>
+    public (JsonObject? settings, DateTimeOffset? updatedUtc) Settings(User user)
+    {
+        // a copy, because the response is serialised outside the lock while a merge may be writing
+        lock (_gate) return (user.Settings?.DeepClone().AsObject(), user.SettingsUpdatedUtc);
+    }
+
+    /// <summary>
+    ///     Merges <paramref name="patch" /> into the account's settings, key by key at the top level; a
+    ///     <c>null</c> value removes that key. A merge rather than a replace, so a tab left open since
+    ///     morning overwrites only what it changed, not everything another device changed since.
+    /// </summary>
+    public (JsonObject settings, DateTimeOffset updatedUtc) MergeSettings(User user, JsonObject patch)
+    {
+        lock (_gate)
+        {
+            var settings = user.Settings ??= new JsonObject();
+
+            foreach (var (key, value) in patch)
+            {
+                if (value is null) settings.Remove(key);
+                else settings[key] = value.DeepClone();
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            user.SettingsUpdatedUtc = now;
+            SaveLocked();
+
+            return (settings.DeepClone().AsObject(), now);
+        }
+    }
+
+    /// <summary>
+    ///     Sets a new password, signs every session out, and signs this one back in. The old tokens were
+    ///     issued against the old password, so they all go — including the caller's, which is why it
+    ///     gets a fresh one under the same lock.
+    /// </summary>
+    public (Token? token, string? error, string? message) ChangePassword(User user, string? current, string? password)
+    {
+        var invalid = ValidatePassword(password);
+        if (invalid is not null) return (null, "invalid_request", invalid);
+
+        lock (_gate)
+        {
+            if (!LiveLocked(user)) return (null, "unauthorized", SignInFirst);
+            if (!Verify(user, current)) return (null, "invalid_credentials", WrongPassword);
+
+            SetPasswordLocked(user, password!);
+            RevokeLocked(user);
+            var token = IssueLocked(user);
+
+            SaveLocked();
+            return (token, null, null);
+        }
+    }
+
+    /// <summary>Revokes every token but <paramref name="keep" />. Returns how many live sessions ended.</summary>
+    public int SignOutEverywhere(User user, string keep)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        lock (_gate)
+        {
+            var others = user.Tokens.Where(token => token.Value != keep).ToList();
+            if (others.Count == 0) return 0;
+
+            foreach (var token in others)
+            {
+                _byToken.Remove(token.Value);
+                user.Tokens.Remove(token);
+            }
+
+            SaveLocked();
+
+            // an expired token is not a device anybody is signed in on
+            return others.Count(token => token.ExpiresUtc > now);
+        }
+    }
+
+    public (string? error, string? message) Rename(User user, string? password, string? newName)
+    {
+        lock (_gate)
+        {
+            if (!LiveLocked(user)) return ("unauthorized", SignInFirst);
+            return Verify(user, password) ? RenameLocked(user, newName) : ("invalid_credentials", WrongPassword);
+        }
+    }
+
+    /// <summary>Deletes the account and everything it owns. Returns the cover files for the caller to unlink.</summary>
+    public (string? error, string? message, List<string> covers) DeleteAccount(User user, string? password)
+    {
+        lock (_gate)
+        {
+            if (!LiveLocked(user)) return ("unauthorized", SignInFirst, []);
+            if (!Verify(user, password)) return ("invalid_credentials", WrongPassword, []);
+
+            var (covers, _) = DeleteLocked(user);
+            _log.Information("{Username} deleted their account", user.Username);
+
+            return (null, null, covers);
+        }
+    }
+
     // ── Admin ──────────────────────────────────────────────────────────────────────────────────
     // Owner-agnostic on purpose: everything above asks "does this caller own it", and an operator
     // owns nothing. Every one of these destroys or rewrites real user data that no cache refills,
@@ -331,30 +439,12 @@ public sealed class DomStore
     /// <summary>Renames an account, carrying its playlists across with it.</summary>
     public (bool ok, string? error) AdminRenameUser(string username, string? newName)
     {
-        var invalid = ValidateUsername(newName);
-        if (invalid is not null) return (false, invalid);
-
-        var name = newName!.Trim();
-
         lock (_gate)
         {
             if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, "No such account.");
 
-            var oldKey = user.Key;
-            var newKey = User.Normalize(name);
-            if (newKey != oldKey && _users.ContainsKey(newKey)) return (false, "That username is taken.");
-
-            // Playlist.Owner holds the display name and OwnerKey derives from it, so the playlists
-            // have to move with the account or every one of them orphans on rename.
-            foreach (var playlist in _playlists.Values.Where(playlist => playlist.OwnerKey == oldKey))
-                playlist.Owner = name;
-
-            _users.Remove(oldKey);
-            user.Username = name;
-            _users[user.Key] = user;
-
-            SaveLocked();
-            return (true, null);
+            var (_, message) = RenameLocked(user, newName);
+            return (message is null, message);
         }
     }
 
@@ -371,11 +461,7 @@ public sealed class DomStore
         {
             if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, "No such account.");
 
-            var salt = RandomNumberGenerator.GetBytes(16);
-            user.Salt = Convert.ToBase64String(salt);
-            user.Hash = Convert.ToBase64String(Derive(password!, salt, DefaultIterations));
-            user.Iterations = DefaultIterations;
-
+            SetPasswordLocked(user, password!);
             RevokeLocked(user);
 
             SaveLocked();
@@ -408,14 +494,8 @@ public sealed class DomStore
         {
             if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, [], 0);
 
-            var owned = _playlists.Values.Where(playlist => playlist.OwnerKey == user.Key).ToList();
-            foreach (var playlist in owned) _playlists.Remove(playlist.Id);
-
-            RevokeLocked(user);
-            _users.Remove(user.Key);
-
-            SaveLocked();
-            return (true, owned.Where(p => p.CoverFile is not null).Select(p => p.CoverFile!).ToList(), owned.Count);
+            var (covers, deleted) = DeleteLocked(user);
+            return (true, covers, deleted);
         }
     }
 
@@ -464,6 +544,68 @@ public sealed class DomStore
     }
 
     /// <summary>Drops every token an account holds, from the account and from the lookup.</summary>
+    /// <summary>
+    ///     Whether <paramref name="user" /> is still an account. A controller resolves the caller before
+    ///     it calls in, so a delete can land in between — and renaming or re-issuing a token for the
+    ///     object left behind would bring the deleted account back. Caller holds <see cref="_gate" />.
+    /// </summary>
+    private bool LiveLocked(User user) => _users.TryGetValue(user.Key, out var live) && ReferenceEquals(live, user);
+
+    /// <summary>Whether <paramref name="password" /> is this account's. Caller holds <see cref="_gate" />.</summary>
+    private static bool Verify(User user, string? password)
+    {
+        var expected = Convert.FromBase64String(user.Hash);
+        var actual = Derive(password ?? "", Convert.FromBase64String(user.Salt), user.Iterations);
+        return CryptographicOperations.FixedTimeEquals(expected, actual);
+    }
+
+    /// <summary>Caller holds <see cref="_gate" /> and has validated the password; revoking tokens is theirs too.</summary>
+    private static void SetPasswordLocked(User user, string password)
+    {
+        var salt = RandomNumberGenerator.GetBytes(16);
+        user.Salt = Convert.ToBase64String(salt);
+        user.Hash = Convert.ToBase64String(Derive(password, salt, DefaultIterations));
+        user.Iterations = DefaultIterations;
+    }
+
+    /// <summary>Caller holds <see cref="_gate" />.</summary>
+    private (string? error, string? message) RenameLocked(User user, string? newName)
+    {
+        var invalid = ValidateUsername(newName);
+        if (invalid is not null) return ("invalid_request", invalid);
+
+        var name = newName!.Trim();
+        var oldKey = user.Key;
+        var newKey = User.Normalize(name);
+        if (newKey != oldKey && _users.ContainsKey(newKey))
+            return ("username_taken", "That username is taken. Pick another.");
+
+        // Playlist.Owner holds the display name and OwnerKey derives from it, so the playlists
+        // have to move with the account or every one of them orphans on rename.
+        foreach (var playlist in _playlists.Values.Where(playlist => playlist.OwnerKey == oldKey))
+            playlist.Owner = name;
+
+        _users.Remove(oldKey);
+        user.Username = name;
+        _users[user.Key] = user;
+
+        SaveLocked();
+        return (null, null);
+    }
+
+    /// <summary>Caller holds <see cref="_gate" />. Returns the orphaned cover files and how many playlists went.</summary>
+    private (List<string> covers, int playlists) DeleteLocked(User user)
+    {
+        var owned = _playlists.Values.Where(playlist => playlist.OwnerKey == user.Key).ToList();
+        foreach (var playlist in owned) _playlists.Remove(playlist.Id);
+
+        RevokeLocked(user);
+        _users.Remove(user.Key);
+
+        SaveLocked();
+        return (owned.Where(p => p.CoverFile is not null).Select(p => p.CoverFile!).ToList(), owned.Count);
+    }
+
     private void RevokeLocked(User user)
     {
         foreach (var token in user.Tokens) _byToken.Remove(token.Value);

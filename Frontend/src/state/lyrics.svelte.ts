@@ -1,8 +1,6 @@
 import current from '$states/current.svelte';
 import { getLyrics, type Lyrics } from '$requests/lyrics';
 
-const openKey = 'musicrain.lyrics-open';
-
 export type LyricsStatus = 'idle' | 'loading' | 'ready' | 'none' | 'error';
 
 class LyricsState {
@@ -13,8 +11,8 @@ class LyricsState {
 	 *  second at most and only when the value actually changed. */
 	activeIndex: number = $state(-1);
 
-	/** Whether the listener wants the pane. Remembered on this device. */
-	#open = $state(stored());
+	/** Whether the listener wants the pane. Remembered by `settings.svelte`, as `lyricsOpen`. */
+	#open = $state(false);
 
 	/** The last answer was that the track has no words. Kept through the next load, so the
 	 *  pane neither flashes in for another track without words nor out between two with them. */
@@ -34,7 +32,6 @@ class LyricsState {
 
 	set open(value: boolean) {
 		this.#open = value;
-		remember(value);
 		if (value) {
 			// a press on the button is a question, so it gets the answer even when it is "none"
 			this.#wordless = false;
@@ -100,25 +97,6 @@ class LyricsState {
 		this.#generation++;
 		this.#inFlight?.abort();
 		this.#inFlight = null;
-	}
-}
-
-// No `browser` guard on either of these: server-side rendering, a private window and
-// blocked site data all fail the same way — by throwing on access rather than by
-// answering — so the try/catch is the guard, and it is the one that covers all three.
-function stored() {
-	try {
-		return localStorage.getItem(openKey) === 'true';
-	} catch {
-		return false;
-	}
-}
-
-function remember(value: boolean) {
-	try {
-		localStorage.setItem(openKey, String(value));
-	} catch {
-		// A preference that cannot be remembered is still a preference for this session.
 	}
 }
 

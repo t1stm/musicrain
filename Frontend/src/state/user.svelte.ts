@@ -1,11 +1,10 @@
-import { browser } from '$app/environment';
-
-const storageKey = 'musicrain.username';
-
 /**
  * The server takes a name once, in the query string that opens the session
  * socket, and never again for that connection. So the name has to exist before
  * the join, and changing it means reconnecting as somebody new.
+ *
+ * Remembered by `settings.svelte`, as the `chatName` setting — on the account when
+ * signed in, on this device otherwise.
  */
 class Identity {
 	/** `null` until the reader has chosen. An empty string is a real choice: it
@@ -18,16 +17,11 @@ class Identity {
 		return this.username !== null;
 	}
 
-	load() {
-		if (!browser) return;
-		const stored = localStorage.getItem(storageKey);
-		if (stored !== null) this.username = stored;
-	}
-
 	/**
 	 * Discord already knows who you are, so the name prompt is dead weight inside
-	 * the activity. Deliberately not written to `localStorage`: the same browser
-	 * profile may open the site outside Discord, and that visit keeps its own name.
+	 * the activity. Never saved: the same browser profile may open the site outside
+	 * Discord, and that visit keeps its own name — `settings.svelte` skips the chat
+	 * name while this is the source.
 	 */
 	adopt(name: string, avatarUrl: string | null) {
 		this.username = name;
@@ -37,7 +31,6 @@ class Identity {
 
 	choose(name: string) {
 		this.username = name.trim();
-		if (browser) localStorage.setItem(storageKey, this.username);
 	}
 }
 

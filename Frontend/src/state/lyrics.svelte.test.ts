@@ -20,21 +20,11 @@ function answering(status: number, payload: unknown = body, delayMs = 0) {
 	});
 }
 
-// jsdom hands out no localStorage under vitest's default document origin, and one of
-// these tests is about what the state does with one.
-const kept = new Map<string, string>();
-vi.stubGlobal('localStorage', {
-	getItem: (key: string) => kept.get(key) ?? null,
-	setItem: (key: string, value: string) => kept.set(key, value),
-	removeItem: (key: string) => kept.delete(key)
-});
-
 // A fresh ID per test: the state remembers which track it has, on purpose, and reusing
 // one ID would have the second test answered by the first test's load.
 let track = 0;
 
 beforeEach(() => {
-	kept.clear();
 	// Toggling `open` loads through the global fetch; the tests below hand `load` their
 	// own, so this only has to be something that resolves rather than something real.
 	vi.stubGlobal('fetch', answering(204, null));
@@ -136,30 +126,6 @@ describe('load', () => {
 
 		expect(second).toHaveBeenCalledTimes(1);
 		expect(lyrics.status).toBe('ready');
-	});
-});
-
-describe('open', () => {
-	it('is remembered on this device', () => {
-		lyrics.open = true;
-		expect(kept.get('musicrain.lyrics-open')).toBe('true');
-
-		lyrics.open = false;
-		expect(kept.get('musicrain.lyrics-open')).toBe('false');
-	});
-
-	it('survives storage that throws rather than answering', () => {
-		vi.stubGlobal('localStorage', {
-			getItem: () => {
-				throw new DOMException('denied', 'SecurityError');
-			},
-			setItem: () => {
-				throw new DOMException('denied', 'SecurityError');
-			}
-		});
-
-		expect(() => (lyrics.open = true)).not.toThrow();
-		expect(lyrics.open).toBe(true);
 	});
 });
 

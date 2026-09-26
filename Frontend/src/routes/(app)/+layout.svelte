@@ -20,6 +20,7 @@
 	import queue from '$states/queue.svelte';
 	import rooms from '$states/rooms.svelte';
 	import session from '$states/session.svelte';
+	import settings from '$states/settings.svelte';
 	import user from '$states/user.svelte';
 
 	let { children } = $props();
@@ -48,8 +49,9 @@
 	});
 
 	onMount(async () => {
-		user.load();
 		account.load();
+		// after the account, so the first thing it does is read the account's settings
+		settings.load();
 		// clears Discord's activity loading screen; a no-op in a normal browser tab
 		await initDiscord();
 		// skips the "pick a name" gate on the room page and fills the header avatar

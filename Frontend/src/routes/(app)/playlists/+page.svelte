@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
+	import { resolve } from '$app/paths';
 	import account from '$states/account.svelte';
 	import playlists from '$states/playlists.svelte';
 	import PlaylistCard from '$components/playlist/PlaylistCard.svelte';
@@ -62,8 +63,10 @@
 
 		{#if !account.signedIn}
 			<p class="max-w-lg text-fog">
-				Sign in to keep playlists. Open the account panel from your avatar in the header to sign
-				in or create an account.
+				<a
+					href={resolve('/settings/account')}
+					class="text-primary-500 underline-offset-4 hover:underline">Sign in</a
+				> to keep playlists.
 			</p>
 		{:else if mineLoading}
 			<div

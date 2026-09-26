@@ -166,6 +166,17 @@ GET  /Audio/Accounts/Me         Authorization: Bearer …           200
 POST /Audio/Accounts/Logout     Authorization: Bearer …           204
 ```
 
+And, for the account holder changing their own account (every one needs the bearer token):
+
+```
+GET   /Audio/Accounts/Settings                                                  200
+PATCH /Audio/Accounts/Settings           {"quality":{…},"chatName":null}        200
+POST  /Audio/Accounts/SignOutEverywhere                                         200
+POST  /Audio/Accounts/Password           {"current":"…","password":"…"}         200
+POST  /Audio/Accounts/Rename             {"username":"…","password":"…"}        200
+POST  /Audio/Accounts/Delete             {"password":"…"}                       204
+```
+
 `Register` and `Login` answer with the account and a token:
 
 ```json
@@ -199,12 +210,50 @@ Errors use the same envelope as the rest of the API:
 | 409 | `username_taken` | that name, case-insensitively, already exists |
 | 401 | `invalid_credentials` | wrong password **or** no such account — deliberately the same answer to both |
 | 401 | `unauthorized` | the endpoint needs a bearer token and did not get a live one |
+| 403 | `invalid_credentials` | `Password`, `Rename` or `Delete` got the wrong current password |
 
 ```json
 {"error":{"code":"username_taken","message":"That username is taken. Pick another."}}
 ```
 
 Nothing rate-limits `Register` or `Login`.
+
+### Settings
+
+The frontend's preferences, kept on the account so every device signed in to it reads the same
+ones. Dom does not know what any of them mean: it stores whatever JSON object the client sends, and
+the client validates every value it reads back. A new preference is a frontend change only. There is
+no size cap beyond the request body limit.
+
+`GET` answers `{"settings":{…},"updatedUtc":"…"}`, or `{"settings":null,"updatedUtc":null}` for an
+account that has never saved any — which is not the same as `{}`, and the frontend uses the
+difference to fill a new account from the device that signed in.
+
+`PATCH` merges: each top-level key sent replaces that key, a key sent as `null` is removed, and keys
+not sent are left alone. So a tab left open for hours overwrites only what it changed, not what
+another device changed since. It answers with the merged settings, in the same shape as `GET`. A
+body that is not a JSON object is `400 invalid_request`.
+
+What the frontend keeps there today — each key is optional:
+
+```json
+{"quality":{"codec":"Opus","bitrate":192},"chatName":"Радост","lyricsOpen":true}
+```
+
+### Changing the account
+
+`Password`, `Rename` and `Delete` ask for the current password as well as the token, so a stolen
+token alone cannot lock the owner out. A wrong one is `403 invalid_credentials` — not `401`, because
+the token is fine, and a client treats `401` as "you are signed out".
+
+- `Password` revokes every token the account holds, the caller's included — each was issued against
+  the old password — and answers with a fresh session for the caller, in the shape `Login` uses.
+- `SignOutEverywhere` revokes every token but the caller's and answers `{"revoked":3}`, the number of
+  live sessions it ended. It needs no password: it only takes access away.
+- `Rename` follows the username rules above (`400`, or `409 username_taken`), carries the account's
+  playlists across, and answers `{"username":"…"}`. Existing tokens stay valid.
+- `Delete` removes the account, its playlists and their covers, and answers `204`. It is a `POST`
+  because it carries a body.
 
 ## Playlists
 

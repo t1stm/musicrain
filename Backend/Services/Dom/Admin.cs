@@ -64,8 +64,11 @@ internal static class Admin
     private static IResult Answer((bool ok, string? error) result) =>
         result.ok ? Results.Ok() : Results.BadRequest(new { result.error });
 
-    /// <summary>Same best-effort unlink the playlist controller does, for the same reason.</summary>
-    private static void Forget(string directory, string coverFile)
+    /// <summary>
+    ///     Same best-effort unlink the playlist controller does, for the same reason. Also what an account
+    ///     deleting itself uses, so the two deletes of an account cannot leave different things behind.
+    /// </summary>
+    internal static void Forget(string directory, string coverFile)
     {
         try
         {
