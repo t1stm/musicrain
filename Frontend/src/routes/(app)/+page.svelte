@@ -67,6 +67,10 @@
 	let artists = $state<[string, number][]>([]);
 	let artistsLoading = $state(true);
 	const artistUrl = (name: string) => `${resolve('/artist')}?term=${encodeURIComponent(name)}`;
+	// A phone shows the busiest names and keeps the rest a tap away: the whole library is
+	// screens of chips to scroll past before the picks. Wider, it is a few rows and all of it shows.
+	const FEW_ARTISTS = 12;
+	let allArtists = $state(false);
 	let heroDuration = $derived(hero ? getTimeString(convertTimeSpanStringToSeconds(hero.duration)) : '');
 	let heroInLibrary = $derived(hero?.id.startsWith('audio://') ?? false);
 	// ponytail: the result contract carries no format field. For library tracks the
@@ -667,13 +671,26 @@
 			<p class="sr-only" aria-live="polite">Counting the artists in the library.</p>
 		{:else}
 			<div class="flex flex-wrap gap-2">
-				{#each artists as [artist, count] (artist)}
+				{#each artists as [artist, count], index (artist)}
 					<a
 						href={artistUrl(artist)}
-						class="inline-flex min-h-9 items-center rounded-full border border-haze bg-surface-0 px-3 py-1 text-sm text-chalk transition-colors hover:border-gold hover:text-gold"
+						class="inline-flex min-h-9 items-center rounded-full border border-haze bg-surface-0 px-3 py-1 text-sm text-chalk transition-colors hover:border-gold hover:text-gold {index >=
+							FEW_ARTISTS && !allArtists
+							? 'max-sm:hidden'
+							: ''}"
 						>{artist}<span class="ml-1.5 font-mono text-[0.68rem] text-fog">{count}</span></a
 					>
 				{/each}
+				{#if artists.length > FEW_ARTISTS}
+					<!-- dashed: the one chip in the row that is not an artist -->
+					<button
+						type="button"
+						aria-expanded={allArtists}
+						class="inline-flex min-h-9 items-center rounded-full border border-dashed border-surface-400 px-3 py-1 text-sm text-fog hover:border-gold hover:text-gold sm:hidden"
+						onclick={() => (allArtists = !allArtists)}
+						>{allArtists ? 'Show fewer' : `Show all ${artists.length} artists`}</button
+					>
+				{/if}
 			</div>
 		{/if}
 	</section>
