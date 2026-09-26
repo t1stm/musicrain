@@ -80,7 +80,7 @@
 	{:else if user.username === null}
 		<!-- the name is a precondition of joining, so it belongs on the room -->
 		<section class="max-w-md">
-			<h1 class="font-display mb-2 text-xl font-extralight">Pick a name before you join</h1>
+			<h1 class="font-display mb-2 text-xl font-extralight">Pick a chat name before you join</h1>
 			<p class="text-sm text-fog">
 				Everyone in the room sees it on your messages. You can change it later.
 			</p>
@@ -93,9 +93,11 @@
 			>
 				<input
 					type="text"
+					name="nickname"
 					bind:value={draftName}
 					maxlength="60"
-					aria-label="Your name"
+					autocomplete="nickname"
+					aria-label="Your chat name"
 					class="rounded-row border border-haze bg-dark-0 text-chalk placeholder:text-fog ring-primary-0 focus:border-primary-0 focus-visible:ring-2"
 				/>
 				<div class="flex items-center gap-4">

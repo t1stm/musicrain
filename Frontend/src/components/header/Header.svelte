@@ -121,7 +121,7 @@
 		<div class="relative shrink-0" {@attach editingName && dismiss(() => (editingName = false))}>
 			<button
 				type="button"
-				aria-label={user.username ? `You are ${user.username}` : 'Set your name'}
+				aria-label={user.username ? `You are ${user.username}` : 'Set your chat name'}
 				aria-expanded={editingName}
 				class="flex size-9 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-primary-600 outline-none focus-visible:ring-2 focus-visible:ring-primary-200 sm:size-10"
 				onclick={openName}
@@ -144,13 +144,16 @@
 					class="absolute right-0 z-30 mt-2 w-[min(18rem,calc(100vw-1.5rem))] rounded-panel border border-haze bg-surface-100 p-3 text-left"
 				>
 					<form onsubmit={saveName}>
-						<h2 class="eyebrow mb-2">Your name</h2>
+						<h2 class="eyebrow mb-2">Your chat name</h2>
+						<!-- `nickname`, so a password manager does not take it for the username below -->
 						<input
 							type="text"
+							name="nickname"
 							bind:value={draftName}
 							maxlength="60"
+							autocomplete="nickname"
 							placeholder="Anonymous"
-							aria-label="Your name"
+							aria-label="Your chat name"
 							class="rounded-row border border-haze bg-dark-0 w-full text-sm text-chalk placeholder:text-fog ring-primary-0 focus:border-primary-0 focus-visible:ring-2"
 						/>
 						{#if session.inRoom}
@@ -163,7 +166,7 @@
 							type="submit"
 							class="mt-3 w-full rounded-row bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-0"
 						>
-							Save name
+							Save chat name
 						</button>
 					</form>
 
@@ -200,15 +203,21 @@
 								<p class="mb-2 text-xs text-fog">Sign in to keep playlists.</p>
 								<input
 									type="text"
+									id="account-username"
+									name="username"
 									bind:value={accountName}
 									maxlength="32"
 									autocomplete="username"
+									autocapitalize="none"
+									spellcheck="false"
 									placeholder="Username"
 									aria-label="Username"
 									class="rounded-row border border-haze bg-dark-0 w-full text-sm text-chalk placeholder:text-fog ring-primary-0 focus:border-primary-0 focus-visible:ring-2"
 								/>
 								<input
 									type="password"
+									id="account-password"
+									name="password"
 									bind:value={accountPassword}
 									maxlength="256"
 									autocomplete="current-password"
