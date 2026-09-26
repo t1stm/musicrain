@@ -5,7 +5,7 @@ import { AudioApiError } from './songs';
 export type Session = {
 	username: string;
 	token: string;
-	/** ISO. The expiry does not slide, so the client keeps it rather than finding out mid-session. */
+	/** ISO. Dom slides this forward on use, so a stored copy is a floor — `me` reads the current one. */
 	expiresUtc: string;
 };
 
@@ -39,8 +39,9 @@ export function login(username: string, password: string) {
 	return send<Session>('/Login', credentials(username, password));
 }
 
+/** Also where the slid expiry is read: the one from `login` only ever understates it. */
 export function me(token: string) {
-	return send<{ username: string; createdUtc: string }>('/Me', {
+	return send<{ username: string; createdUtc: string; expiresUtc: string }>('/Me', {
 		headers: bearer(token),
 	});
 }

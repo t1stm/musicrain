@@ -1,4 +1,5 @@
-import { login, logout, register, type Session } from '$requests/accounts';
+import { login, logout, me, register, type Session } from '$requests/accounts';
+import { AudioApiError } from '$requests/songs';
 import user from './user.svelte';
 
 const storageKey = 'musicrain.token';
@@ -30,14 +31,34 @@ class Account {
 
 		try {
 			const session = JSON.parse(stored) as Session;
-			// a token past its expiry is not a token — sign the panel out before it
-			// makes a request that can only fail
+			// a token past the expiry stored here is a token nothing has used since —
+			// nothing slid it, so it really is dead. Sign the panel out before it makes
+			// a request that can only fail.
 			if (Date.parse(session.expiresUtc) <= Date.now()) return this.forget();
 
 			this.username = session.username;
 			this.token = session.token;
+			this.renew(session);
 		} catch {
 			this.forget();
+		}
+	}
+
+	/**
+	 * Dom slides the expiry forward on every authenticated request, so what a sign-in
+	 * wrote down is a floor rather than the truth — a session kept in daily use would
+	 * otherwise sign itself out thirty days after the sign-in that started it. `Me`
+	 * says where the expiry really stands now; a 401 says the token is gone for good.
+	 */
+	private async renew(session: Session) {
+		try {
+			const { expiresUtc } = await me(session.token);
+			if (this.token === session.token)
+				storage()?.setItem(storageKey, JSON.stringify({ ...session, expiresUtc }));
+		} catch (error) {
+			// anything else — Dom down, no network — leaves the stored session alone,
+			// because being offline is not being signed out
+			if (error instanceof AudioApiError) this.reject(error.status);
 		}
 	}
 
@@ -47,6 +68,16 @@ class Account {
 
 	signIn(username: string, password: string) {
 		return this.attempt(() => login(username, password));
+	}
+
+	/**
+	 * What an authenticated call does with a 401. The expiry is only read once, at
+	 * `load`, so a session that runs out while the tab is open — or a token revoked
+	 * from somewhere else — otherwise leaves the panel signed in over a token every
+	 * request refuses. Dropping it here is what turns that into a sign-in prompt.
+	 */
+	reject(status: number) {
+		if (status === 401 && this.token) this.forget();
 	}
 
 	/** Best effort: the token is dropped here whether or not Dom heard about it. */

@@ -1,6 +1,7 @@
 import { audioApi, proxyThumbnails } from '$lib/discord';
 import { bearer } from './accounts';
 import { AudioApiError } from './songs';
+import account from '$states/account.svelte';
 import type { SearchResult } from '$states/search.svelte';
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -28,11 +29,16 @@ async function send<T>(path: string, init: RequestInit = {}, fetcher: Fetcher = 
 	const response = await fetcher(`${audioApi}/Playlists${path}`, init);
 	const payload = await response.json().catch(() => null);
 
-	if (!response.ok)
+	if (!response.ok) {
+		// every authenticated call to Dom comes through here, so this is the one
+		// place that sees a token stop working — see `Account.reject`
+		account.reject(response.status);
+
 		throw new AudioApiError(
 			payload?.error?.message ?? `The audio service returned ${response.status}.`,
 			response.status,
 		);
+	}
 
 	return payload as T;
 }
@@ -96,11 +102,6 @@ export async function uploadCover(token: string, id: string, file: File) {
 	});
 }
 
-export async function deletePlaylist(token: string, id: string) {
-	const response = await fetch(`${audioApi}/Playlists/${encodeURIComponent(id)}`, {
-		method: 'DELETE',
-		headers: bearer(token),
-	});
-	if (!response.ok)
-		throw new AudioApiError(`The audio service returned ${response.status}.`, response.status);
+export function deletePlaylist(token: string, id: string) {
+	return send<null>(`/${encodeURIComponent(id)}`, { method: 'DELETE', headers: bearer(token) });
 }

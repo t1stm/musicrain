@@ -39,8 +39,16 @@ public sealed class DomStore
         Load();
     }
 
-    /// <summary>How long a fresh token lasts. Fixed, not sliding — see <see cref="Resolve" />.</summary>
+    /// <summary>How long a token lasts from its last use — it slides, see <see cref="Resolve" />.</summary>
     private static TimeSpan TokenLifetime => TimeSpan.FromDays(30);
+
+    /// <summary>
+    ///     How much a slide has to be worth before it is written down. Storage here is a whole-file
+    ///     rewrite under one lock, so sliding on every authenticated request is the one thing it cannot
+    ///     afford; a day's granularity makes it one write per active token per day and costs a token
+    ///     at most a day of the thirty.
+    /// </summary>
+    private static TimeSpan SlideGranularity => TimeSpan.FromDays(1);
 
     public int UserCount
     {
@@ -114,9 +122,13 @@ public sealed class DomStore
     ///     The account a bearer token belongs to, or <c>null</c> if it is unknown or expired.
     /// </summary>
     /// <remarks>
-    ///     Deliberately does not slide the expiry: sliding would mean a whole-file write on every
-    ///     authenticated request, which is the one thing the storage above cannot afford. Thirty days,
-    ///     then sign in again.
+    ///     The expiry slides: thirty days from last use, not from sign-in, so somebody who keeps using
+    ///     the app is never signed out mid-session. The write that records it is throttled to
+    ///     <see cref="SlideGranularity" /> — see the note there for why.
+    ///     <para>
+    ///         The client keeps its own copy of the expiry and signs itself out when it passes, so the
+    ///         slid value has to be readable: <c>/Audio/Accounts/Me</c> returns it.
+    ///     </para>
     /// </remarks>
     public User? Resolve(string? token)
     {
@@ -127,7 +139,17 @@ public sealed class DomStore
             if (!_byToken.TryGetValue(token, out var user)) return null;
 
             var live = user.Tokens.FirstOrDefault(t => t.Value == token);
-            if (live is not null && live.ExpiresUtc > DateTimeOffset.UtcNow) return user;
+            if (live is not null && live.ExpiresUtc > DateTimeOffset.UtcNow)
+            {
+                var slid = DateTimeOffset.UtcNow + TokenLifetime;
+                if (slid - live.ExpiresUtc >= SlideGranularity)
+                {
+                    live.ExpiresUtc = slid;
+                    SaveLocked();
+                }
+
+                return user;
+            }
 
             // expired: drop it here rather than waiting for the next login's prune
             user.Tokens.RemoveAll(t => t.Value == token);
@@ -135,6 +157,20 @@ public sealed class DomStore
             SaveLocked();
 
             return null;
+        }
+    }
+
+    /// <summary>When a token stops working, or <c>null</c> if it is not one. Read it after
+    ///     <see cref="Resolve" />, which is what may have just moved it.</summary>
+    public DateTimeOffset? ExpiryOf(string? token)
+    {
+        if (string.IsNullOrEmpty(token)) return null;
+
+        lock (_gate)
+        {
+            return _byToken.TryGetValue(token, out var user)
+                ? user.Tokens.FirstOrDefault(t => t.Value == token)?.ExpiresUtc
+                : null;
         }
     }
 
@@ -458,8 +494,8 @@ public sealed class DomStore
     }
 
     /// <summary>
-    ///     What a playlist has to be. The track cap is not a business rule, it is the whole-file
-    ///     rewrite above: a playlist nobody can serialise quickly is a service nobody can log in to.
+    ///     What a playlist has to be. There is no track cap; Kestrel's 30 MB request body limit is
+    ///     the only ceiling on how big one save can be.
     /// </summary>
     private static (string? error, string? message) ValidatePlaylist(string? name, List<TrackSnapshot>? tracks)
     {

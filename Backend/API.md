@@ -173,11 +173,14 @@ POST /Audio/Accounts/Logout     Authorization: Bearer …           204
 ```
 
 The token is 32 random bytes, base64url. Send it as `Authorization: Bearer <token>`. It lasts 30
-days and the expiry does not slide, so a client keeps `expiresUtc` and signs in again rather than
-discovering the token is dead mid-session. `Logout` revokes one token — the other devices signed in
-to the same account stay signed in — and answers `204` whether or not the token was still live.
+days from its last use: any authenticated request slides the expiry forward, so an account in regular
+use is never signed out mid-session. The slide is recorded at most once a day per token, so the
+expiry a client reads may trail the real one by up to a day. `Logout` revokes one token — the other
+devices signed in to the same account stay signed in — and answers `204` whether or not the token was
+still live.
 
-`Me` returns `{"username":"Радост","createdUtc":"…"}`.
+`Me` returns `{"username":"Радост","createdUtc":"…","expiresUtc":"…"}`. Because the expiry slides, the
+`expiresUtc` a client kept from `Login` only understates it; `Me` is where the current one is read.
 
 A username is 2–32 characters with no whitespace and no control characters; any script is accepted,
 so `Радост` and `ラジオ` are ordinary usernames. Two accounts may not differ only by case, and

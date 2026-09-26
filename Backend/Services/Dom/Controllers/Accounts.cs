@@ -37,13 +37,24 @@ public class Accounts(ILogger<Accounts> logger, DomStore store) : ControllerBase
         return error is not null ? Api.Error(401, error, message!) : new JsonResult(Session(user!, token!));
     }
 
+    /// <summary>
+    ///     Who the caller is, and how long their token is good for. The expiry slides on use, so the
+    ///     copy the client kept from its sign-in only ever understates it — this is where the client
+    ///     reads the current one.
+    /// </summary>
     [HttpGet("/Audio/Accounts/Me")]
     public IActionResult Me()
     {
-        var user = store.Resolve(Api.Bearer(Request));
+        var token = Api.Bearer(Request);
+        var user = store.Resolve(token);
         return user is null
             ? Api.Error(401, "unauthorized", "Sign in first.")
-            : new JsonResult(new { username = user.Username, createdUtc = user.CreatedUtc });
+            : new JsonResult(new
+            {
+                username = user.Username,
+                createdUtc = user.CreatedUtc,
+                expiresUtc = store.ExpiryOf(token)
+            });
     }
 
     [HttpPost("/Audio/Accounts/Logout")]

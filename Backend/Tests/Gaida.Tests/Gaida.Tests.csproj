@@ -27,6 +27,7 @@
     <ProjectReference Include="..\..\Services\Gaida.API\Gaida.API.csproj"/>
     <ProjectReference Include="..\..\Services\Selo\Selo.csproj"/>
     <ProjectReference Include="..\..\Services\Gaida.Bot\Gaida.Bot.csproj"/>
+    <ProjectReference Include="..\..\Services\Dom\Dom.csproj"/>
   </ItemGroup>
 
 </Project>
