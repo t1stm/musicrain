@@ -29,8 +29,7 @@
 	// its own click. Stopping propagation there instead would hide the click from
 	// SvelteKit's router, which listens on document.documentElement — the link
 	// would fall back to a full page load and wipe the queue. The menu is the same:
-	// a press anywhere in it, the gaps and the phone's backdrop included, is the
-	// menu's and never a play.
+	// a press on its "…" or anywhere in its dropdown is the menu's and never a play.
 	function playUnlessLink(event: MouseEvent) {
 		if ((event.target as HTMLElement).closest('a, details')) return;
 		playNow();
@@ -63,6 +62,7 @@
 	}}
 >
 	<div
+		data-preview
 		class="group grid cursor-pointer grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-3 rounded-row px-2 py-2 transition-colors not-has-open:hover:bg-surface-100 not-has-open:active:bg-surface-200 focus-visible:bg-surface-100 focus-visible:outline-none sm:grid-cols-[2.75rem_minmax(0,1fr)_auto_auto] sm:gap-3.5 sm:px-2.5"
 		role="button"
 		tabindex="0"

@@ -54,6 +54,7 @@ export default ts.config(
 			'src/routes/(app)/+layout.svelte',
 			'src/routes/(app)/rooms/+page.svelte',
 			'src/components/ArtistLink.svelte',
+			'src/components/TrackMenu.svelte',
 			'src/components/playlist/PlaylistCard.svelte',
 			'src/routes/(app)/album/+page.svelte',
 			'src/components/queue/Queue.svelte'

@@ -5,6 +5,8 @@
 	import queue from '$states/queue.svelte';
 	import session from '$states/session.svelte';
 	import ArtistLink from '$components/ArtistLink.svelte';
+	import TrackMenu from '$components/TrackMenu.svelte';
+	import { hold } from '$lib/press';
 	import { sourceOf } from '$lib/source';
 
 	let source = $derived(sourceOf(song.id));
@@ -45,19 +47,25 @@
 
 		queue.playNow(song);
 	}
+
+	// A held press on the sleeve opens the same menu a row's swipe does. The sleeve keeps
+	// the press to itself while it is held: no callout, no selection, no dragged image.
+	let menuOpen = $state(false);
 </script>
 
-<div class="group relative flex w-36 shrink-0 flex-col gap-2 sm:w-48">
+<div data-preview class="group relative flex w-36 shrink-0 flex-col gap-2 sm:w-48">
 	<button
 		type="button"
-		class="art relative block size-36 overflow-hidden rounded-art focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-200 sm:size-48"
+		class="art relative block size-36 select-none overflow-hidden rounded-art [-webkit-touch-callout:none] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-200 sm:size-48"
 		class:landed={splash !== null}
 		aria-label={playLabel}
 		onclick={playNow}
+		{@attach hold(() => (menuOpen = true))}
 	>
 		<img
 			src={song.thumbnailUrl ?? '/empty.png'}
 			alt=""
+			draggable="false"
 			class="size-full object-cover"
 			onerror={(e: Event) => {
 				const img = e.currentTarget as HTMLImageElement;
@@ -100,6 +108,8 @@
 	>
 		<Icon src={added ? Check : Plus} mini size="20" color="white" />
 	</button>
+
+	<TrackMenu result={song} bind:open={menuOpen} trigger={false} />
 </div>
 
 <style>

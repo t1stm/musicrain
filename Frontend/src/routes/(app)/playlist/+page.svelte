@@ -300,6 +300,7 @@
 						>
 							<div
 								data-index={index}
+								data-preview
 								role="button"
 								tabindex="0"
 								class="group flex cursor-pointer items-center gap-3 rounded-row px-2 py-2 not-has-open:hover:bg-surface-100 not-has-open:active:bg-surface-200 focus-visible:bg-surface-100 focus-visible:outline-none"

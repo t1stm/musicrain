@@ -75,9 +75,8 @@
 	data-done={done}
 	style:--pull={pull}
 	{@attach swipe({
-		// A row's menu (TrackMenu's <details>) is a fixed backdrop and sheet over the whole
-		// screen, but in the DOM it is still inside the row: without this every press on
-		// it bubbles up here and the screen drags the row.
+		// A row's menu (TrackMenu's <details>) drops over the rows below it, but in the DOM
+		// it is still inside the row: without this every press on it drags the row.
 		ignore: ignore ? `${ignore}, details` : 'details',
 		drag,
 		right: () => armed === 'right' && fire('right'),
@@ -118,9 +117,6 @@
 		--reveal: -5.5rem;
 	}
 
-	/* `left`, not `translate`: a transform would make the row the containing block of
-	   the menu's fixed sheet, and the sheet would open on the row instead of at the
-	   foot of the screen. */
 	.swipe-track {
 		--offset: calc(var(--reveal) + var(--swipe-x, 0px));
 		position: relative;
