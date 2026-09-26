@@ -311,6 +311,7 @@
 							]}
 							left={{
 								icon: EllipsisHorizontal,
+								label: 'More',
 								color: 'var(--color-surface-300)',
 								run: () => setMenu(index, true)
 							}}

@@ -7,9 +7,12 @@
 		color: string;
 		run: () => void;
 		/** Said in the drop, with a tick, before `run` fires — so an action that moves or
-		 *  removes the row is seen to land before the row goes. Without it, `run` is the
-		 *  answer (a menu opening). */
+		 *  removes the row is seen to land before the row goes. */
 		done?: string;
+		/** Said in the drop, beside the icon, for an action that is not done by landing (a
+		 *  menu opening): the drop stretches to it, then `run` fires. With neither, `run`
+		 *  fires at once. */
+		label?: string;
 	};
 
 	/** One action, or steps of it: the first a trigger's width out, the next two, and so on. */
@@ -49,7 +52,8 @@
 
 	// The answer: the drop fills and stretches into a tick and the word, then the step
 	// runs and the row goes home. 900ms, not the 600 a bare tick needed: the word has to
-	// be read, and the stretch takes the first 260 of it.
+	// be read, and the stretch takes the first 260 of it. A label holds only a beat past
+	// the stretch: it says the swipe landed, and what it opens is waiting.
 	let done = $state<Side | null>(null);
 	let fired = $state<SwipeAction | null>(null);
 	let settle: ReturnType<typeof setTimeout>;
@@ -72,10 +76,10 @@
 	function fire(side: Side) {
 		const action = toward === side ? reached : null;
 		if (!action) return;
-		if (!action.done) return action.run();
+		if (!action.done && !action.label) return action.run();
 		done = side;
 		fired = action;
-		settle = setTimeout(finish, 900);
+		settle = setTimeout(finish, action.done ? 900 : 450);
 	}
 
 	function finish() {
@@ -119,8 +123,8 @@
 		<div class="key {side === 'right' ? 'justify-end' : 'justify-start'}">
 			<span class="face">
 				<span class="drop">
-					<Icon src={done === side ? Check : action.icon} mini size="18" />
-					<span class="word">{action.done}</span>
+					<Icon src={done === side && action.done ? Check : action.icon} mini size="18" />
+					<span class="word">{action.done ?? action.label}</span>
 				</span>
 			</span>
 		</div>
