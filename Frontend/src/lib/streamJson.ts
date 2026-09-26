@@ -14,9 +14,10 @@
  * and a general JSON-value parser would be several times the code for no caller.
  */
 export async function* streamJson<T>(body: ReadableStream<Uint8Array>): AsyncGenerator<T> {
-	// TextDecoderStream holds back a multi-byte character split across two chunks;
+	// A streaming decode holds back a multi-byte character split across two chunks;
 	// the scanner state below does the same for an object split across two reads.
-	const reader = body.pipeThrough(new TextDecoderStream()).getReader();
+	const reader = body.getReader();
+	const decoder = new TextDecoder();
 	let buffer = '';
 	let cursor = 0;
 	let start = -1;
@@ -26,7 +27,8 @@ export async function* streamJson<T>(body: ReadableStream<Uint8Array>): AsyncGen
 
 	for (;;) {
 		const { value, done } = await reader.read();
-		if (value) buffer += value;
+		// the last read flushes whatever the decoder held back
+		buffer += decoder.decode(value, { stream: !done });
 
 		while (cursor < buffer.length) {
 			const char = buffer[cursor++];

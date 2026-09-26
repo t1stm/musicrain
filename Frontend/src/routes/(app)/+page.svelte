@@ -222,7 +222,10 @@
 		});
 		fill(curated, data.picks).catch(() => {});
 		data.artistSongs
-			.then((stream) => (stream ? fill(artistSongs, stream) : (artistSongs.length = 0)))
+			.then((stream) => {
+				if (stream) return fill(artistSongs, stream);
+				artistSongs.length = 0;
+			})
 			.catch(() => {});
 	});
 
