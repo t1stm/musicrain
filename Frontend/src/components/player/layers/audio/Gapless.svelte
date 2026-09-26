@@ -366,7 +366,8 @@
 	// hang off: ten seconds of silence, looped, in step with the real playback.
 	$effect(() => {
 		if (!keeper || !keeperSrc) return;
-		if (audio.paused) return keeper.pause();
+		// nothing picked yet: a press of Play would put an empty session on the lock screen
+		if (audio.paused || !current.id) return keeper.pause();
 		// before a gesture the browser refuses, which costs nothing: there is no
 		// session to keep until something is playing anyway.
 		keeper.play().catch(() => {});

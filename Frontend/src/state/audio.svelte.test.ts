@@ -21,3 +21,9 @@ it('keeps the latency knob to a usable number of milliseconds', () => {
 it('starts with the autoplay block unanswered', () => {
 	expect(audio.blocked).toBeNull();
 });
+
+// The engines start their media when `paused` flips. Starting at `false`, the first
+// track's `paused = false` changed nothing and the media session never started.
+it('starts paused, so the first track is a change', () => {
+	expect(audio.paused).toBe(true);
+});

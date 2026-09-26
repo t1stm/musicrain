@@ -8,7 +8,12 @@ class Audio {
 	volume: number = $state(0.2);
 	currentSeconds: number = $state(0);
 	bufferedSeconds: number = $state(0);
-	paused: boolean = $state(false);
+	/** Nothing plays before a track is picked, and the pick is a real change: the
+	 *  engines start their media on `paused` flipping. Starting at `false` made the
+	 *  first `setCurrent` a no-op for them — the gapless engine's keeper, refused
+	 *  at mount for want of a gesture, was never asked again, and the lock screen
+	 *  controls stayed dark until a pause and a play. */
+	paused: boolean = $state(true);
 	/** What the player is asked to run at. The room's clock steers this within
 	 *  a couple of percent to hold everyone together; nothing else writes it. */
 	rate: number = $state(1);
