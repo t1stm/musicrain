@@ -367,12 +367,12 @@
 
 {#snippet trackActions(item: string, size: string)}
 	<button type="button" class={item} onclick={playNext}>
-		<Icon src={QueueList} mini {size} class="shrink-0 text-primary-500" /> Play next
+		<Icon src={QueueList} mini {size} class="shrink-0 text-primary-500" /> Play Next
 	</button>
 	<!-- a playlist is an account's, so signed out there is nothing to add to -->
 	{#if account.token}
 		<button type="button" class={item} onclick={pick}>
-			<Icon src={Plus} mini {size} class="shrink-0 text-fog" /> Add to playlist
+			<Icon src={Plus} mini {size} class="shrink-0 text-fog" /> Add to Playlist
 			<Icon src={ChevronRight} mini {size} class="ml-auto shrink-0 text-fog" />
 		</button>
 	{/if}
@@ -387,16 +387,16 @@
 		     linking nowhere -->
 		{#if result.contentUrl}
 			<a href={result.contentUrl} download class={item} onclick={close}>
-				<Icon src={ArrowDownTray} mini {size} class="shrink-0 text-fog" /> Download raw
+				<Icon src={ArrowDownTray} mini {size} class="shrink-0 text-fog" /> Download Raw
 			</a>
 		{/if}
 		<button type="button" class={item} onclick={copyId}>
 			<Icon src={copied ? Check : ClipboardDocument} mini {size} class="shrink-0 text-fog" />
-			{copied ? 'Copied' : 'Copy id'}
+			{copied ? 'Copied' : 'Copy ID'}
 		</button>
 	{/if}
 	<a href={artistUrl} class={item}>
-		<Icon src={User} mini {size} class="shrink-0 text-fog" /> Go to artist
+		<Icon src={User} mini {size} class="shrink-0 text-fog" /> Go to Artist
 	</a>
 {/snippet}
 
@@ -408,7 +408,7 @@
 		onclick={() => step(false, () => (picking = false))}
 		{@attach focus}
 	>
-		<Icon src={ChevronLeft} mini {size} class="shrink-0 text-fog" /> Add to playlist
+		<Icon src={ChevronLeft} mini {size} class="shrink-0 text-fog" /> Add to Playlist
 	</button>
 	<!-- scrolls on its own, so a long list keeps the way back where it was; the names truncate
 	     to the box rather than widen it past the lifted track -->
@@ -442,7 +442,7 @@
 				>
 					<Icon src={Plus} mini size="14" />
 				</span>
-				New playlist
+				New Playlist
 			</button>
 		{/if}
 		{#each playlists.mine as playlist (playlist.id)}

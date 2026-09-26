@@ -304,10 +304,10 @@
 									run: () => queue.add(track)
 								},
 								{
-									label: 'Play next',
+									label: 'Play Next',
 									icon: QueueList,
 									color: 'var(--color-primary-600)',
-									done: 'Next up',
+									done: 'Next Up',
 									run: () => queue.playNext(track)
 								}
 							]}
