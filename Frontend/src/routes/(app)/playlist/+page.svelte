@@ -297,14 +297,12 @@
 							ignore={mine ? '[data-grip]' : undefined}
 							right={[
 								{
-									label: 'Queue',
 									icon: Plus,
 									color: 'var(--color-surface-400)',
 									done: 'Queued',
 									run: () => queue.add(track)
 								},
 								{
-									label: 'Play Next',
 									icon: QueueList,
 									color: 'var(--color-primary-600)',
 									done: 'Next Up',
@@ -312,7 +310,6 @@
 								}
 							]}
 							left={{
-								label: 'More',
 								icon: EllipsisHorizontal,
 								color: 'var(--color-surface-300)',
 								run: () => setMenu(index, true)

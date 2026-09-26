@@ -2,12 +2,11 @@
 	import type { IconSource } from 'svelte-hero-icons';
 
 	export type SwipeAction = {
-		label: string;
 		icon: IconSource;
-		/** The key's fill once the pull is whole. */
+		/** The drop's fill once the pull is whole. */
 		color: string;
 		run: () => void;
-		/** Said on the key, with a tick, before `run` fires — so an action that moves or
+		/** Said in the drop, with a tick, before `run` fires — so an action that moves or
 		 *  removes the row is seen to land before the row goes. Without it, `run` is the
 		 *  answer (a menu opening). */
 		done?: string;
@@ -25,8 +24,8 @@
 
 	// A row a finger can slide, the way a mail app's full swipe works: carried past a
 	// fifth of the row and let go, `right` or `left` fires. A side with steps goes on: each
-	// the same width further than the last, the furthest reached firing — the key says
-	// which as it goes. Anything short of the first springs back — there is no half-open
+	// the same width further than the last, the furthest reached firing — the drop's icon
+	// and colour say which as it goes. Anything short of the first springs back — there is no half-open
 	// row to tap, so the keys are pictures of the action, not buttons. A mouse never
 	// swipes (see `swipe`), so on a desktop this is only the row.
 	let {
@@ -48,8 +47,9 @@
 	let reached = $derived(stepsOf(toward)[stepAt(pull, stepsOf(toward).length)] ?? null);
 	let row: HTMLElement;
 
-	// The answer: the key holds, filled, with a tick, then the step runs and the row
-	// goes home.
+	// The answer: the drop fills and stretches into a tick and the word, then the step
+	// runs and the row goes home. 900ms, not the 600 a bare tick needed: the word has to
+	// be read, and the stretch takes the first 260 of it.
 	let done = $state<Side | null>(null);
 	let fired = $state<SwipeAction | null>(null);
 	let settle: ReturnType<typeof setTimeout>;
@@ -75,7 +75,7 @@
 		if (!action.done) return action.run();
 		done = side;
 		fired = action;
-		settle = setTimeout(finish, 600);
+		settle = setTimeout(finish, 900);
 	}
 
 	function finish() {
@@ -117,9 +117,11 @@
 	{@const action = (done === side && fired) || (toward === side && reached) || stepsOf(side)[0]}
 	<div data-side={side} style:--fill={action.color} aria-hidden="true">
 		<div class="key {side === 'right' ? 'justify-end' : 'justify-start'}">
-			<span class="flex w-20 flex-col items-center gap-1">
-				<Icon src={done === side ? Check : action.icon} mini size="18" />
-				{done === side ? action.done : action.label}
+			<span class="face">
+				<span class="drop">
+					<Icon src={done === side ? Check : action.icon} mini size="18" />
+					<span class="word">{action.done}</span>
+				</span>
 			</span>
 		</div>
 	</div>
@@ -133,11 +135,12 @@
 		/* the list keeps its vertical scroll; the sideways drag is the row's */
 		touch-action: pan-y;
 	}
+	/* wide enough for the drop once it has stretched into a tick and the word */
 	.swipe-row[data-done='right'] {
-		--reveal: 5.5rem;
+		--reveal: 7.25rem;
 	}
 	.swipe-row[data-done='left'] {
-		--reveal: -5.5rem;
+		--reveal: -7.25rem;
 	}
 
 	.swipe-track {
@@ -166,54 +169,97 @@
 		width: max(5.5rem, -1 * var(--offset));
 	}
 
-	/* Bare at first; the fill comes in with the pull and is whole at the point where
-	   letting go fires it. */
 	.key {
 		display: flex;
 		width: 100%;
 		align-items: center;
-		border-radius: var(--radius-row);
-		background: color-mix(in srgb, var(--fill) calc(var(--pull) * 100%), transparent);
 		font-size: 0.75rem;
 		font-weight: 600;
 		color: var(--color-chalk);
-		transition: background-color 150ms ease;
+	}
+	/* the drop's place: centred a key's width from the row, and wide enough to hold it
+	   once it has stretched */
+	.face {
+		display: flex;
+		min-width: 5rem;
+		justify-content: center;
+		padding-inline: 6px;
+	}
+
+	/* The same circle in every list, whatever the row's height: a key sized to the row
+	   looked wrong in any row shorter than a search result's. Bare at first; it swells and
+	   fills with the pull and is whole at the point where letting go fires it. */
+	.drop {
+		display: flex;
+		width: 34px;
+		height: 34px;
+		align-items: center;
+		justify-content: center;
+		gap: 0;
+		overflow: hidden;
+		border-radius: 999px;
+		box-shadow: inset 0 0 0 1.5px
+			color-mix(in srgb, var(--fill) calc(40% + var(--pull) * 60%), var(--color-surface-400));
+		background: color-mix(in srgb, var(--fill) calc(var(--pull) * 100%), transparent);
+		scale: calc(0.6 + var(--pull) * 0.4);
+		transition:
+			background-color 150ms ease,
+			scale 150ms cubic-bezier(0.2, 0.7, 0.3, 1),
+			width 260ms cubic-bezier(0.2, 0.7, 0.3, 1),
+			gap 260ms cubic-bezier(0.2, 0.7, 0.3, 1);
+	}
+	.word {
+		max-width: 0;
+		opacity: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		line-height: 1;
+		transition:
+			max-width 260ms cubic-bezier(0.2, 0.7, 0.3, 1),
+			opacity 160ms ease 100ms;
 	}
 
 	/* under the finger nothing eases — the fill included, or it trails the pull */
-	.swipe-row:global([data-swiping]) :is(.swipe-track, [data-side], .key) {
+	.swipe-row:global([data-swiping]) :is(.swipe-track, [data-side], .drop) {
 		transition: none;
 	}
 
-	.swipe-row[data-done='right'] [data-side='right'] .key,
-	.swipe-row[data-done='left'] [data-side='left'] .key {
+	/* The answer: the drop fills, stretches outward into the tick and the word, and lands
+	   with the app's ripple (its --animate-ripple, in the drop's colour). */
+	.swipe-row[data-done='right'] [data-side='right'] .drop,
+	.swipe-row[data-done='left'] [data-side='left'] .drop {
+		width: 6rem;
+		gap: 4px;
 		background: var(--fill);
+		scale: 1;
+		animation: ripple 700ms ease-out;
 	}
-	.swipe-row[data-done='right'] [data-side='right'] span,
-	.swipe-row[data-done='left'] [data-side='left'] span {
-		animation: done 420ms cubic-bezier(0.2, 0.7, 0.3, 1);
+	.swipe-row[data-done] .word {
+		max-width: 5rem;
+		opacity: 1;
 	}
-	@keyframes done {
-		0% {
-			scale: 0.5;
-			opacity: 0;
+	.swipe-row[data-done] .drop :global(svg) {
+		width: 14px;
+		height: 14px;
+	}
+	@keyframes ripple {
+		from {
+			box-shadow: 0 0 0 0 color-mix(in srgb, var(--fill) 70%, transparent);
 		}
-		60% {
-			scale: 1.12;
-			opacity: 1;
-		}
-		100% {
-			scale: 1;
+		to {
+			box-shadow: 0 0 0 12px transparent;
 		}
 	}
 
-	/* the fill and the tick still say it; nothing moves to */
+	/* the fill, the tick and the word still say it; nothing moves to */
 	@media (prefers-reduced-motion: reduce) {
 		.swipe-track,
-		[data-side] {
+		[data-side],
+		.drop,
+		.word {
 			transition: none;
 		}
-		.swipe-row[data-done] span {
+		.swipe-row[data-done] .drop {
 			animation: none;
 		}
 	}

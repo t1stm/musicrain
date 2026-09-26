@@ -138,14 +138,12 @@
 					<SwipeRow
 						ignore="[data-grip]"
 						right={{
-							label: 'Play Next',
 							icon: QueueList,
 							color: 'var(--color-primary-600)',
 							done: 'Next Up',
 							run: () => playNextSwiped(item)
 						}}
 						left={{
-							label: 'Remove',
 							icon: XMark,
 							color: 'var(--color-ember)',
 							done: 'Removed',

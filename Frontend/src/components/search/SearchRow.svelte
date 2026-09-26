@@ -51,14 +51,12 @@
 <SwipeRow
 	right={[
 		{
-			label: 'Queue',
 			icon: Plus,
 			color: 'var(--color-surface-400)',
 			done: 'Queued',
 			run: () => queue.add(result)
 		},
 		{
-			label: 'Play Next',
 			icon: QueueList,
 			color: 'var(--color-primary-600)',
 			done: 'Next Up',
@@ -66,7 +64,6 @@
 		}
 	]}
 	left={{
-		label: 'More',
 		icon: EllipsisHorizontal,
 		color: 'var(--color-surface-300)',
 		run: () => (menuOpen = true)
