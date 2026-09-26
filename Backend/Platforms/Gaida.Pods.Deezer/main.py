@@ -153,9 +153,9 @@ async def artist(term: str | None = None) -> Response:
     An artist's top tracks, best-known first.
 
     Found as the artist, then their chart, rather than as a track search: a bare name also matches
-    titles and other people's features, and Deezer's ``artist:"..."`` field syntax -- which /album
-    relies on -- returns next to nothing for most names now (two hits for Eminem). An exact name wins
-    over Deezer's first hit, so a term does not land on a busier namesake.
+    titles and other people's features, and Deezer's ``artist:"..."`` field syntax returns next to
+    nothing for most names now (two hits for Eminem). An exact name wins over Deezer's first hit, so a
+    term does not land on a busier namesake.
     """
     credit = (term or "").strip()
     if not credit:
@@ -166,7 +166,7 @@ async def artist(term: str | None = None) -> Response:
     if not hits:
         return JSONResponse([])
 
-    chosen = next((hit for hit in hits if (hit.get("name") or "").casefold() == credit.casefold()), hits[0])
+    chosen = next((hit for hit in hits if _same(hit.get("name"), credit)), hits[0])
     top = await _ask(lambda: client.api.get_artist_top(chosen["id"], limit=ARTIST_LIMIT),
                      f"artist top {chosen['id']}")
     return JSONResponse(_mapped((top or {}).get("data") or []))
@@ -186,17 +186,15 @@ async def album(artist: str | None = None, album: str | None = None) -> Response
     if not wanted or not credit:
         return JSONResponse([])
 
-    # Deezer's advanced syntax, matching the fields rather than the blob: a plain "artist album" query
-    # happily returns a compilation with the right words in its title. Built by hand rather than with
-    # api.advanced_search, which spells the same query but sends it to the track endpoint.
-    query = f'artist:"{_unquoted(credit)}" album:"{_unquoted(wanted)}"'
-    found = await _ask(lambda: client.api.search_album(query, limit=1), f"album {query!r}")
-    entries = (found or {}).get("data") or []
-    if not entries:
-        log.info("Deezer has no album for %s", query)
+    # A plain "artist album" query, narrowed here: Deezer's artist:"..." album:"..." field syntax, which
+    # used to do the narrowing, now finds nothing even for Daft Punk's Discovery.
+    query = f"{credit} {wanted}"
+    found = await _ask(lambda: client.api.search_album(query, limit=10), f"album {query!r}")
+    record = _album_in((found or {}).get("data") or [], credit, wanted)
+    if record is None:
+        log.info("Deezer has no album %r by %r", wanted, credit)
         return JSONResponse([])
 
-    record = entries[0]
     tracks = await _ask(lambda: client.api.get_album_tracks(record["id"], limit=ALBUM_TRACK_LIMIT),
                         f"album tracks {record['id']}")
 
@@ -406,9 +404,19 @@ def _mapped(tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [dto for dto in (to_dto(track) for track in tracks) if dto]
 
 
-def _unquoted(value: str) -> str:
-    """A field value safe to sit inside Deezer's ``field:"..."`` syntax, which has no escape for a quote."""
-    return value.replace('"', " ").strip()
+def _same(name: str | None, wanted: str) -> bool:
+    return (name or "").casefold() == wanted.casefold()
+
+
+def _album_in(hits: list[dict[str, Any]], artist: str, title: str) -> dict[str, Any] | None:
+    """
+    The record an album search meant: credited to exactly that artist, since a plain query happily
+    ranks a compilation or a namesake with the right words first -- then the exact title, else the
+    first whose title holds it ("Discovery (Remastered)"). None rather than a guess at another record.
+    """
+    theirs = [hit for hit in hits if _same((hit.get("artist") or {}).get("name"), artist)]
+    return next((hit for hit in theirs if _same(hit.get("title"), title)), None) or \
+        next((hit for hit in theirs if title.casefold() in (hit.get("title") or "").casefold()), None)
 
 
 def _json_array(items: list[dict[str, Any]]) -> Iterator[bytes]:

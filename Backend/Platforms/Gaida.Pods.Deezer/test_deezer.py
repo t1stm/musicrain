@@ -130,6 +130,22 @@ def test_album_tracks_keep_the_album_they_came_from():
     assert to_dto(with_album(record, [_track()])[0])["album"] == "Discovery"
 
 
+def test_album_search_keeps_only_that_artists_record():
+    def hit(artist, title):
+        return {"artist": {"name": artist}, "title": title}
+
+    namesake = hit("Data Punk", "Discovery")
+    remaster = hit("Daft Punk", "Discovery (Remastered)")
+    exact = hit("Daft Punk", "Discovery")
+
+    # Another artist's record never stands in, however high Deezer ranked it.
+    assert main._album_in([namesake, exact], "daft punk", "Discovery") is exact
+    # An exact title beats one that only holds it; one that holds it beats nothing.
+    assert main._album_in([remaster, exact], "Daft Punk", "discovery") is exact
+    assert main._album_in([namesake, remaster], "Daft Punk", "Discovery") is remaster
+    assert main._album_in([namesake, hit("Daft Punk", "Homework")], "Daft Punk", "Discovery") is None
+
+
 def test_duration_is_the_timespan_gaida_parses():
     assert duration(0) == "00:00:00"
     assert duration(224) == "00:03:44"
