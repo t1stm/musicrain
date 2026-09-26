@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import TrackInfo from './layers/track-info/TrackInfo.svelte';
 	import Controls from './layers/controls/Controls.svelte';
 	import Volume from './layers/volume/Volume.svelte';
@@ -21,14 +22,59 @@
 	// The full player: the same element, a different shape. A separate component would
 	// mount a second <audio> or unmount this one, and both stop the music.
 	let full = $state(false);
-	closeOnBack(
-		() => full,
-		() => (full = false)
-	);
+	closeOnBack(() => full, collapse);
+
+	const phone = () => !window.matchMedia('(min-width: 640px)').matches;
+
+	// One shape becomes the other while the browser morphs between them (app.css): the
+	// full shape folds into the bar or grows out of it, and on a phone the sheet slides
+	// out from under its edge or back in. Every state change goes in the one callback, so
+	// a switch between the full shape and the sheet still closes one layer and opens the
+	// other in the same tick — `closeOnBack` hands the history entry over only then.
+	// Without view transitions it is the old snap. `kind` names a morph that app.css
+	// stages differently, on the root for as long as it runs.
+	function morph(update: () => void, kind?: 'open') {
+		if (!document.startViewTransition) return update();
+		const root = document.documentElement;
+		if (kind) root.dataset.morph = kind;
+		const transition = document.startViewTransition(async () => {
+			update();
+			await tick();
+		});
+		transition.finished.finally(() => delete root.dataset.morph);
+		return transition.updateCallbackDone;
+	}
+
+	// Whether the full shape rises into place when it opens. Not when it grows out of the
+	// bar in a morph: the rise would start it off the foot of the screen, and the morph
+	// captures it where it starts.
+	let rise = $state(false);
+
+	// A morph draws the full shape live, and an image still decoding at its new size — the
+	// sleeve grown from 40px, the ground from nothing — draws as nothing until it ends.
+	const decoded = () =>
+		Promise.allSettled(
+			[...document.querySelectorAll<HTMLImageElement>('#player img')].map((image) => image.decode())
+		);
 
 	// micro is a player-only frame with no room for a bigger shape
-	function expand() {
-		if (current.name && !window.matchMedia('(max-height: 320px)').matches) full = true;
+	async function expand() {
+		if (!current.name || window.matchMedia('(max-height: 320px)').matches) return;
+		// The other half of `toggle`: on a phone the sheet would sit over the full shape, so
+		// the two trade places in one morph — the sheet slides down under its edge as the
+		// full shape grows out of the bar.
+		rise = !(dock && phone());
+		if (rise) return (full = true);
+		await decoded();
+		return morph(() => {
+			full = true;
+			dock = null;
+		}, 'open');
+	}
+
+	// From where the finger left it, on a swipe; the chevron and back take the same way out.
+	function collapse() {
+		return morph(() => (full = false));
 	}
 
 	// The record is the handle, the way it is in every phone's own player: flick it
@@ -40,17 +86,22 @@
 		left: () => queue.nextTrack(),
 		right: () => queue.previousTrack(),
 		up: expand,
-		down: () => (full = false),
+		down: collapse,
 		tap: (event) => {
 			if ((event.target as Element).closest('#track-info')) expand();
 		}
 	});
 
 	function toggle(tab: Exclude<Dock, null>) {
-		dock = dock === tab ? null : tab;
+		const next = dock === tab ? null : tab;
 		// A wide screen holds both — the full player makes room for the sheet beside it.
 		// A phone cannot: the sheet is 70dvh of it, so opening one leaves the other.
-		if (dock && !window.matchMedia('(min-width: 640px)').matches) full = false;
+		if (next && full && phone())
+			return morph(() => {
+				dock = next;
+				full = false;
+			});
+		dock = next;
 	}
 
 	// micro paints the artwork behind everything instead of beside it. No track,
@@ -73,18 +124,19 @@
 </script>
 
 <!--
-  Three shapes, one set of children. Compact stacks two rows and docks in flow at
-  the foot of the column — which is why no page pads for a player any more. The
-  two row wrappers dissolve at `sm` (`display: contents`) and `order` deals the
-  same children into the single floating bar. Micro is driven from app.css, not
-  from here: `micro:` and `sm:` both match a short wide window and their cascade
-  order is not guaranteed, so the small mode is one plain media block keyed on
-  the ids these layers already carry.
+  Three shapes, one set of children. Compact docks in flow at the foot of the
+  column — which is why no page pads for a player any more. The two row wrappers
+  dissolve at `sm` (`display: contents`) and `order` deals the same children into
+  the single floating bar. Below `sm` they dissolve too, into app.css's three-row
+  phone grid. The phone bar and micro are driven from app.css, not from here:
+  `micro:` and `sm:` both match a short wide window and their cascade order is not
+  guaranteed, so each is one plain media block keyed on the ids these layers carry.
 -->
 <div
 	id="player"
 	{@attach gestures}
 	data-shape={full ? 'full' : 'bar'}
+	data-rise={rise || undefined}
 	data-lyrics={lyrics.open ? 'on' : 'off'}
 	data-dock={dock ?? 'none'}
 	data-hold={holdState}
@@ -134,6 +186,7 @@
 			{/if}
 			<button
 				type="button"
+				id="dock-chat"
 				aria-label="Open chat"
 				aria-pressed={dock === 'chat'}
 				class="relative flex size-11 items-center justify-center rounded-art text-fog hover:text-chalk focus-visible:outline-2 focus-visible:outline-primary-200 sm:size-7"
@@ -148,6 +201,7 @@
 			</button>
 			<button
 				type="button"
+				id="dock-queue"
 				aria-label="Open queue"
 				aria-pressed={dock === 'queue'}
 				class="relative flex size-11 items-center justify-center rounded-art text-fog hover:text-chalk focus-visible:outline-2 focus-visible:outline-primary-200 sm:size-7"
@@ -171,7 +225,7 @@
 					aria-label={full ? 'Close the full player' : 'Open the full player'}
 					aria-expanded={full}
 					class="flex size-11 items-center justify-center rounded-art text-fog hover:text-chalk focus-visible:outline-2 focus-visible:outline-primary-200 sm:size-7"
-					onclick={() => (full = !full)}
+					onclick={() => (full ? collapse() : expand())}
 				>
 					<Icon src={full ? ChevronDown : ChevronUp} mini size="16" />
 				</button>

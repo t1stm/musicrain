@@ -1,3 +1,4 @@
+import { tick } from 'svelte';
 import type { Attachment } from 'svelte/attachments';
 
 export type Direction = 'up' | 'down' | 'left' | 'right';
@@ -21,18 +22,50 @@ export function settle(dx: number, dy: number, ms: number): Direction | null {
 	return dy < 0 ? 'up' : 'down';
 }
 
-type Swipe = Partial<Record<Direction, () => void>> & {
+/** Whether a press on `target` is left alone: inside `ignore`, unless a `handle` is nearer. */
+export function ignored(target: Element, ignore?: string, handle?: string): boolean {
+	if (!ignore) return false;
+	const hit = target.closest(handle ? `${ignore}, ${handle}` : ignore);
+	return !!hit && !(handle && hit.matches(handle));
+}
+
+/**
+ * Sees `node` out the way a swipe toward `direction` sends it: CSS carries it wherever
+ * `data-swiped` points, and `then` runs once the node's own transitions have got it there
+ * — no transition, no wait. The attribute goes once `then` is done, a promise it hands
+ * back included, and its change is on the page.
+ *
+ * Transitions only: an animation can loop, and its `finished` never comes.
+ */
+async function land(node: HTMLElement, direction: Direction, then: () => unknown) {
+	node.dataset.swiped = direction;
+	const going = node.getAnimations().filter((a) => a instanceof CSSTransition);
+	await Promise.allSettled(going.map((a) => a.finished));
+	await then();
+	await tick();
+	delete node.dataset.swiped;
+}
+
+/** A direction's handler. One that hands back a promise keeps the offset until it settles. */
+type Swipe = Partial<Record<Direction, () => unknown>> & {
 	/** A press that went nowhere. Handed the event, so the caller can ask what was under it. */
 	tap?: (event: PointerEvent) => void;
 	/** Presses that start on these are the control's own — a slider, a scrolling pane. */
 	ignore?: string;
+	/** A way back in through `ignore`: a press on one of these is the surface's again.
+	 *  Whichever of the two is nearer the press decides. */
+	handle?: string;
+	/** The live offset, for what CSS cannot work out from it alone. (0, 0) once it lets go,
+	 *  after the direction's handler has run. */
+	drag?: (dx: number, dy: number) => void;
 };
 
 /**
  * Touch gestures on one surface. While a drag is live the node carries `data-swiping` and
  * the offset as `--swipe-x` / `--swipe-y`, so CSS decides what follows the finger and how
- * far. The node needs `touch-action: none` too, or the browser takes the drag for a scroll
- * and cancels it.
+ * far. A drag that lands carries `data-swiped="<direction>"` until its handler has run, so
+ * CSS decides where it finishes too. The node needs `touch-action: none` too, or the
+ * browser takes the drag for a scroll and cancels it.
  *
  * A mouse never swipes: dragging across text is a selection. It still taps.
  */
@@ -51,7 +84,7 @@ export const swipe =
 		const start = (down: PointerEvent) => {
 			dragged = false;
 			if (!down.isPrimary || down.button !== 0) return;
-			if (handlers.ignore && (down.target as Element).closest(handlers.ignore)) return;
+			if (ignored(down.target as Element, handlers.ignore, handlers.handle)) return;
 
 			const began = performance.now();
 			const mouse = down.pointerType === 'mouse';
@@ -76,21 +109,31 @@ export const swipe =
 				dy = axis === 'y' ? y : 0;
 				node.style.setProperty('--swipe-x', `${dx}px`);
 				node.style.setProperty('--swipe-y', `${dy}px`);
+				handlers.drag?.(dx, dy);
 			};
 
-			const end = (event: PointerEvent) => {
+			const end = async (event: PointerEvent) => {
 				if (event.pointerId !== down.pointerId) return;
 				removeEventListener('pointermove', move);
 				removeEventListener('pointerup', end);
 				removeEventListener('pointercancel', end);
-				node.style.removeProperty('--swipe-x');
-				node.style.removeProperty('--swipe-y');
+				// A flick lets go in the same frame as its last move, before that move is drawn.
+				// Draw it now, while transitions are still off — otherwise letting go eases the
+				// node across that last step first, and a landed swipe waits for it.
+				getComputedStyle(node).getPropertyValue('translate');
 				delete node.dataset.swiping;
 
-				if (event.type === 'pointercancel') return;
-				if (!moved) return handlers.tap?.(event);
-				const direction = axis && settle(dx, dy, performance.now() - began);
-				if (direction) handlers[direction]?.();
+				const cancelled = event.type === 'pointercancel';
+				const direction = !cancelled && axis ? settle(dx, dy, performance.now() - began) : null;
+				const handler = direction && handlers[direction];
+				// Seen out, not dropped: the node keeps the finger's offset and `land` carries it
+				// on from there. The offset holds until the handler's change is on the page, or
+				// the node heads home for a frame first.
+				if (handler) await land(node, direction, handler);
+				else if (!cancelled && !moved) handlers.tap?.(event);
+				node.style.removeProperty('--swipe-x');
+				node.style.removeProperty('--swipe-y');
+				handlers.drag?.(0, 0);
 			};
 
 			addEventListener('pointermove', move);

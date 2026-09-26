@@ -21,7 +21,8 @@
 </script>
 
 {#if !session.inRoom}
-	<div class="flex flex-1 flex-col items-start justify-center gap-4 p-4">
+	<!-- nothing here scrolls, so on a phone all of it is the sheet's handle -->
+	<div data-sheet-handle class="flex flex-1 flex-col items-start justify-center gap-4 p-4 max-sm:touch-none">
 		<h3 class="font-display text-base font-normal text-chalk">You’re listening alone.</h3>
 		<p class="text-sm text-fog">
 			Rooms play one queue in time with everyone in them, and chat lives there.

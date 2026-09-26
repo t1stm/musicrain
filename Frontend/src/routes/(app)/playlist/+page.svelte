@@ -4,6 +4,9 @@
 	import { resolve } from '$app/paths';
 	import ArtistLink from '$components/ArtistLink.svelte';
 	import PlaylistCover from '$components/playlist/PlaylistCover.svelte';
+	import SwipeRow from '$components/SwipeRow.svelte';
+	import TrackMenu from '$components/TrackMenu.svelte';
+	import { EllipsisHorizontal, QueueList } from 'svelte-hero-icons';
 	import { convertTimeSpanStringToSeconds, getTimeString, pressKeys } from '$lib';
 	import { getPlaylist, type Playlist } from '$requests/playlists';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
@@ -78,9 +81,17 @@
 		commit(next);
 	}
 
-	// see ArtistLink: the artist name is a real link, so the row must not act on it
+	// see ArtistLink: the artist name is a real link, so the row must not act on it —
+	// and a press anywhere in the menu is the menu's
 	function playUnlessLink(track: SearchResult, event: MouseEvent) {
-		if (!(event.target as HTMLElement).closest('a')) queue.playNow(track);
+		if (!(event.target as HTMLElement).closest('a, details')) queue.playNow(track);
+	}
+
+	// The rows are an #each, not components, so the one open menu is held here by position.
+	let menuAt = $state<number | null>(null);
+	function setMenu(index: number, open: boolean) {
+		if (open) menuAt = index;
+		else if (menuAt === index) menuAt = null;
 	}
 
 	async function rename(event: SubmitEvent) {
@@ -270,51 +281,75 @@
 			{:else}
 				<div class="flex flex-col" {@attach mine && reorder(move)}>
 					{#each tracks as track, index (track.id + index)}
-						<div
-							data-index={index}
-							role="button"
-							tabindex="0"
-							class="group flex cursor-pointer items-center gap-3 rounded-row px-2 py-2 hover:bg-surface-100 active:bg-surface-200 focus-visible:bg-surface-100 focus-visible:outline-none"
-							class:select-none={mine}
-							onclick={(event) => playUnlessLink(track, event)}
-							onkeydown={pressKeys(() => queue.playNow(track))}
+						<!-- your own list: the grip is the reorder's, so a swipe starts anywhere else -->
+						<SwipeRow
+							ignore={mine ? '[data-grip]' : undefined}
+							right={{
+								label: 'Play next',
+								icon: QueueList,
+								color: 'var(--color-primary-600)',
+								done: 'Next up',
+								run: () => queue.playNext(track)
+							}}
+							left={{
+								label: 'More',
+								icon: EllipsisHorizontal,
+								color: 'var(--color-surface-300)',
+								run: () => setMenu(index, true)
+							}}
 						>
-							<!-- your own list: the number and the sleeve pick a row up, as in the queue -->
-							<span
-								data-grip
-								class="flex shrink-0 items-center gap-3 self-stretch"
-								class:touch-none={mine}
-								class:cursor-grab={mine}
+							<div
+								data-index={index}
+								role="button"
+								tabindex="0"
+								class="group flex cursor-pointer items-center gap-3 rounded-row px-2 py-2 not-has-open:hover:bg-surface-100 not-has-open:active:bg-surface-200 focus-visible:bg-surface-100 focus-visible:outline-none"
+								class:select-none={mine}
+								onclick={(event) => playUnlessLink(track, event)}
+								onkeydown={pressKeys(() => queue.playNow(track))}
 							>
-								<span class="w-6 text-right font-mono text-[0.68rem] text-fog">{index + 1}</span>
-								<img
-									src={track.thumbnailUrl ?? '/empty.png'}
-									alt=""
-									draggable="false"
-									class="size-10 rounded-art object-cover"
-								/>
-							</span>
-							<div class="min-w-0 flex-1">
-								<p class="truncate text-sm">{track.name}</p>
-								<p class="truncate text-xs text-fog"><ArtistLink artist={track.artist} /></p>
-							</div>
-							<span class="shrink-0 font-mono text-[0.68rem] text-fog">
-								{getTimeString(convertTimeSpanStringToSeconds(track.duration))}
-							</span>
-							{#if mine}
-								<button
-									type="button"
-									aria-label={`Remove ${track.name} from ${playlist.name}`}
-									class="flex size-9 shrink-0 items-center justify-center rounded-art text-fog hover:bg-surface-200 hover:text-chalk focus-visible:opacity-100 group-hover:opacity-100 group-focus-visible:opacity-100 pointer-fine:opacity-0"
-									onclick={(event) => {
-										event.stopPropagation();
-										remove(index);
-									}}
+								<!-- your own list: the number and the sleeve pick a row up, as in the queue -->
+								<span
+									data-grip
+									class="flex shrink-0 items-center gap-3 self-stretch"
+									class:touch-none={mine}
+									class:cursor-grab={mine}
 								>
-									×
-								</button>
-							{/if}
-						</div>
+									<span class="w-6 text-right font-mono text-[0.68rem] text-fog">{index + 1}</span>
+									<img
+										src={track.thumbnailUrl ?? '/empty.png'}
+										alt=""
+										draggable="false"
+										class="size-10 rounded-art object-cover"
+									/>
+								</span>
+								<div class="min-w-0 flex-1">
+									<p class="truncate text-sm">{track.name}</p>
+									<p class="truncate text-xs text-fog"><ArtistLink artist={track.artist} /></p>
+								</div>
+								<span class="shrink-0 font-mono text-[0.68rem] text-fog">
+									{getTimeString(convertTimeSpanStringToSeconds(track.duration))}
+								</span>
+								<!-- a phone reaches it with a swipe; the row has no width left for a third button -->
+								<TrackMenu
+									result={track}
+									bind:open={() => menuAt === index, (open) => setMenu(index, open)}
+									class="max-sm:[&>summary]:hidden pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100 pointer-fine:open:opacity-100"
+								/>
+								{#if mine}
+									<button
+										type="button"
+										aria-label={`Remove ${track.name} from ${playlist.name}`}
+										class="flex size-9 shrink-0 items-center justify-center rounded-art text-fog hover:bg-surface-200 hover:text-chalk focus-visible:opacity-100 group-hover:opacity-100 group-focus-visible:opacity-100 pointer-fine:opacity-0"
+										onclick={(event) => {
+											event.stopPropagation();
+											remove(index);
+										}}
+									>
+										×
+									</button>
+								{/if}
+							</div>
+						</SwipeRow>
 					{/each}
 				</div>
 			{/if}

@@ -316,14 +316,17 @@ html {
 	object-fit: cover;
 	/* the blur samples past the edges; the overscan keeps them from washing out */
 	scale: 1.1;
+	/* micro blurs by 2px because its ground is 300px tall. At full size that reads
+	   as a second sharp copy of the artwork competing with the real one. On the image
+	   itself, not as the veil's backdrop-filter the way micro does it: a morph draws
+	   this shape as a picture of itself, and the picture leaves a backdrop-filter out —
+	   the ground would go sharp for the length of it. */
+	filter: blur(24px);
 }
 #player[data-shape='full'] #player-cover span {
 	position: absolute;
 	inset: 0;
 	background: color-mix(in srgb, var(--color-dark-0) 74%, transparent);
-	/* micro blurs by 2px because its ground is 300px tall. At full size that reads
-	   as a second sharp copy of the artwork competing with the real one. */
-	backdrop-filter: blur(24px);
 }
 
 #player[data-shape='full'] #track-info img {
@@ -607,6 +610,139 @@ html {
 	}
 }
 
+/* ── Phone: the bar a thumb works ────────────────────────────────────────────
+   Below `sm` the bar was two rows of nine controls, every one drawn at desktop
+   size inside a finger-sized box. Three rows now, one job each: the record, the
+   line, the transport. The outer columns are 48px wide on every row — the sleeve,
+   the elapsed clock and chat on the left, the chevron, the length and the queue on
+   the right — so the seek line starts where the title starts and ends where it
+   ends. Play is the one filled key: it is the press a phone makes most. Same id-anchored plain CSS as full and micro, and kept out of micro's
+   300px-tall frame by the height, since both would match a phone on its side. */
+@media (width < 40rem) and (height > 320px) {
+	#player[data-shape='bar'] {
+		display: grid;
+		grid-template-columns: 3rem minmax(0, 1fr) auto 3rem;
+		grid-template-areas:
+			'info info format shape'
+			'seek seek seek seek'
+			'chat transport transport queue';
+		align-items: center;
+		column-gap: 0.75rem;
+		row-gap: 0.5rem;
+		padding: 0.75rem 0.75rem 0.375rem;
+	}
+
+	#player[data-shape='bar'] .player-row,
+	#player[data-shape='bar'] #player-docks {
+		display: contents;
+	}
+
+	#player[data-shape='bar'] #track-info {
+		grid-area: info;
+		gap: 0.75rem;
+	}
+	#player[data-shape='bar'] #track-info img {
+		width: 3rem;
+		height: 3rem;
+	}
+	#player[data-shape='bar'] #track-info > div > span:first-child {
+		font-size: 0.9375rem;
+		line-height: 1.35;
+	}
+	#player[data-shape='bar'] #track-info > div > span:nth-child(2) {
+		font-size: 0.8125rem;
+	}
+
+	#player[data-shape='bar'] #player-quality {
+		grid-area: format;
+	}
+	/* Codec over bitrate, like the spec label on a cassette's spine: stacked, the
+	   chip is 40px wide instead of 90, and all of that goes back to the title. */
+	#player[data-shape='bar'] #player-quality > button {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding: 0.3125rem 0.4375rem;
+		line-height: 1.3;
+	}
+	#player[data-shape='bar'] #player-quality > button > span:nth-child(2) {
+		display: none;
+	}
+	#player[data-shape='bar'] #player-quality > button > span:nth-child(3) {
+		color: var(--color-chalk);
+	}
+	/* the finger gets 48px whatever the chip draws */
+	#player[data-shape='bar'] #player-quality > button::after {
+		content: '';
+		position: absolute;
+		inset: -0.375rem -0.25rem;
+	}
+
+	#player[data-shape='bar'] #player-shape {
+		grid-area: shape;
+	}
+	#player[data-shape='bar'] #dock-chat {
+		grid-area: chat;
+	}
+	#player[data-shape='bar'] #dock-queue {
+		grid-area: queue;
+	}
+	#player[data-shape='bar'] :is(#dock-chat, #dock-queue, #player-shape) {
+		width: 3rem;
+		height: 3rem;
+		border-radius: var(--radius-panel);
+	}
+	#player[data-shape='bar'] :is(#dock-chat, #dock-queue, #player-shape) svg {
+		width: 20px;
+		height: 20px;
+	}
+
+	#player[data-shape='bar'] #seekbar {
+		grid-area: seek;
+		max-width: none;
+		gap: 0;
+	}
+	/* gauge 14 + clock 34 = the 48px column, so the line lands on the title's edge */
+	#player[data-shape='bar'] #seekbar > span:first-of-type {
+		min-width: 2.125rem;
+		margin-right: 0.75rem;
+		text-align: right;
+	}
+	#player[data-shape='bar'] #seekbar > span:last-of-type {
+		min-width: 3rem;
+		margin-left: 0.75rem;
+	}
+	/* 8px is what you see; 40px is what you can hit */
+	#player[data-shape='bar'] #seekbar > [role='slider']::before {
+		content: '';
+		position: absolute;
+		inset: -1rem 0;
+	}
+
+	#player[data-shape='bar'] #controls {
+		grid-area: transport;
+		justify-content: center;
+		gap: 0.5rem;
+	}
+	#player[data-shape='bar'] #controls button {
+		width: 3.25rem;
+		height: 3.25rem;
+	}
+	#player[data-shape='bar'] #controls button svg {
+		width: 26px;
+		height: 26px;
+	}
+	/* the app's own primary key — the header's search button — at transport size */
+	#player[data-shape='bar'] #controls button:nth-child(2) {
+		border-radius: var(--radius-row);
+		background: var(--color-primary-600);
+	}
+	#player[data-shape='bar'] #controls button:nth-child(2):hover {
+		background: var(--color-primary-0);
+	}
+}
+
 /* ── Gestures: the record follows the finger ─────────────────────────────────
    `swipe` in Player.svelte owns the drag and writes the offset; this decides what
    moves. Down pulls the whole full shape with it and nothing pulls it up past its
@@ -615,6 +751,7 @@ html {
    scrolls except the lyrics pane, which keeps its own scrolling as a scroller. */
 #player {
 	touch-action: none;
+	view-transition-name: player;
 }
 #player[data-shape='full'] {
 	translate: 0 max(0px, var(--swipe-y, 0px));
@@ -639,6 +776,71 @@ html {
 	transition: none;
 }
 
+/* Let go past the point of no return and the full shape folds into the bar from
+   where the finger left it (`collapse` in Player.svelte): one box morphs into the
+   other on the same spring, the record fading into the bar as it lands. On a phone
+   the way in is the reverse — the full shape comes up from the bar. `transform`,
+   not `translate`: that one is the drag's, and a transition on it outranks an
+   animation. */
+::view-transition-group(player) {
+	animation-duration: 320ms;
+	animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* A phone trades the full shape for the sheet and back (`morph` in Player.svelte), and
+   the sheet takes its own ways in and out meanwhile: up from under its bottom edge, or
+   back down under it the way a pull-down sends it. The group is the sheet's own box,
+   clipped, so it is never seen past that edge. */
+::view-transition-group(sheet) {
+	overflow: clip;
+}
+@media (prefers-reduced-motion: no-preference) {
+	::view-transition-new(sheet):only-child {
+		animation: sheet-in 300ms cubic-bezier(0.2, 0.7, 0.3, 1);
+	}
+	::view-transition-old(sheet):only-child {
+		animation: sheet-out 300ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+	}
+}
+@keyframes sheet-in {
+	from {
+		transform: translateY(100%);
+	}
+}
+@keyframes sheet-out {
+	to {
+		transform: translateY(100%);
+	}
+}
+
+/* The full shape growing out of the bar over the sheet (`expand` in Player.svelte) is
+   the rise, from the bar's edge: it comes up whole and solid, over the sheet on its way
+   down. The morph's own way would fade it in, so the page shows through it, and draw it
+   under the sheet, so the two slide past each other — and the sleeve would grow from
+   40px on the way, re-laying the whole shape out every frame. */
+:root[data-morph='open']::view-transition-group(player) {
+	z-index: 1;
+}
+:root[data-morph='open']::view-transition-old(player) {
+	display: none;
+}
+:root[data-morph='open']::view-transition-new(player) {
+	animation: none;
+}
+:root[data-morph='open'] #player #track-info img {
+	transition: none;
+}
+@media (width < 40rem) {
+	#player[data-shape='full'][data-rise] {
+		animation: player-rise 320ms cubic-bezier(0.2, 0.7, 0.3, 1);
+	}
+}
+@keyframes player-rise {
+	from {
+		transform: translateY(100%);
+	}
+}
+
 /* the shape is an attribute, so there is nothing to still except the cover and the
    spring back from a drag */
 @media (prefers-reduced-motion: reduce) {
@@ -646,6 +848,12 @@ html {
 	#player #track-info,
 	#player[data-shape='full'] #track-info img {
 		transition: none;
+		animation: none;
+	}
+	::view-transition-group(*),
+	::view-transition-old(*),
+	::view-transition-new(*) {
+		animation: none;
 	}
 }
 

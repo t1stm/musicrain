@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { QueueList, XMark } from 'svelte-hero-icons';
 	import { resolve } from '$app/paths';
 	import { convertTimeSpanStringToSeconds, getTimeString, pressKeys } from '$lib';
 	import account from '$states/account.svelte';
@@ -8,6 +9,7 @@
 	import queue from '$states/queue.svelte';
 	import type { SearchResult } from '$states/search.svelte';
 	import ArtistLink from '$components/ArtistLink.svelte';
+	import SwipeRow from '$components/SwipeRow.svelte';
 	import { sourceOf } from '$lib/source';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
 	import { reorder } from '$lib/reorder';
@@ -31,6 +33,14 @@
 	function remove(index: number, event: MouseEvent) {
 		event.stopPropagation();
 		queue.removeIndex(index);
+	}
+
+	// By the track, not the index: a swipe's action runs after its answer has shown, and
+	// the queue can move in that time. ponytail: a room's rebroadcast in those 600ms
+	// hands out new objects and the swipe does nothing — match by id if that bites.
+	function playNextSwiped(item: SearchResult) {
+		const at = queue.items.indexOf(item);
+		if (at !== -1) queue.setNext(at);
 	}
 
 	function play(index: number) {
@@ -87,12 +97,16 @@
 <!-- the dock owns the panel chrome and the tab strip; this is only its body -->
 <section class="flex min-h-0 flex-1 flex-col overflow-hidden">
 {#if items.length === 0}
-		<p class="mt-4 max-w-64 text-sm text-fog">
-			Queue’s empty. Add something from <a class="text-primary-500 underline-offset-4 hover:underline" href={resolve('/search')}>search</a>, or
-			<a class="text-primary-500 underline-offset-4 hover:underline" href={resolve('/')}>roll a track</a> on the home page.
-		</p>
+		<!-- nothing here scrolls either, so all of it is the sheet's handle too -->
+		<div data-sheet-handle class="flex-1 max-sm:touch-none">
+			<p class="mt-4 max-w-64 text-sm text-fog">
+				Queue’s empty. Add something from <a class="text-primary-500 underline-offset-4 hover:underline" href={resolve('/search')}>search</a>, or
+				<a class="text-primary-500 underline-offset-4 hover:underline" href={resolve('/')}>roll a track</a> on the home page.
+			</p>
+		</div>
 	{:else}
-	<section class="py-3">
+	<!-- nothing here scrolls, so on a phone it is more of the sheet's handle than the grip is -->
+	<section data-sheet-handle class="py-3 max-sm:touch-none">
 		<h3 class="eyebrow mb-2">Now playing</h3>
 		{#if currentItem}
 			<div class="flex items-center gap-3">
@@ -120,35 +134,54 @@
 			<div class="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1" {@attach reorder((from, to) => queue.move(from, to))}>
 				{#each nextItems as item, offset (item.id + offset)}
 					{@const index = currentIndex + offset + 1}
-					<div
-						data-index={index}
-						role="button"
-						tabindex="0"
-						class="group flex cursor-pointer select-none items-center gap-2 rounded-[5px] px-1 py-1.5 transition-colors hover:bg-surface-0 active:bg-surface-200 focus-visible:bg-surface-0 focus-visible:outline-none"
-						onclick={(event) => playUnlessLink(index, event)}
-						onkeydown={pressKeys(() => play(index))}
+					<!-- the number and the sleeve are the reorder's grip, so a swipe starts on the words -->
+					<SwipeRow
+						ignore="[data-grip]"
+						right={{
+							label: 'Play next',
+							icon: QueueList,
+							color: 'var(--color-primary-600)',
+							done: 'Next up',
+							run: () => playNextSwiped(item)
+						}}
+						left={{
+							label: 'Remove',
+							icon: XMark,
+							color: 'var(--color-ember)',
+							done: 'Removed',
+							run: () => queue.removeItem(item)
+						}}
 					>
-						<!-- The number and the sleeve are where a finger picks the row up; the
-						     words scroll the list. A mouse can take the row anywhere. -->
-						<span data-grip class="flex shrink-0 cursor-grab touch-none items-center gap-2 self-stretch active:cursor-grabbing">
-							<span class="w-4 text-right font-mono text-[0.68rem] text-fog">{offset + 1}</span>
-							<img src={item.thumbnailUrl ?? '/empty.png'} alt="" draggable="false" class="size-9 rounded-art object-cover" onerror={imageFallback} />
-						</span>
-						<div class="min-w-0 flex-1">
-							<p class="truncate text-sm">{item.name}</p>
-							<p class="truncate text-xs text-fog">
-								<ArtistLink artist={item.artist} /> · {sourceOf(item.id).name}
-							</p>
-						</div>
-						<button
-							type="button"
-							aria-label={`Remove ${itemLabel(item)} from queue`}
-							class="flex size-9 shrink-0 items-center justify-center rounded-art text-fog hover:bg-surface-200 hover:text-chalk focus-visible:opacity-100 group-hover:opacity-100 group-focus-visible:opacity-100 pointer-fine:opacity-0"
-							onclick={(event) => remove(index, event)}
+						<div
+							data-index={index}
+							role="button"
+							tabindex="0"
+							class="group flex cursor-pointer select-none items-center gap-2 rounded-[5px] px-1 py-1.5 transition-colors hover:bg-surface-0 active:bg-surface-200 focus-visible:bg-surface-0 focus-visible:outline-none"
+							onclick={(event) => playUnlessLink(index, event)}
+							onkeydown={pressKeys(() => play(index))}
 						>
-							×
-						</button>
-					</div>
+							<!-- The number and the sleeve are where a finger picks the row up; the
+							     words scroll the list. A mouse can take the row anywhere. -->
+							<span data-grip class="flex shrink-0 cursor-grab touch-none items-center gap-2 self-stretch active:cursor-grabbing">
+								<span class="w-4 text-right font-mono text-[0.68rem] text-fog">{offset + 1}</span>
+								<img src={item.thumbnailUrl ?? '/empty.png'} alt="" draggable="false" class="size-9 rounded-art object-cover" onerror={imageFallback} />
+							</span>
+							<div class="min-w-0 flex-1">
+								<p class="truncate text-sm">{item.name}</p>
+								<p class="truncate text-xs text-fog">
+									<ArtistLink artist={item.artist} /> · {sourceOf(item.id).name}
+								</p>
+							</div>
+							<button
+								type="button"
+								aria-label={`Remove ${itemLabel(item)} from queue`}
+								class="flex size-9 shrink-0 items-center justify-center rounded-art text-fog hover:bg-surface-200 hover:text-chalk focus-visible:opacity-100 group-hover:opacity-100 group-focus-visible:opacity-100 pointer-fine:opacity-0"
+								onclick={(event) => remove(index, event)}
+							>
+								×
+							</button>
+						</div>
+					</SwipeRow>
 				{/each}
 			</div>
 		{:else}
