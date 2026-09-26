@@ -69,6 +69,23 @@
 	color-scheme: dark;
 }
 
+/* A pull past the top of the page is the browser's reload, and a reload is the end
+   of the queue and the music. This is an app shell; the page never scrolls, only
+   the panes inside it do, and they keep their own overscroll. */
+html {
+	overscroll-behavior: none;
+}
+
+/* iOS zooms the whole page into any field set under 16px and leaves it there.
+   Only for a finger: a desktop keeps the smaller type the panels were drawn with. */
+@media (pointer: coarse) {
+	input:not([type='range'], [type='checkbox'], [type='radio'], [type='file']),
+	textarea,
+	select {
+		font-size: 16px;
+	}
+}
+
 /* Touch has no hover, so the press is the entire feedback channel — and the
    browser's own grey rectangle is not it. One rule covers every control in the
    app rather than a press state per component. Anything wider than a thumb (a
@@ -193,6 +210,20 @@
 	.queue-open {
 		margin-right: 396px;
 	}
+}
+
+/* A row being carried by `reorder`, and the edge it will land against. */
+[data-dragging] {
+	position: relative;
+	z-index: 1;
+	background: var(--color-surface-200);
+	box-shadow: 0 8px 24px -8px var(--color-dark-0);
+}
+[data-drop='before'] {
+	box-shadow: inset 0 2px 0 var(--color-primary-0);
+}
+[data-drop='after'] {
+	box-shadow: inset 0 -2px 0 var(--color-primary-0);
 }
 
 /* Firefox implements none of the ::-webkit-scrollbar rules below. It takes
@@ -576,8 +607,43 @@
 	}
 }
 
-/* the shape is an attribute, so there is nothing to still except the cover */
+/* ── Gestures: the record follows the finger ─────────────────────────────────
+   `swipe` in Player.svelte owns the drag and writes the offset; this decides what
+   moves. Down pulls the whole full shape with it and nothing pulls it up past its
+   own edge. Sideways moves the record less than the finger, so the sleeve leans
+   toward the next track rather than being carried off. Nothing in the player
+   scrolls except the lyrics pane, which keeps its own scrolling as a scroller. */
+#player {
+	touch-action: none;
+}
+#player[data-shape='full'] {
+	translate: 0 max(0px, var(--swipe-y, 0px));
+	transition: translate 280ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+#player:not([data-shape='full']) #track-info,
+#player[data-shape='full'] #track-info img {
+	translate: calc(var(--swipe-x, 0px) * 0.4) 0;
+}
+#player:not([data-shape='full']) #track-info {
+	transition: translate 280ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+#player[data-shape='full'] #track-info img {
+	transition:
+		width 320ms cubic-bezier(0.2, 0.7, 0.3, 1),
+		height 320ms cubic-bezier(0.2, 0.7, 0.3, 1),
+		translate 280ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+#player[data-swiping],
+#player[data-swiping] #track-info,
+#player[data-swiping] #track-info img {
+	transition: none;
+}
+
+/* the shape is an attribute, so there is nothing to still except the cover and the
+   spring back from a drag */
 @media (prefers-reduced-motion: reduce) {
+	#player[data-shape='full'],
+	#player #track-info,
 	#player[data-shape='full'] #track-info img {
 		transition: none;
 	}

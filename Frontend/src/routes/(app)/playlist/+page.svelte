@@ -4,9 +4,10 @@
 	import { resolve } from '$app/paths';
 	import ArtistLink from '$components/ArtistLink.svelte';
 	import PlaylistCover from '$components/playlist/PlaylistCover.svelte';
-	import { convertTimeSpanStringToSeconds, getTimeString } from '$lib';
+	import { convertTimeSpanStringToSeconds, getTimeString, pressKeys } from '$lib';
 	import { getPlaylist, type Playlist } from '$requests/playlists';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
+	import { reorder } from '$lib/reorder';
 	import account from '$states/account.svelte';
 	import playlists from '$states/playlists.svelte';
 	import queue from '$states/queue.svelte';
@@ -20,7 +21,6 @@
 	let renaming = $state(false);
 	let confirmingDelete = $state(false);
 	let draftName = $state('');
-	let dragIndex = $state<number | null>(null);
 
 	// Two separate layers: back gets out of the delete confirmation without also
 	// throwing away the rename that was open behind it.
@@ -71,14 +71,16 @@
 		commit(tracks.filter((_, at) => at !== index));
 	}
 
-	function drop(target: number) {
-		if (dragIndex === null || dragIndex === target) return (dragIndex = null);
-
+	function move(from: number, to: number) {
 		const next = [...tracks];
-		const [moved] = next.splice(dragIndex, 1);
-		next.splice(target, 0, moved);
-		dragIndex = null;
+		const [moved] = next.splice(from, 1);
+		next.splice(to, 0, moved);
 		commit(next);
+	}
+
+	// see ArtistLink: the artist name is a real link, so the row must not act on it
+	function playUnlessLink(track: SearchResult, event: MouseEvent) {
+		if (!(event.target as HTMLElement).closest('a')) queue.playNow(track);
 	}
 
 	async function rename(event: SubmitEvent) {
@@ -266,31 +268,32 @@
 					Nothing in this playlist yet. Add tracks from search or the library.
 				</p>
 			{:else}
-				<ul class="flex flex-col">
+				<div class="flex flex-col" {@attach mine && reorder(move)}>
 					{#each tracks as track, index (track.id + index)}
-						<li
-							draggable={mine}
-							class="group flex items-center gap-3 rounded-row px-2 py-2 hover:bg-surface-100"
-							class:cursor-grab={mine}
-							ondragstart={() => (dragIndex = index)}
-							ondragover={(event) => event.preventDefault()}
-							ondrop={(event) => {
-								event.preventDefault();
-								drop(index);
-							}}
-							ondblclick={(event) => {
-								if (!(event.target as HTMLElement).closest('a')) queue.playNow(track);
-							}}
-							title={`Double-click to play ${track.name}`}
+						<div
+							data-index={index}
+							role="button"
+							tabindex="0"
+							class="group flex cursor-pointer items-center gap-3 rounded-row px-2 py-2 hover:bg-surface-100 active:bg-surface-200 focus-visible:bg-surface-100 focus-visible:outline-none"
+							class:select-none={mine}
+							onclick={(event) => playUnlessLink(track, event)}
+							onkeydown={pressKeys(() => queue.playNow(track))}
 						>
-							<span class="w-6 shrink-0 text-right font-mono text-[0.68rem] text-fog"
-								>{index + 1}</span
+							<!-- your own list: the number and the sleeve pick a row up, as in the queue -->
+							<span
+								data-grip
+								class="flex shrink-0 items-center gap-3 self-stretch"
+								class:touch-none={mine}
+								class:cursor-grab={mine}
 							>
-							<img
-								src={track.thumbnailUrl ?? '/empty.png'}
-								alt=""
-								class="size-10 shrink-0 rounded-art object-cover"
-							/>
+								<span class="w-6 text-right font-mono text-[0.68rem] text-fog">{index + 1}</span>
+								<img
+									src={track.thumbnailUrl ?? '/empty.png'}
+									alt=""
+									draggable="false"
+									class="size-10 rounded-art object-cover"
+								/>
+							</span>
 							<div class="min-w-0 flex-1">
 								<p class="truncate text-sm">{track.name}</p>
 								<p class="truncate text-xs text-fog"><ArtistLink artist={track.artist} /></p>
@@ -302,15 +305,18 @@
 								<button
 									type="button"
 									aria-label={`Remove ${track.name} from ${playlist.name}`}
-									class="flex size-9 shrink-0 items-center justify-center rounded-art text-fog hover:bg-surface-200 hover:text-chalk focus-visible:opacity-100 group-hover:opacity-100 sm:opacity-0"
-									onclick={() => remove(index)}
+									class="flex size-9 shrink-0 items-center justify-center rounded-art text-fog hover:bg-surface-200 hover:text-chalk focus-visible:opacity-100 group-hover:opacity-100 group-focus-visible:opacity-100 pointer-fine:opacity-0"
+									onclick={(event) => {
+										event.stopPropagation();
+										remove(index);
+									}}
 								>
 									×
 								</button>
 							{/if}
-						</li>
+						</div>
 					{/each}
-				</ul>
+				</div>
 			{/if}
 		</section>
 	{/if}

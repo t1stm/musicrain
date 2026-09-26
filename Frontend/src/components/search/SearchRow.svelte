@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { ArrowDownTray, ClipboardDocument, EllipsisHorizontal, Icon, Play } from 'svelte-hero-icons';
 	import { resolve } from '$app/paths';
-	import { convertTimeSpanStringToSeconds, getTimeString, heroArtist, sourceOf } from '$lib';
+	import { convertTimeSpanStringToSeconds, getTimeString, heroArtist, pressKeys, sourceOf } from '$lib';
+	import { closeOnBack } from '$lib/backWatcher.svelte';
+	import { dismiss } from '$lib/dismiss';
 	import type { SearchResult } from '$states/search.svelte';
 	import queue from '$states/queue.svelte';
 	import session from '$states/session.svelte';
@@ -22,9 +24,11 @@
 	const albumUrl = (album: string) =>
 		`${resolve('/album')}?artist=${encodeURIComponent(heroArtist(result.artist))}&album=${encodeURIComponent(album)}`;
 
-	function stopPropagation(event: Event) {
-		event.stopPropagation();
-	}
+	let menuOpen = $state(false);
+	closeOnBack(
+		() => menuOpen,
+		() => (menuOpen = false)
+	);
 
 	function playNow() {
 		queue.playNow(result);
@@ -33,9 +37,11 @@
 	// Anything inside the row that is a link (the artist name, the download) owns
 	// its own click. Stopping propagation there instead would hide the click from
 	// SvelteKit's router, which listens on document.documentElement — the link
-	// would fall back to a full page load and wipe the queue.
+	// would fall back to a full page load and wipe the queue. The menu is the same:
+	// a press anywhere in it, the gaps and the phone's backdrop included, is the
+	// menu's and never a play.
 	function playUnlessLink(event: MouseEvent) {
-		if ((event.target as HTMLElement).closest('a')) return;
+		if ((event.target as HTMLElement).closest('a, details')) return;
 		playNow();
 	}
 
@@ -50,38 +56,25 @@
 	}
 
 	// An open menu over an action that happened somewhere else reads as nothing
-	// happening — on a phone the menu is most of the row.
-	function closeMenu(event: Event) {
-		(event.currentTarget as HTMLElement).closest('details')?.removeAttribute('open');
-	}
-
-	function playNext(event: Event) {
-		event.stopPropagation();
+	// happening — on a phone the menu covers the foot of the screen.
+	function playNext() {
 		queue.playNext(result);
-		closeMenu(event);
+		menuOpen = false;
 	}
 
 	let copied = $state(false);
 	let settle: ReturnType<typeof setTimeout>;
 
-	async function copyId(event: Event) {
-		event.stopPropagation();
+	async function copyId() {
 		await navigator.clipboard.writeText(result.id);
 		// nothing about a copy is visible anywhere else, so the menu stays open
 		// long enough to say so and then takes itself away
 		copied = true;
-		const menu = event.currentTarget as HTMLElement;
 		clearTimeout(settle);
 		settle = setTimeout(() => {
 			copied = false;
-			menu.closest('details')?.removeAttribute('open');
+			menuOpen = false;
 		}, 900);
-	}
-
-	function handleKeydown(event: KeyboardEvent) {
-		if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
-		event.preventDefault();
-		playNow();
 	}
 </script>
 
@@ -90,7 +83,7 @@
 	role="button"
 	tabindex="0"
 	onclick={playUnlessLink}
-	onkeydown={handleKeydown}
+	onkeydown={pressKeys(playNow)}
 >
 	<img
 		src={result.thumbnailUrl ?? '/empty.png'}
@@ -133,7 +126,7 @@
 	</div>
 
 	<div
-		class="flex items-center justify-end gap-1.5 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+		class="flex items-center justify-end gap-1.5 sm:pointer-fine:opacity-0 sm:pointer-fine:transition-opacity sm:pointer-fine:group-hover:opacity-100 sm:pointer-fine:group-focus-within:opacity-100 sm:pointer-fine:has-open:opacity-100"
 	>
 		{#if !session.inRoom}
 			<button
@@ -154,21 +147,39 @@
 		>
 			Queue
 		</button>
-		<details class="relative">
+		<details
+			class="relative"
+			bind:open={menuOpen}
+			{@attach menuOpen && dismiss(() => (menuOpen = false))}
+		>
 			<summary
 				aria-label="More actions for {result.name}"
 				class="flex size-11 list-none items-center justify-center rounded-[5px] border border-haze text-fog hover:bg-surface-200 hover:text-chalk focus-visible:outline-2 focus-visible:outline-primary-200 sm:size-7 [&::-webkit-details-marker]:hidden"
-				onclick={stopPropagation}
-				onkeydown={stopPropagation}
 			>
 				<Icon src={EllipsisHorizontal} mini size="16" />
 			</summary>
+			<!-- A phone gets the menu as a sheet at the foot of the screen: under the thumb,
+			     full-width targets, and never clipped by the list scrolling past the last row.
+			     The backdrop is the way out a tap expects; back and Escape work too.
+
+			     Both take focus themselves (tabindex -1). A press on something that cannot
+			     be focused hands the focus to the nearest ancestor that can, and here that is
+			     the row: `dismiss` would see the focus leave, close the menu on the way down,
+			     and the release would land on the row underneath and play it. -->
 			<div
-				class="absolute right-0 z-20 mt-1 grid w-44 gap-0.5 rounded-panel border border-haze bg-surface-100 p-1 text-left"
+				class="fixed inset-0 z-40 bg-dark-0/60 sm:hidden"
+				aria-hidden="true"
+				tabindex="-1"
+				onclick={() => (menuOpen = false)}
+			></div>
+			<div
+				tabindex="-1"
+				class="outline-none fixed inset-x-2 bottom-2 z-50 grid gap-0.5 rounded-panel border border-haze bg-surface-100 p-1.5 text-left text-sm sm:absolute sm:inset-x-auto sm:bottom-auto sm:right-0 sm:z-20 sm:mt-1 sm:w-44 sm:p-1 sm:text-xs"
 			>
+				<p class="truncate px-2 pb-1.5 pt-1 font-medium text-chalk sm:hidden">{result.name}</p>
 				<button
 					type="button"
-					class="flex min-h-10 items-center rounded-art px-2 text-left text-xs hover:bg-surface-200"
+					class="flex min-h-12 items-center rounded-art px-2 text-left hover:bg-surface-200 sm:min-h-10"
 					onclick={playNext}
 				>
 					Play next
@@ -179,14 +190,14 @@
 					<a
 						href={result.contentUrl}
 						download
-						class="flex min-h-10 items-center gap-2 rounded-art px-2 text-xs hover:bg-surface-200"
+						class="flex min-h-12 items-center gap-2 rounded-art px-2 hover:bg-surface-200 sm:min-h-10"
 					>
 						<Icon src={ArrowDownTray} mini size="14" /> Download raw
 					</a>
 				{/if}
 				<button
 					type="button"
-					class="flex min-h-10 items-center gap-2 rounded-art px-2 text-left text-xs hover:bg-surface-200"
+					class="flex min-h-12 items-center gap-2 rounded-art px-2 text-left hover:bg-surface-200 sm:min-h-10"
 					onclick={copyId}
 				>
 					<Icon src={ClipboardDocument} mini size="14" />
@@ -194,7 +205,7 @@
 				</button>
 				<a
 					href={artistUrl}
-					class="flex min-h-10 items-center rounded-art px-2 text-xs hover:bg-surface-200"
+					class="flex min-h-12 items-center rounded-art px-2 hover:bg-surface-200 sm:min-h-10"
 				>
 					Go to artist
 				</a>

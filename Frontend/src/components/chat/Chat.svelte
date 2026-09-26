@@ -57,6 +57,7 @@
 			type="text"
 			bind:value={draft}
 			maxlength="500"
+			enterkeyhint="send"
 			placeholder="Message the room"
 			aria-label="Message the room"
 			class="rounded-row border border-haze bg-dark-0 w-full text-sm text-chalk placeholder:text-fog ring-primary-0 focus:border-primary-0 focus-visible:ring-2"

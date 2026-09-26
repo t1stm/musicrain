@@ -10,6 +10,7 @@
 	import { resolve } from '$app/paths';
 	import { discordIds, discordUser, initDiscord } from '$lib/discord';
 	import { closeOnBack, watchBackNavigation } from '$lib/backWatcher.svelte';
+	import { swipe } from '$lib/swipe';
 	import Header from '$components/header/Header.svelte';
 	import Player from '$components/player/Player.svelte';
 	import Queue from '$components/queue/Queue.svelte';
@@ -91,15 +92,29 @@
 			{@render children()}
 		</main>
 		{#if dock}
+			<!-- On a phone the sheet is a modal: the strip of page left above it is a way
+			     out, not a place to keep working in. Wider, it is a dock beside the page
+			     and the page stays live. -->
+			<div
+				class="absolute inset-0 z-50 bg-dark-0/60 transition-opacity starting:opacity-0 sm:hidden"
+				aria-hidden="true"
+				onclick={() => (dock = null)}
+			></div>
 			<!-- a bottom sheet on narrow screens, a dock that narrows the page from lg
 			     up. One surface, two tabs — chat and queue never compete for the right
 			     edge. -->
 			<!-- above the full player (z-40), which is fixed over the whole app: the sheet
 			     is reachable from inside that shape, not buried by it -->
+			<!-- The grip and the tabs are the handle: pull them down and the sheet goes.
+			     The body is left to scroll the queue. -->
 			<aside
-				class="absolute inset-x-0 bottom-0 z-50 flex h-[70dvh] max-h-full flex-col overflow-hidden rounded-panel rounded-b-none border border-haze bg-surface-100/95 backdrop-blur-xl sm:inset-x-auto sm:bottom-20 sm:right-2 sm:top-2 sm:h-auto sm:w-[380px] sm:rounded-b-panel"
+				{@attach swipe({ down: () => (dock = null), ignore: '[data-sheet-body]' })}
+				class="absolute inset-x-0 bottom-0 z-50 flex h-[70dvh] max-h-full flex-col overflow-hidden rounded-panel rounded-b-none border border-haze bg-surface-100/95 backdrop-blur-xl max-sm:translate-y-[max(0px,var(--swipe-y,0px))] max-sm:transition-[translate] max-sm:duration-300 max-sm:ease-[cubic-bezier(0.2,0.7,0.3,1)] max-sm:starting:translate-y-full max-sm:data-swiping:transition-none motion-reduce:transition-none sm:inset-x-auto sm:bottom-20 sm:right-2 sm:top-2 sm:h-auto sm:w-[380px] sm:rounded-b-panel"
 			>
-				<div class="flex shrink-0 border-b border-haze">
+				<div class="touch-none sm:hidden" aria-hidden="true">
+					<span class="mx-auto mt-2 block h-1 w-9 rounded-full bg-surface-300"></span>
+				</div>
+				<div class="flex shrink-0 touch-none border-b border-haze sm:touch-auto">
 					{#each [{ id: 'queue' as const, label: `Queue · ${queue.items.length}` }, { id: 'chat' as const, label: 'Chat' }] as tab (tab.id)}
 						<button
 							type="button"
@@ -112,7 +127,7 @@
 						</button>
 					{/each}
 				</div>
-				<div class="flex min-h-0 flex-1 flex-col px-3 pb-3 text-chalk">
+				<div data-sheet-body class="flex min-h-0 flex-1 flex-col px-3 pb-3 text-chalk">
 					{#if dock === 'queue'}
 						<Queue />
 					{:else}

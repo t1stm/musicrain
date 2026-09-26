@@ -13,6 +13,7 @@
 	import lyrics from '$states/lyrics.svelte';
 	import Lyrics from '$components/player/layers/lyrics/Lyrics.svelte';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
+	import { swipe } from '$lib/swipe';
 
 	type Dock = 'queue' | 'chat' | null;
 	let { dock = $bindable<Dock>(null) }: { dock?: Dock } = $props();
@@ -24,6 +25,26 @@
 		() => full,
 		() => (full = false)
 	);
+
+	// micro is a player-only frame with no room for a bigger shape
+	function expand() {
+		if (current.name && !window.matchMedia('(max-height: 320px)').matches) full = true;
+	}
+
+	// The record is the handle, the way it is in every phone's own player: flick it
+	// sideways to change track, up to open it out, down to put it away. A tap on the
+	// sleeve or the title opens it too — the chevron is a small target for the
+	// thing a phone wants most. The controls keep their presses to themselves.
+	const gestures = swipe({
+		ignore: 'a, button, input, [role=slider], #player-docks, #player-lyrics',
+		left: () => queue.nextTrack(),
+		right: () => queue.previousTrack(),
+		up: expand,
+		down: () => (full = false),
+		tap: (event) => {
+			if ((event.target as Element).closest('#track-info')) expand();
+		}
+	});
 
 	function toggle(tab: Exclude<Dock, null>) {
 		dock = dock === tab ? null : tab;
@@ -62,6 +83,7 @@
 -->
 <div
 	id="player"
+	{@attach gestures}
 	data-shape={full ? 'full' : 'bar'}
 	data-lyrics={lyrics.open ? 'on' : 'off'}
 	data-dock={dock ?? 'none'}

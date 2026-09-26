@@ -1,6 +1,7 @@
 <script lang="ts">
 	import quality, { bitrates, codecs, type Bitrate, type Codec } from '$states/quality.svelte';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
+	import { dismiss } from '$lib/dismiss';
 
 	let open = $state(false);
 	let label = $derived(quality.codec === 'FLAC' ? 'FLAC' : `${quality.codec} · ${quality.bitrate}`);
@@ -19,7 +20,7 @@
 	}
 </script>
 
-<div class="relative">
+<div class="relative" {@attach open && dismiss(() => (open = false))}>
 	<button type="button" class="whitespace-nowrap rounded-art border border-haze px-1.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-fog hover:border-primary-0 hover:text-chalk" aria-expanded={open} aria-label="Choose audio format" onclick={() => (open = !open)}>{label}</button>
 	{#if open}
 		<div class="absolute bottom-full right-0 z-30 mb-2 w-52 rounded-panel border border-haze bg-surface-100 p-2">

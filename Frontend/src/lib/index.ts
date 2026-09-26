@@ -3,3 +3,4 @@ export * from './artists';
 export * from './time';
 export * from './recentlyPlayed';
 export * from './source';
+export * from './press';

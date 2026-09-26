@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { convertTimeSpanStringToSeconds, getTimeString } from '$lib';
+	import { convertTimeSpanStringToSeconds, getTimeString, pressKeys } from '$lib';
 	import account from '$states/account.svelte';
 	import audio from '$states/audio.svelte';
 	import current from '$states/current.svelte';
@@ -10,6 +10,7 @@
 	import ArtistLink from '$components/ArtistLink.svelte';
 	import { sourceOf } from '$lib/source';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
+	import { reorder } from '$lib/reorder';
 
 
 	let items = $derived(queue.items);
@@ -18,7 +19,6 @@
 	let nextItems = $derived(items.slice(currentIndex + 1));
 	let playedItems = $derived(items.slice(0, currentIndex));
 	let showPlayed = $state(false);
-	let dragIndex = $state<number | null>(null);
 	let progress = $derived(
 		current.lengthSeconds > 0 ? Math.min((audio.currentSeconds / current.lengthSeconds) * 100, 100) : 0
 	);
@@ -37,30 +37,11 @@
 		queue.playIndex(index);
 	}
 
-	// see ArtistLink: the artist name is a real link, so the row must not act on it
+	// see ArtistLink: the artist name is a real link, so the row must not act on it.
+	// One press, not two: a double-click is not a thing a finger can reliably do.
 	function playUnlessLink(index: number, event: MouseEvent) {
 		if ((event.target as HTMLElement).closest('a')) return;
 		play(index);
-	}
-
-	function dragStart(index: number, event: DragEvent) {
-		dragIndex = index;
-		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
-	}
-
-	/** The row the track was dropped on is where it lands — that is the whole point of dragging it. */
-	function dropOn(targetIndex: number, event: DragEvent) {
-		event.preventDefault();
-		event.stopPropagation();
-		if (dragIndex !== null) queue.move(dragIndex, targetIndex);
-		dragIndex = null;
-	}
-
-	/** Dropped past the last row rather than on one: the end of the queue is what was meant. */
-	function dropAtEnd(event: DragEvent) {
-		event.preventDefault();
-		if (dragIndex !== null) queue.move(dragIndex, queue.items.length - 1);
-		dragIndex = null;
 	}
 
 	function imageFallback(event: Event) {
@@ -134,21 +115,25 @@
 	<section class="flex min-h-0 flex-1 flex-col border-t border-haze py-3">
 		<h3 class="eyebrow mb-2">Next up · {nextItems.length}</h3>
 		{#if nextItems.length > 0}
-			<ul class="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1" ondragover={(event) => event.preventDefault()} ondrop={dropAtEnd}>
+			<!-- The row lands where it was dropped — that is the whole point of dragging it — and
+			     past the last row is the end of the queue. -->
+			<div class="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1" {@attach reorder((from, to) => queue.move(from, to))}>
 				{#each nextItems as item, offset (item.id + offset)}
 					{@const index = currentIndex + offset + 1}
-					<li
-						draggable="true"
-						class="group flex cursor-grab items-center gap-2 rounded-[5px] px-1 py-1.5 transition-colors hover:bg-surface-0 active:cursor-grabbing active:bg-surface-200"
-						ondragstart={(event) => dragStart(index, event)}
-						ondragover={(event) => event.preventDefault()}
-						ondrop={(event) => dropOn(index, event)}
-						ondragend={() => (dragIndex = null)}
-						ondblclick={(event) => playUnlessLink(index, event)}
-						title={`Double-click to play ${itemLabel(item)}`}
+					<div
+						data-index={index}
+						role="button"
+						tabindex="0"
+						class="group flex cursor-pointer select-none items-center gap-2 rounded-[5px] px-1 py-1.5 transition-colors hover:bg-surface-0 active:bg-surface-200 focus-visible:bg-surface-0 focus-visible:outline-none"
+						onclick={(event) => playUnlessLink(index, event)}
+						onkeydown={pressKeys(() => play(index))}
 					>
-						<span class="w-4 text-right font-mono text-[0.68rem] text-fog">{offset + 1}</span>
-						<img src={item.thumbnailUrl ?? '/empty.png'} alt="" class="size-9 rounded-art object-cover" onerror={imageFallback} />
+						<!-- The number and the sleeve are where a finger picks the row up; the
+						     words scroll the list. A mouse can take the row anywhere. -->
+						<span data-grip class="flex shrink-0 cursor-grab touch-none items-center gap-2 self-stretch active:cursor-grabbing">
+							<span class="w-4 text-right font-mono text-[0.68rem] text-fog">{offset + 1}</span>
+							<img src={item.thumbnailUrl ?? '/empty.png'} alt="" draggable="false" class="size-9 rounded-art object-cover" onerror={imageFallback} />
+						</span>
 						<div class="min-w-0 flex-1">
 							<p class="truncate text-sm">{item.name}</p>
 							<p class="truncate text-xs text-fog">
@@ -158,14 +143,14 @@
 						<button
 							type="button"
 							aria-label={`Remove ${itemLabel(item)} from queue`}
-							class="flex size-9 shrink-0 items-center justify-center rounded-art text-fog opacity-100 hover:bg-surface-200 hover:text-chalk focus-visible:opacity-100 group-hover:opacity-100 sm:opacity-0"
+							class="flex size-9 shrink-0 items-center justify-center rounded-art text-fog hover:bg-surface-200 hover:text-chalk focus-visible:opacity-100 group-hover:opacity-100 group-focus-visible:opacity-100 pointer-fine:opacity-0"
 							onclick={(event) => remove(index, event)}
 						>
 							×
 						</button>
-					</li>
+					</div>
 				{/each}
-			</ul>
+			</div>
 		{:else}
 			<p class="text-sm text-fog">Nothing queued after this track.</p>
 		{/if}

@@ -6,6 +6,7 @@
 	import session from '$states/session.svelte';
 	import user from '$states/user.svelte';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
+	import { dismiss } from '$lib/dismiss';
 
 	const isAlpha = true;
 	let searchTerm = $derived(page.url.searchParams.get('term') ?? '');
@@ -62,12 +63,13 @@
 			</a>
 
 			<!-- Gold is the library everywhere in this app, so the way into it is gold on hover.
-			     Hidden below sm: the header is a logo, a search field and a face at 320px, and the
-			     home page carries the same link. -->
+			     On a phone too: without them the playlists had no way in short of the account
+			     panel. The search field gives up the width, and still holds its placeholder
+			     at 320px. -->
 			<a
 				href={resolve('/browse')}
 				aria-label="Browse the library by folder"
-				class="hidden size-10 shrink-0 items-center justify-center rounded-row border border-haze text-fog outline-none hover:border-gold hover:text-gold focus-visible:ring-2 focus-visible:ring-primary-500 sm:flex"
+				class="flex size-9 shrink-0 items-center justify-center rounded-row border border-haze text-fog outline-none hover:border-gold hover:text-gold focus-visible:ring-2 focus-visible:ring-primary-500 sm:size-10"
 				class:border-gold={page.url.pathname.startsWith('/browse')}
 				class:text-gold={page.url.pathname.startsWith('/browse')}
 			>
@@ -75,11 +77,11 @@
 			</a>
 
 			<!-- Playlists are not the library — they are what people cut out of it — so this
-			     door is the app's own violet, not gold. Hidden below sm: for the same reason. -->
+			     door is the app's own violet, not gold. -->
 			<a
 				href={resolve('/playlists')}
 				aria-label="Playlists"
-				class="hidden size-10 shrink-0 items-center justify-center rounded-row border border-haze text-fog outline-none hover:border-primary-0 hover:text-primary-500 focus-visible:ring-2 focus-visible:ring-primary-500 sm:flex"
+				class="flex size-9 shrink-0 items-center justify-center rounded-row border border-haze text-fog outline-none hover:border-primary-0 hover:text-primary-500 focus-visible:ring-2 focus-visible:ring-primary-500 sm:size-10"
 				class:border-primary-0={page.url.pathname.startsWith('/playlist')}
 				class:text-primary-500={page.url.pathname.startsWith('/playlist')}
 			>
@@ -87,9 +89,11 @@
 			</a>
 		</div>
 
-		<form class="flex gap-2 w-full max-w-lg" action="/search">
+		<form class="flex min-w-0 gap-2 w-full max-w-lg" action="/search">
+			<!-- `search` gives a phone's keyboard its Search key and the field its clear button -->
 			<input
-				type="text"
+				type="search"
+				enterkeyhint="search"
 				name="term"
 				bind:value={searchTerm}
 				placeholder="Search"
@@ -104,7 +108,7 @@
 			</button>
 		</form>
 
-		<div class="relative shrink-0">
+		<div class="relative shrink-0" {@attach editingName && dismiss(() => (editingName = false))}>
 			<button
 				type="button"
 				aria-label={user.username ? `You are ${user.username}` : 'Set your name'}

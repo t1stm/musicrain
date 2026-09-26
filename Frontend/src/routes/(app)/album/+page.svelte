@@ -5,7 +5,7 @@
 	import type { SearchResult } from '$states/search.svelte';
 	import ArtistLink from '$components/ArtistLink.svelte';
 	import RowSkeleton from '$components/RowSkeleton.svelte';
-	import { convertTimeSpanStringToSeconds, getTimeString } from '$lib';
+	import { convertTimeSpanStringToSeconds, getTimeString, pressKeys } from '$lib';
 	import queue from '$states/queue.svelte';
 
 	const { data }: { data: PageData } = $props();
@@ -106,14 +106,17 @@
 
 		<section class="px-2 sm:px-8">
 			{#if tracks.length > 0}
-				<ul class="flex flex-col" aria-busy={loading}>
+				<div class="flex flex-col" aria-busy={loading}>
 					{#each tracks as track, index (track.id + index)}
-						<li
-							class="group flex cursor-pointer items-center gap-3 rounded-row px-2 py-2 hover:bg-surface-100"
-							ondblclick={(event) => {
+						<!-- one press plays, as a search row does: a finger has no double-click -->
+						<div
+							role="button"
+							tabindex="0"
+							class="group flex cursor-pointer items-center gap-3 rounded-row px-2 py-2 hover:bg-surface-100 active:bg-surface-200 focus-visible:bg-surface-100 focus-visible:outline-none"
+							onclick={(event) => {
 								if (!(event.target as HTMLElement).closest('a')) queue.playNow(track);
 							}}
-							title={`Double-click to play ${track.name}`}
+							onkeydown={pressKeys(() => queue.playNow(track))}
 						>
 							<span class="w-6 shrink-0 text-right font-mono text-[0.68rem] text-fog">{index + 1}</span>
 							<img
@@ -128,9 +131,9 @@
 							<span class="shrink-0 font-mono text-[0.68rem] text-fog">
 								{getTimeString(convertTimeSpanStringToSeconds(track.duration))}
 							</span>
-						</li>
+						</div>
 					{/each}
-				</ul>
+				</div>
 			{:else if loading}
 				<!-- The library answers at once, but a record it has no playlist file for falls through to
 				     Deezer — two round trips before the first row. The hero is already up; these fill the

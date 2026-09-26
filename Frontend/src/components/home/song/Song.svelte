@@ -95,7 +95,7 @@
 		class="absolute flex justify-center items-center size-8
 	rounded-full cursor-pointer
 	right-0 bottom-0 duration-150
-	outline-0 opacity-100 sm:opacity-0 focus-visible:opacity-100 group-hover:opacity-100
+	outline-0 opacity-100 pointer-fine:opacity-0 focus-visible:opacity-100 group-hover:opacity-100
 	{added ? 'added bg-primary-0' : 'bg-primary-600'}"
 	>
 		<Icon src={added ? Check : Plus} mini size="20" color="white" />
