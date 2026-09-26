@@ -146,6 +146,19 @@ def test_album_search_keeps_only_that_artists_record():
     assert main._album_in([namesake, hit("Daft Punk", "Homework")], "Daft Punk", "Discovery") is None
 
 
+def test_artist_is_the_namesake_people_mean():
+    def hit(name, fans):
+        return {"name": name, "nb_fan": fans}
+
+    empty, real, other = hit("Drake", 116), hit("Drake", 24091744), hit("Nick Drake", 102964)
+
+    # The busiest exact name wins, wherever Deezer ranked it; a busier inexact one never does.
+    assert main._artist_in([empty, other, real], "drake") is real
+    # No exact name: Deezer's first hit. No hits: nothing.
+    assert main._artist_in([other, empty], "Drake Bell") is other
+    assert main._artist_in([], "Drake") is None
+
+
 def test_duration_is_the_timespan_gaida_parses():
     assert duration(0) == "00:00:00"
     assert duration(224) == "00:03:44"

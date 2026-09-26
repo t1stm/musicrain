@@ -154,19 +154,17 @@ async def artist(term: str | None = None) -> Response:
 
     Found as the artist, then their chart, rather than as a track search: a bare name also matches
     titles and other people's features, and Deezer's ``artist:"..."`` field syntax returns next to
-    nothing for most names now (two hits for Eminem). An exact name wins over Deezer's first hit, so a
-    term does not land on a busier namesake.
+    nothing for most names now (two hits for Eminem). See :func:`_artist_in` for which hit is meant.
     """
     credit = (term or "").strip()
     if not credit:
         return JSONResponse([])
 
-    found = await _ask(lambda: client.api.search_artist(credit, limit=5), f"artist {credit!r}")
-    hits = (found or {}).get("data") or []
-    if not hits:
+    found = await _ask(lambda: client.api.search_artist(credit, limit=25), f"artist {credit!r}")
+    chosen = _artist_in((found or {}).get("data") or [], credit)
+    if chosen is None:
         return JSONResponse([])
 
-    chosen = next((hit for hit in hits if _same(hit.get("name"), credit)), hits[0])
     top = await _ask(lambda: client.api.get_artist_top(chosen["id"], limit=ARTIST_LIMIT),
                      f"artist top {chosen['id']}")
     return JSONResponse(_mapped((top or {}).get("data") or []))
@@ -406,6 +404,16 @@ def _mapped(tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _same(name: str | None, wanted: str) -> bool:
     return (name or "").casefold() == wanted.casefold()
+
+
+def _artist_in(hits: list[dict[str, Any]], credit: str) -> dict[str, Any] | None:
+    """
+    The artist a name means: of the hits carrying exactly that name, the one with the most fans, else
+    Deezer's first hit. Deezer ranks empty namesakes above the real one -- three "Drake" profiles with a
+    few hundred fans each sit around the one with twenty-four million, and their charts are empty.
+    """
+    exact = [hit for hit in hits if _same(hit.get("name"), credit)]
+    return max(exact, key=lambda hit: hit.get("nb_fan") or 0) if exact else next(iter(hits), None)
 
 
 def _album_in(hits: list[dict[str, Any]], artist: str, title: str) -> dict[str, Any] | None:
