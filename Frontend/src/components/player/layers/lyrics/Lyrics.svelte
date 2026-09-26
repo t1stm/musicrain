@@ -64,33 +64,37 @@
   data-active and data-sung are the hooks the styling hangs off, and app.css already
   shrinks --cover for #player[data-shape='full'][data-lyrics='on'].
 -->
-<div id="player-lyrics" bind:this={pane} data-type={lyrics.lyrics?.type ?? 'none'}>
-	{#if lyrics.status === 'loading'}
-		<p data-state="loading">Looking for the words…</p>
-	{:else if lyrics.status === 'none'}
-		<p data-state="none">No lyrics for this track.</p>
-	{:else if lyrics.status === 'error'}
-		<!-- "nothing found" and "the service is down" are different facts about the world. -->
-		<p data-state="error">The lyrics service is not answering.</p>
-	{:else if lyrics.lyrics}
-		{#if synced}
-			<ol>
-				{#each lyrics.lyrics.lines as line, index (index)}
-					<li
-						data-index={index}
-						data-active={index === lyrics.activeIndex}
-						data-sung={index < lyrics.activeIndex}
-						data-blank={line.text.trim() === ''}
-					>
-						<button type="button" onclick={() => line.at !== null && seekTo(line.at)}>
-							{line.text}
-						</button>
-					</li>
-				{/each}
-			</ol>
-		{:else}
-			<!-- No ticker, no scrolling and no click targets: there is no clock to click to. -->
-			<p data-state="plain">{lyrics.lyrics.text}</p>
+<!-- Mounted while the listener wants lyrics, so the effect above still asks on a track
+     change; the pane itself only while there are words (or news) to show. -->
+{#if lyrics.shown}
+	<div id="player-lyrics" bind:this={pane} data-type={lyrics.lyrics?.type ?? 'none'}>
+		{#if lyrics.status === 'loading'}
+			<p data-state="loading">Looking for the words…</p>
+		{:else if lyrics.status === 'none'}
+			<p data-state="none">No lyrics for this track.</p>
+		{:else if lyrics.status === 'error'}
+			<!-- "nothing found" and "the service is down" are different facts about the world. -->
+			<p data-state="error">The lyrics service is not answering.</p>
+		{:else if lyrics.lyrics}
+			{#if synced}
+				<ol>
+					{#each lyrics.lyrics.lines as line, index (index)}
+						<li
+							data-index={index}
+							data-active={index === lyrics.activeIndex}
+							data-sung={index < lyrics.activeIndex}
+							data-blank={line.text.trim() === ''}
+						>
+							<button type="button" onclick={() => line.at !== null && seekTo(line.at)}>
+								{line.text}
+							</button>
+						</li>
+					{/each}
+				</ol>
+			{:else}
+				<!-- No ticker, no scrolling and no click targets: there is no clock to click to. -->
+				<p data-state="plain">{lyrics.lyrics.text}</p>
+			{/if}
 		{/if}
-	{/if}
-</div>
+	</div>
+{/if}

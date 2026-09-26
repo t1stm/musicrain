@@ -144,7 +144,7 @@
 	{@attach gestures}
 	data-shape={full ? 'full' : 'bar'}
 	data-rise={rise || undefined}
-	data-lyrics={lyrics.open ? 'on' : 'off'}
+	data-lyrics={lyrics.shown ? 'on' : 'off'}
 	data-dock={dock ?? 'none'}
 	data-hold={holdState}
 	class="static z-10 mx-2 mb-2 flex w-auto shrink-0 flex-col items-center gap-2 rounded-panel border border-haze bg-surface-100/85 px-3 py-2 backdrop-blur-xl sm:absolute sm:inset-x-0 sm:bottom-4 sm:mx-auto sm:mb-0 sm:min-h-[53px] sm:w-[min(100%-2rem,80rem)] sm:flex-row sm:justify-between sm:gap-0 sm:px-4 sm:py-1"
@@ -166,16 +166,14 @@
 			<!-- Shuffle only in the full shape: the bar has no room for it, and the queue
 			     sheet — one tap away in either shape — carries the same button. -->
 			<!-- Lyrics only in the full shape, like shuffle beside it: the bar has no room,
-			     and reading words is what the full shape is for. Disabled rather than hidden
-			     when there are none — a button that vanishes per track is worse than one
-			     that greys out. -->
+			     and reading words is what the full shape is for. Pressed while the listener
+			     wants lyrics, including over a track that has none and so shows no pane. -->
 			{#if full}
 				<button
 					type="button"
 					aria-label={lyrics.open ? 'Hide the lyrics' : 'Show the lyrics'}
 					aria-pressed={lyrics.open}
-					disabled={lyrics.status === 'none'}
-					class="flex size-11 items-center justify-center rounded-art text-fog hover:text-chalk focus-visible:outline-2 focus-visible:outline-primary-200 disabled:opacity-40 disabled:hover:text-fog sm:size-7"
+					class="flex size-11 items-center justify-center rounded-art text-fog hover:text-chalk focus-visible:outline-2 focus-visible:outline-primary-200 sm:size-7"
 					class:bg-surface-200={lyrics.open}
 					class:text-chalk={lyrics.open}
 					onclick={() => (lyrics.open = !lyrics.open)}

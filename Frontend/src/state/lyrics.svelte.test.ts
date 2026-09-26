@@ -163,6 +163,38 @@ describe('open', () => {
 	});
 });
 
+describe('shown', () => {
+	it('puts the pane away for a track without words and brings it back for one with them', async () => {
+		lyrics.open = true;
+		lyrics.load(answering(204, null));
+		await flush();
+
+		expect(lyrics.open).toBe(true);
+		expect(lyrics.shown).toBe(false);
+
+		// no flash while the next track is asked about
+		current.id = `audio://${++track}`;
+		lyrics.load(answering(200, body, 20));
+		expect(lyrics.shown).toBe(false);
+
+		await new Promise((resolve) => setTimeout(resolve, 40));
+		expect(lyrics.shown).toBe(true);
+	});
+
+	it('still toggles over a track without words, and a press on shows its "none"', async () => {
+		lyrics.open = true;
+		lyrics.load(answering(204, null));
+		await flush();
+
+		lyrics.open = false;
+		expect(lyrics.shown).toBe(false);
+
+		lyrics.open = true;
+		expect(lyrics.shown).toBe(true);
+		expect(lyrics.status).toBe('none');
+	});
+});
+
 describe('AudioApiError', () => {
 	it('is what the request module throws, so the state can tell it apart', () => {
 		expect(new AudioApiError('boom', 500)).toBeInstanceOf(Error);

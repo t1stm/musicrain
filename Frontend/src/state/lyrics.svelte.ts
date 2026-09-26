@@ -16,6 +16,10 @@ class LyricsState {
 	/** Whether the listener wants the pane. Remembered on this device. */
 	#open = $state(stored());
 
+	/** The last answer was that the track has no words. Kept through the next load, so the
+	 *  pane neither flashes in for another track without words nor out between two with them. */
+	#wordless = $state(false);
+
 	/** Bumped on every load. The answer for the previous track is dropped rather than
 	 *  rendered over the current one — skipping tracks quickly is exactly how someone
 	 *  ends up watching the wrong song's words, and this class exists to make that
@@ -31,8 +35,17 @@ class LyricsState {
 	set open(value: boolean) {
 		this.#open = value;
 		remember(value);
-		if (value) this.load();
-		else this.#cancel();
+		if (value) {
+			// a press on the button is a question, so it gets the answer even when it is "none"
+			this.#wordless = false;
+			this.load();
+		} else this.#cancel();
+	}
+
+	/** Whether the pane is on screen: wanted, and not for a track known to have no words.
+	 *  The wish outlives such a track, so the next one with words opens the pane again. */
+	get shown() {
+		return this.#open && !this.#wordless;
 	}
 
 	/** Fetches the current track's words, unless they are already the ones we have. */
@@ -68,6 +81,7 @@ class LyricsState {
 				this.#loadedId = id;
 				this.lyrics = found;
 				this.status = found ? 'ready' : 'none';
+				this.#wordless = !found;
 			})
 			.catch((error) => {
 				if (generation !== this.#generation) return;
@@ -78,6 +92,7 @@ class LyricsState {
 				this.#loadedId = '';
 				this.lyrics = null;
 				this.status = 'error';
+				this.#wordless = false;
 			});
 	}
 
