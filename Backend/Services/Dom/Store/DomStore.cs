@@ -469,8 +469,6 @@ public sealed class DomStore
             return ("invalid_request", "A playlist name is between 1 and 80 characters.");
         if (trimmed.Any(char.IsControl))
             return ("invalid_request", "A playlist name cannot contain control characters.");
-        if (tracks is { Count: > 1000 })
-            return ("invalid_request", "A playlist holds at most 1000 tracks.");
         if (tracks is not null && tracks.Any(t => string.IsNullOrWhiteSpace(t.Id) || string.IsNullOrWhiteSpace(t.Name)))
             return ("invalid_request", "Every track needs an id and a name.");
 

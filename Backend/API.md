@@ -264,10 +264,10 @@ should cache-bust with the playlist's `updatedUtc`. A private playlist's cover i
 playlist: no cover, no playlist, and one you may not see are all `404`. Deleting a playlist deletes
 its cover.
 
-A name is 1–80 characters. A playlist holds at most 1000 tracks, and every track needs an `id` and a
-`name`; `duration` is a `hh:mm:ss` `TimeSpan` string like everywhere else in this API, and anything
-unparseable is stored as zero. Bad input answers `400 invalid_request` with a message that says
-which rule; a missing or dead token answers `401 unauthorized`.
+A name is 1–80 characters. Every track needs an `id` and a `name`; `duration` is a `hh:mm:ss`
+`TimeSpan` string like everywhere else in this API, and anything unparseable is stored as zero. Bad
+input answers `400 invalid_request` with a message that says which rule; a missing or dead token
+answers `401 unauthorized`.
 
 ## Audio downloads and CORS
 
