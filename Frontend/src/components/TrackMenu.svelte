@@ -79,6 +79,11 @@
 		open = false;
 	}
 
+	// ponytail: "Download raw" and "Copy id" are hidden, not gone — taken out of the menu for
+	// now, until a settings page exists where they can be turned back on. This is the switch
+	// until then; it becomes that setting.
+	const toolActions = false;
+
 	let copied = $state(false);
 	let settle: ReturnType<typeof setTimeout>;
 
@@ -376,17 +381,20 @@
 			<Icon src={ArrowsRightLeft} mini {size} class="shrink-0 text-fog" /> Replace…
 		</button>
 	{/if}
-	<!-- room queue items carry no contentUrl; hide the action rather than
-	     linking nowhere -->
-	{#if result.contentUrl}
-		<a href={result.contentUrl} download class={item} onclick={close}>
-			<Icon src={ArrowDownTray} mini {size} class="shrink-0 text-fog" /> Download raw
-		</a>
+	<!-- off until the settings page can turn them on: see `toolActions` -->
+	{#if toolActions}
+		<!-- room queue items carry no contentUrl; hide the action rather than
+		     linking nowhere -->
+		{#if result.contentUrl}
+			<a href={result.contentUrl} download class={item} onclick={close}>
+				<Icon src={ArrowDownTray} mini {size} class="shrink-0 text-fog" /> Download raw
+			</a>
+		{/if}
+		<button type="button" class={item} onclick={copyId}>
+			<Icon src={copied ? Check : ClipboardDocument} mini {size} class="shrink-0 text-fog" />
+			{copied ? 'Copied' : 'Copy id'}
+		</button>
 	{/if}
-	<button type="button" class={item} onclick={copyId}>
-		<Icon src={copied ? Check : ClipboardDocument} mini {size} class="shrink-0 text-fog" />
-		{copied ? 'Copied' : 'Copy id'}
-	</button>
 	<a href={artistUrl} class={item}>
 		<Icon src={User} mini {size} class="shrink-0 text-fog" /> Go to artist
 	</a>
