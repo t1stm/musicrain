@@ -291,7 +291,7 @@
 	<dialog
 		{@attach lift}
 		aria-label={result.name}
-		class="m-0 size-full max-h-none max-w-none select-none overflow-y-auto overscroll-contain bg-transparent p-0 text-chalk backdrop:bg-transparent"
+		class="m-0 size-full max-h-none max-w-none select-none overflow-y-auto overscroll-contain bg-transparent p-[env(safe-area-inset-top)_env(safe-area-inset-right)_env(safe-area-inset-bottom)_env(safe-area-inset-left)] text-chalk backdrop:bg-transparent"
 		oncancel={(event) => {
 			event.preventDefault();
 			close();
@@ -302,7 +302,8 @@
 	>
 		<!-- the way out a tap expects; back and Escape work too. Named, like everything else
 		     drawn in the lift: Firefox leaves the top layer out of a step's snapshot of the
-		     page, and the shade went with it until the step was over. -->
+		     page, and the shade went with it until the step was over. Fixed, so it still
+		     covers the notch and the gesture bar the dialog's padding keeps the lift out of. -->
 		<div
 			class="fixed inset-0 bg-dark-0/75"
 			style:view-transition-name={open ? 'track-menu-shade' : undefined}

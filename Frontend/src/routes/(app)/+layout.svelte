@@ -79,7 +79,7 @@
 	});
 </script>
 
-<div class="relative flex h-svh w-full flex-col overflow-hidden">
+<div class="relative flex h-full w-full flex-col overflow-hidden">
 	<!-- micro hides the page rather than unmounting it: the route component owns
 	     the room's connect effect, so tearing it down would drop the listener out
 	     of the room the player is still playing. -->

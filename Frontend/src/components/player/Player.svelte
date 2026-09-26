@@ -25,6 +25,19 @@
 	let full = $state(false);
 	closeOnBack(() => full, collapse);
 
+	// The full shape's ground runs under the status bar (app.css) — except in an app
+	// installed on Android, which Chrome still keeps below it. There the bar takes the
+	// ground's colour instead, so the screen still reads as one surface.
+	// ponytail: a flat --color-dark-0, not the cover's tint under the veil. Drop this
+	// once Chrome lets an installed app under the bar.
+	$effect(() => {
+		if (!full) return;
+		const bar = document.querySelector('meta[name="theme-color"]');
+		const page = bar?.getAttribute('content');
+		bar?.setAttribute('content', '#06060d');
+		return () => page && bar?.setAttribute('content', page);
+	});
+
 	const phone = () => !window.matchMedia('(min-width: 640px)').matches;
 
 	// One shape becomes the other while the browser morphs between them (app.css): the
