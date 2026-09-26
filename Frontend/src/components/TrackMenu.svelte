@@ -225,7 +225,12 @@
 					);
 			}
 
+			// Out of the body with it, whatever took the menu away. Closing it plays the way home
+			// and then removes it, but a menu gone with its page — a link followed from inside
+			// it — is removed from where it was written, which the dialog left: it would stay
+			// open over the next page, its shade answering to a menu that no longer exists.
 			return () => {
+				dialog.remove();
 				if (source) source.style.visibility = '';
 				before?.focus({ preventScroll: true });
 			};
@@ -395,7 +400,8 @@
 			{copied ? 'Copied' : 'Copy ID'}
 		</button>
 	{/if}
-	<a href={artistUrl} class={item}>
+	<!-- closes as it goes: from one artist's page to another the row, and so the menu, stays -->
+	<a href={artistUrl} class={item} onclick={close}>
 		<Icon src={User} mini {size} class="shrink-0 text-fog" /> Go to Artist
 	</a>
 {/snippet}
