@@ -21,6 +21,7 @@
 	import { closeOnBack } from '$lib/backWatcher.svelte';
 	import { dismiss } from '$lib/dismiss';
 	import PlaylistCover from '$components/playlist/PlaylistCover.svelte';
+	import ReplacePicker from '$components/playlist/ReplacePicker.svelte';
 	import type { PlaylistSummary } from '$requests/playlists';
 	import account from '$states/account.svelte';
 	import playlists, { toSnapshot } from '$states/playlists.svelte';
@@ -29,7 +30,8 @@
 
 	// A track's menu. Bindable so a swipe on a row or a held press on a card can open it
 	// without the "…". `trigger={false}` leaves the "…" out for a caller that opens it itself.
-	// `replace`, when given, is one more action: the menu closes and the caller takes over.
+	// `replace`, when given, is one more action: a search under the lifted track, and the
+	// pick handed to the caller.
 	//
 	// Wider than a phone it drops from the "…". On a phone, and anywhere without a "…" to
 	// drop from, it lifts the track out instead: a copy of the `data-preview` around the menu
@@ -45,13 +47,15 @@
 		result: SearchResult;
 		open?: boolean;
 		trigger?: boolean;
-		replace?: () => void;
+		replace?: (result: SearchResult) => void;
 		class?: string;
 	} = $props();
 
 	const phone = new MediaQuery('width < 40rem');
 	const still = new MediaQuery('prefers-reduced-motion: reduce');
-	let lifted = $derived(open && (phone.current || !trigger));
+	// Replacing lifts on any screen: a search and its answers need more room than a dropdown.
+	let replacing = $state(false);
+	let lifted = $derived(open && (phone.current || !trigger || replacing));
 
 	// The menu has room for one artist, so it takes the first of a joined credit — the rest are
 	// each their own link on the row itself.
@@ -100,6 +104,7 @@
 		if (open) return;
 		picking = false;
 		naming = false;
+		replacing = false;
 	});
 
 	function pick() {
@@ -240,7 +245,8 @@
 
 <!-- Escape and Android's back ask the dialog to close before they reach the back stack, so
      the dialog says yes through `open` rather than closing itself under the lift's motion.
-     A long press that opened it may still be down; it selects nothing and opens no menu. -->
+     A long press that opened it may still be down; it selects nothing and opens no menu —
+     except in a field, which needs its menu to paste. -->
 {#if lifted}
 	<dialog
 		{@attach lift}
@@ -250,7 +256,9 @@
 			event.preventDefault();
 			close();
 		}}
-		oncontextmenu={(event) => event.preventDefault()}
+		oncontextmenu={(event) => {
+			if (!(event.target as Element).closest('input')) event.preventDefault();
+		}}
 	>
 		<!-- the way out a tap expects; back and Escape work too -->
 		<div
@@ -288,6 +296,18 @@
 {#snippet actions(item: string, size: string, list: string)}
 	{#if picking}
 		{@render playlistPicker(item, size, list)}
+	{:else if replacing && replace}
+		<ReplacePicker
+			track={result}
+			{item}
+			{size}
+			{list}
+			back={() => (replacing = false)}
+			pick={(chosen) => {
+				open = false;
+				replace(chosen);
+			}}
+		/>
 	{:else}
 		{@render trackActions(item, size)}
 	{/if}
@@ -305,14 +325,7 @@
 		</button>
 	{/if}
 	{#if replace}
-		<button
-			type="button"
-			class={item}
-			onclick={() => {
-				open = false;
-				replace();
-			}}
-		>
+		<button type="button" class={item} onclick={() => (replacing = true)}>
 			<Icon src={ArrowsRightLeft} mini {size} class="shrink-0 text-fog" /> Replace…
 		</button>
 	{/if}
