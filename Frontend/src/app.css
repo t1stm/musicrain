@@ -825,6 +825,47 @@ html {
 	}
 }
 
+/* A track menu stepping between its actions and a list of their own (`step` in
+   TrackMenu.svelte). The frame is an empty box, so it can stretch to the new list's
+   size; the rows are not, so they keep theirs and are pushed along inside it instead,
+   one set out as the other comes in — from the right going deeper, from the left coming
+   back, the way a menu drills in on a phone. The lifted track rides along
+   when the lift re-centres around a taller or shorter list. */
+::view-transition-group(track-menu),
+::view-transition-group(track-menu-rows),
+::view-transition-group(track-menu-lift) {
+	animation-duration: 280ms;
+	animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+::view-transition-group(track-menu-rows) {
+	overflow: clip;
+}
+::view-transition-old(track-menu-rows),
+::view-transition-new(track-menu-rows) {
+	height: 100%;
+	object-fit: none;
+	object-position: left top;
+}
+::view-transition-old(track-menu-rows) {
+	animation: menu-rows-out 280ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+::view-transition-new(track-menu-rows) {
+	animation: menu-rows-in 280ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+:root[data-menu-step='out'] {
+	--menu-step: -1;
+}
+@keyframes menu-rows-out {
+	to {
+		translate: calc(var(--menu-step, 1) * -100%) 0;
+	}
+}
+@keyframes menu-rows-in {
+	from {
+		translate: calc(var(--menu-step, 1) * 100%) 0;
+	}
+}
+
 /* The full shape growing out of the bar over the sheet (`expand` in Player.svelte) is
    the rise, from the bar's edge: it comes up whole and solid, over the sheet on its way
    down. The morph's own way would fade it in, so the page shows through it, and draw it

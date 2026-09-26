@@ -12,7 +12,7 @@
 		QueueList,
 		User
 	} from 'svelte-hero-icons';
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
 	import { MediaQuery } from 'svelte/reactivity';
 	import { fade, scale } from 'svelte/transition';
@@ -53,9 +53,11 @@
 
 	const phone = new MediaQuery('width < 40rem');
 	const still = new MediaQuery('prefers-reduced-motion: reduce');
-	// Replacing lifts on any screen: a search and its answers need more room than a dropdown.
+	// Where the menu drops from the "…" rather than lifting the track. Replacing lifts on any
+	// screen: a search and its answers need more room than a dropdown.
+	let dropdown = $derived(trigger && !phone.current);
 	let replacing = $state(false);
-	let lifted = $derived(open && (phone.current || !trigger || replacing));
+	let lifted = $derived(open && (!dropdown || replacing));
 
 	// The menu has room for one artist, so it takes the first of a joined credit — the rest are
 	// each their own link on the row itself.
@@ -107,8 +109,30 @@
 		replacing = false;
 	});
 
+	/**
+	 * Steps between the actions and a list of their own — your playlists, or a replacement.
+	 * The frame grows or shrinks to the new list while the rows slide the way the step goes:
+	 * in from the right going deeper, back from the left coming out (app.css). The same
+	 * morph as the player's; without view transitions, or with motion reduced, a plain swap.
+	 */
+	function step(forward: boolean, update: () => void) {
+		if (still.current || !document.startViewTransition) return update();
+		const root = document.documentElement;
+		root.dataset.menuStep = forward ? 'in' : 'out';
+		document
+			.startViewTransition(async () => {
+				update();
+				await tick();
+			})
+			.finished.finally(() => delete root.dataset.menuStep);
+	}
+
+	// From a dropdown, replacing is a lift, which has its own motion; in a lift it is a step.
+	const replaceStep = (forward: boolean) =>
+		dropdown ? (replacing = forward) : step(forward, () => (replacing = forward));
+
 	function pick() {
-		picking = true;
+		step(true, () => (picking = true));
 		// fresh counts, and the first load on a page that never listed them
 		playlists.loadMine();
 	}
@@ -229,9 +253,10 @@
 		</summary>
 		{#if !lifted}
 			<div
-				class="absolute right-0 z-20 mt-1 grid gap-0.5 rounded-panel border border-haze bg-surface-100 p-1 text-left text-xs {picking
+				class="absolute right-0 z-20 mt-1 grid rounded-panel border border-haze bg-surface-100 p-1 text-left text-xs {picking
 					? 'w-60'
 					: 'w-44'}"
+				style:view-transition-name={open ? 'track-menu' : undefined}
 			>
 				{@render actions(
 					'flex min-h-10 w-full items-center gap-2 rounded-art px-2 text-left hover:bg-surface-200',
@@ -270,14 +295,18 @@
 		<!-- Taps anywhere but the actions fall through to the shade, the copy included. -->
 		<div class="pointer-events-none relative flex min-h-full items-center justify-center p-2">
 			<div class="grid w-fit max-w-full justify-items-center gap-2.5">
+				<!-- named, so a step that re-centres the lift carries the track rather than
+				     fading it from one place to the other -->
 				<div
 					data-lift
 					class="max-w-full rounded-panel border border-haze bg-surface-100 p-1.5 [&>*]:max-w-full"
+					style:view-transition-name={open ? 'track-menu-lift' : undefined}
 					out:home
 				></div>
 				<!-- 52px a row and a rule between each: a thumb aimed at one lands on one -->
 				<div
-					class="pointer-events-auto grid w-full min-w-64 origin-top divide-y divide-haze overflow-hidden rounded-panel border border-haze bg-surface-100 text-base"
+					class="pointer-events-auto grid w-full min-w-64 origin-top overflow-hidden rounded-panel border border-haze bg-surface-100 text-base"
+					style:view-transition-name={open ? 'track-menu' : undefined}
 					in:scale={{ start: still.current ? 1 : 0.92, duration: 260, delay: 90, easing: cubicOut }}
 					out:fade={{ duration: 120 }}
 				>
@@ -292,8 +321,15 @@
 	</dialog>
 {/if}
 
-<!-- One list, two sizes. Play next wears the primary colour of its own swipe key. -->
+<!-- One list, two sizes. Play next wears the primary colour of its own swipe key. The rows
+     are a box of their own, apart from the frame, so a step can slide them inside it. -->
 {#snippet actions(item: string, size: string, list: string)}
+	<div class="grid {list}" style:view-transition-name={open ? 'track-menu-rows' : undefined}>
+		{@render view(item, size, list)}
+	</div>
+{/snippet}
+
+{#snippet view(item: string, size: string, list: string)}
 	{#if picking}
 		{@render playlistPicker(item, size, list)}
 	{:else if replacing && replace}
@@ -302,7 +338,7 @@
 			{item}
 			{size}
 			{list}
-			back={() => (replacing = false)}
+			back={() => replaceStep(false)}
 			pick={(chosen) => {
 				open = false;
 				replace(chosen);
@@ -325,7 +361,7 @@
 		</button>
 	{/if}
 	{#if replace}
-		<button type="button" class={item} onclick={() => (replacing = true)}>
+		<button type="button" class={item} onclick={() => replaceStep(true)}>
 			<Icon src={ArrowsRightLeft} mini {size} class="shrink-0 text-fog" /> Replace…
 		</button>
 	{/if}
@@ -347,7 +383,12 @@
 
 <!-- Every row leads with a sleeve, the new one an empty dashed one, so the names line up. -->
 {#snippet playlistPicker(item: string, size: string, list: string)}
-	<button type="button" class={item} onclick={() => (picking = false)} {@attach focus}>
+	<button
+		type="button"
+		class={item}
+		onclick={() => step(false, () => (picking = false))}
+		{@attach focus}
+	>
 		<Icon src={ChevronLeft} mini {size} class="shrink-0 text-fog" /> Add to playlist
 	</button>
 	<!-- scrolls on its own, so a long list keeps the way back where it was; the names truncate
