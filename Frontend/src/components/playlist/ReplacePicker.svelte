@@ -88,9 +88,12 @@
 	</button>
 </form>
 
-<!-- scrolls on its own; the names truncate to the box rather than widen it past the track -->
+<!-- scrolls on its own; the names truncate to the box rather than widen it past the track.
+     A fixed height, not a cap: the answers stream in while the step into this view is still
+     running, and a box that grew under it would be squeezed into its first size — and
+     after it, the lift would re-centre with every answer. -->
 <div
-	class="grid max-h-[min(20rem,45dvh)] grid-cols-1 overflow-y-auto overscroll-contain contain-inline-size {list}"
+	class="grid h-[min(20rem,45dvh)] grid-cols-1 content-start overflow-y-auto overscroll-contain contain-inline-size {list}"
 	aria-busy={searching}
 >
 	{#each results as result (result.id)}

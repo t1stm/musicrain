@@ -109,6 +109,13 @@
 		replacing = false;
 	});
 
+	// Your playlists, fetched as the menu opens rather than when "Add to playlist" is pressed:
+	// a step captures the list at the size it has then, and a list that arrives under a running
+	// step is squeezed into that size until the step ends. Once per page — `pick` refreshes.
+	$effect(() => {
+		if (open && account.token && untrack(() => playlists.mine.length === 0)) playlists.loadMine();
+	});
+
 	/**
 	 * Steps between the actions and a list of their own — your playlists, or a replacement.
 	 * The frame grows or shrinks to the new list while the rows slide the way the step goes:
@@ -131,10 +138,11 @@
 	const replaceStep = (forward: boolean) =>
 		dropdown ? (replacing = forward) : step(forward, () => (replacing = forward));
 
-	function pick() {
+	async function pick() {
+		// fresh counts; and a first load still on its way is waited for, for the reason above
+		const loaded = playlists.loadMine();
+		if (playlists.mine.length === 0) await loaded;
 		step(true, () => (picking = true));
-		// fresh counts, and the first load on a page that never listed them
-		playlists.loadMine();
 	}
 
 	// the same exit as a copy: the answer stays long enough to read, then the menu goes
