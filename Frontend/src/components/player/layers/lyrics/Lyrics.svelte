@@ -9,7 +9,7 @@
 	// changes under it, which are exactly the two moments the words should be asked for.
 	$effect(() => {
 		// read so the effect re-runs on a track change
-		current.id;
+		void current.id;
 		lyrics.load();
 	});
 
