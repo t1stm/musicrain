@@ -87,15 +87,20 @@
 	// The record is the handle, the way it is in every phone's own player: flick it
 	// sideways to change track, up to open it out, down to put it away. A tap on the
 	// sleeve or the title opens it too — the chevron is a small target for the
-	// thing a phone wants most. The controls keep their presses to themselves.
+	// thing a phone wants most. A press on a button or a link is the gesture's until
+	// the finger stays put: within `swipe`'s slop it is that control's tap, past it
+	// a swipe that swallows the click. Only what drags or scrolls on its own keeps
+	// its presses — the seek bar, the lyrics, and the format menu over the bar.
 	const gestures = swipe({
-		ignore: 'a, button, input, [role=slider], #player-docks, #player-lyrics',
+		ignore: 'input, [role=slider], #player-quality > div, #player-lyrics',
 		left: () => queue.nextTrack(),
 		right: () => queue.previousTrack(),
 		up: expand,
 		down: collapse,
 		tap: (event) => {
-			if ((event.target as Element).closest('#track-info')) expand();
+			const target = event.target as Element;
+			// a tap on the artist or the album is the link's, which opens its page
+			if (target.closest('#track-info') && !target.closest('a')) expand();
 		}
 	});
 

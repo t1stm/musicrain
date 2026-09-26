@@ -787,6 +787,11 @@ html {
 #player[data-swiping] #track-info img {
 	transition: none;
 }
+/* a swipe that began on a button is not a press on it, so the button stops looking held */
+#player[data-swiping] :is(button, a):active {
+	transform: none;
+	filter: none;
+}
 
 /* Let go past the point of no return and the full shape folds into the bar from
    where the finger left it (`collapse` in Player.svelte): one box morphs into the
