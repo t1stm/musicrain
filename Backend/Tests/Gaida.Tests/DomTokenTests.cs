@@ -46,5 +46,13 @@ public class DomTokenTests : IDisposable
         Assert.Null(store.ExpiryOf(token.Value));
     }
 
+    [Fact]
+    public void ATokenSurvivesARestart()
+    {
+        var (token, _, _, _) = Store().Register("radost", "correct horse battery");
+
+        Assert.Equal("radost", Store().Resolve(token!.Value)?.Username);
+    }
+
     private DomStore Store() => new(Path.Combine(_directory, "dom.json"), Logger.None);
 }

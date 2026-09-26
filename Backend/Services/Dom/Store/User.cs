@@ -17,7 +17,11 @@ public sealed class User
     public required int Iterations { get; set; }
 
     public DateTimeOffset CreatedUtc { get; init; }
-    public List<Token> Tokens { get; } = [];
+    /// <summary>
+    ///     <c>init</c>, not get-only: System.Text.Json skips a property it cannot set, so a get-only list
+    ///     was written to the file and never read back — every restart signed everybody out.
+    /// </summary>
+    public List<Token> Tokens { get; init; } = [];
 
     /// <summary>Two accounts may not differ only by case. Derived, so it is not written to the file.</summary>
     [JsonIgnore]
