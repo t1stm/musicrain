@@ -1,4 +1,5 @@
 import type { Attachment } from 'svelte/attachments';
+import { haptic } from './haptics';
 
 /**
  * Where a dragged row lands, as a position in the list: past the middle of a row is past the
@@ -51,6 +52,8 @@ export const reorder =
 				if (event.pointerId !== down.pointerId) return;
 				const dy = event.clientY - down.clientY;
 				if (!dragged && Math.abs(dy) < 6) return;
+				// felt as it comes up, and at every place it is carried to below
+				if (!dragged) haptic();
 				dragged = true;
 				row.dataset.dragging = '';
 				row.style.translate = `0 ${dy}px`;
@@ -60,7 +63,9 @@ export const reorder =
 					const box = each.getBoundingClientRect();
 					return box.top + box.height / 2;
 				});
+				const was = to;
 				to = landing(from, event.clientY, mids);
+				if (to !== was) haptic();
 				if (marked) delete marked.dataset.drop;
 				marked = to === from ? undefined : rows[to];
 				if (marked) marked.dataset.drop = to > from ? 'after' : 'before';

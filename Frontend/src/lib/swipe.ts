@@ -1,10 +1,14 @@
 import { tick } from 'svelte';
 import type { Attachment } from 'svelte/attachments';
+import { haptic } from './haptics';
 
 export type Direction = 'up' | 'down' | 'left' | 'right';
 
 /** Movement under this is a press that wobbled, not a gesture. */
 const SLOP = 10;
+
+/** A drag this long lands at any speed. */
+const REACH = 72;
 
 /**
  * What a finished drag meant: far enough, or short but fast enough to be a flick. Anything
@@ -17,7 +21,7 @@ const SLOP = 10;
 export function settle(dx: number, dy: number, ms: number): Direction | null {
 	const distance = Math.max(Math.abs(dx), Math.abs(dy));
 	const flick = distance > 24 && distance / Math.max(ms, 1) > 0.5;
-	if (distance < 72 && !flick) return null;
+	if (distance < REACH && !flick) return null;
 	if (Math.abs(dx) > Math.abs(dy)) return dx < 0 ? 'left' : 'right';
 	return dy < 0 ? 'up' : 'down';
 }
@@ -66,6 +70,9 @@ type Swipe = Partial<Record<Direction, () => unknown>> & {
 	/** The live offset, for what CSS cannot work out from it alone. (0, 0) once it lets go,
 	 *  after the direction's handler has run. */
 	drag?: (dx: number, dy: number) => void;
+	/** Off for a surface that ticks for itself (see `haptic`). On, a drag ticks as it
+	 *  reaches the length that lands at any speed, and again if it is taken back. */
+	haptic?: boolean;
 };
 
 /**
@@ -100,6 +107,7 @@ export const swipe =
 			let moved = false;
 			let dx = 0;
 			let dy = 0;
+			let landing = false;
 
 			const move = (event: PointerEvent) => {
 				if (event.pointerId !== down.pointerId) return;
@@ -118,6 +126,13 @@ export const swipe =
 				node.style.setProperty('--swipe-x', `${dx}px`);
 				node.style.setProperty('--swipe-y', `${dy}px`);
 				handlers.drag?.(dx, dy);
+
+				// only toward a direction that does something: a swipe down on a sheet that
+				// only goes down is a line crossed; a swipe up on it is not
+				const toward: Direction = axis === 'x' ? (dx < 0 ? 'left' : 'right') : dy < 0 ? 'up' : 'down';
+				const lands = Math.abs(dx + dy) >= REACH && !!handlers[toward];
+				if (lands !== landing && handlers.haptic !== false) haptic();
+				landing = lands;
 			};
 
 			const end = async (event: PointerEvent) => {

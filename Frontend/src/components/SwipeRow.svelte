@@ -20,6 +20,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { Check, Icon } from 'svelte-hero-icons';
+	import { haptic } from '$lib/haptics';
 	import { stepAt, swipe } from '$lib/swipe';
 
 	// A row a finger can slide, the way a mail app's full swipe works: carried past a
@@ -57,10 +58,15 @@
 		// a new drag cuts the answer short but keeps the action; the (0, 0) that ends the
 		// drag that fired it must not
 		if (done && dx !== 0) finish();
+		const was = reached;
 		toward = dx > 0 ? 'right' : 'left';
 		// a fifth of the row, but never under the 72px `swipe` needs to call it a swipe at
 		// all — a full key that fires nothing on release would be a lie
 		pull = Math.min(Math.abs(dx) / Math.max(row.offsetWidth / 5, 72), stepsOf(toward).length);
+		// Every step reached, or given back, is felt as the finger crosses it — a key changing
+		// colour is easy to miss under the thumb covering it. Not on the (0, 0) of letting go:
+		// that is the step firing, not the finger crossing one.
+		if (dx !== 0 && reached !== was) haptic();
 	}
 
 	function fire(side: Side) {
@@ -90,6 +96,8 @@
 		// A row's menu (TrackMenu's <details>) drops over the rows below it, but in the DOM
 		// it is still inside the row: without this every press on it drags the row.
 		ignore: ignore ? `${ignore}, details` : 'details',
+		// the steps tick for themselves, at their own widths
+		haptic: false,
 		drag,
 		right: () => fire('right'),
 		left: () => fire('left')

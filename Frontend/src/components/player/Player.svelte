@@ -95,8 +95,15 @@
 		ignore: 'input, [role=slider], #player-quality > div, #player-lyrics',
 		left: () => queue.nextTrack(),
 		right: () => queue.previousTrack(),
-		up: expand,
-		down: collapse,
+		// Read as the drag goes, so a way the player cannot go is not offered: it neither
+		// lands nor ticks (see `haptic`) — up with nothing to open, or already open; down
+		// with nothing to fold.
+		get up() {
+			return full || !current.name ? undefined : expand;
+		},
+		get down() {
+			return full ? collapse : undefined;
+		},
 		tap: (event) => {
 			const target = event.target as Element;
 			// a tap on the artist or the album is the link's, which opens its page

@@ -1,4 +1,5 @@
 import type { Attachment } from 'svelte/attachments';
+import { haptic } from './haptics';
 
 /**
  * Enter and Space for a `role="button"` row, the way a real button takes them. A key pressed
@@ -28,8 +29,11 @@ export const hold =
 		let y = 0;
 
 		const cancel = () => clearTimeout(timer);
+		// Once a press: Android can ask with a `contextmenu` after the timer has answered.
 		const fire = () => {
+			if (held) return;
 			held = true;
+			haptic();
 			then();
 		};
 		const down = (event: PointerEvent) => {
