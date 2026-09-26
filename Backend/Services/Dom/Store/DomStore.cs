@@ -279,6 +279,35 @@ public sealed class DomStore
         }
     }
 
+    /// <summary>
+    ///     Puts one track at the end of a playlist the caller owns, unless it is already in it —
+    ///     <c>added</c> says which. Read and written under one lock, so an add from a track's menu
+    ///     cannot undo an edit made somewhere else between a read and a <see cref="Update" />.
+    /// </summary>
+    public (Playlist? playlist, bool added, string? error, string? message) Append(
+        User owner, string id, TrackSnapshot? track)
+    {
+        if (track is null || string.IsNullOrWhiteSpace(track.Id) || string.IsNullOrWhiteSpace(track.Name))
+            return (null, false, "invalid_request", "Every track needs an id and a name.");
+
+        var clean = Clean([track])[0];
+
+        lock (_gate)
+        {
+            if (!_playlists.TryGetValue(id, out var playlist) || playlist.OwnerKey != owner.Key)
+                return (null, false, "not_found", "No such playlist.");
+            if (playlist.Tracks.Any(t => t.Id == clean.Id)) return (playlist, false, null, null);
+
+            // a new list, not an Add: a response being written outside the lock may be walking the old one
+            playlist.Tracks = [.. playlist.Tracks, clean];
+            playlist.UpdatedUtc = DateTimeOffset.UtcNow;
+
+            SaveLocked();
+
+            return (playlist, true, null, null);
+        }
+    }
+
     /// <summary>Removes a playlist the caller owns. Returns the cover file to delete, if there was one.</summary>
     public (bool deleted, string? coverFile) Delete(User owner, string id)
     {

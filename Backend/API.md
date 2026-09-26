@@ -219,6 +219,7 @@ GET    /Audio/Playlists/Mine       Authorization: Bearer …            200
 GET    /Audio/Playlists/{id}       Authorization: Bearer … (optional) 200
 POST   /Audio/Playlists            Bearer  {"name":"…","isPublic":false,"tracks":[…]}  201
 PATCH  /Audio/Playlists/{id}       Bearer  {"name":"…"} / {"isPublic":true} / {"tracks":[…]}  200
+POST   /Audio/Playlists/{id}/Tracks Bearer {"id":"…","name":"…","artist":"…",…}      200
 DELETE /Audio/Playlists/{id}       Bearer                             204
 ```
 
@@ -252,6 +253,17 @@ true of one you do not own on `PATCH` and `DELETE`.
 On `PATCH`, a field that is absent is a field left alone; `{"isPublic":true}` changes visibility and
 nothing else. `tracks`, when sent, replaces the list — reordering and removing are both a `PATCH`
 with the list you want.
+
+`POST /Audio/Playlists/{id}/Tracks` puts one track on the end without the client reading the list
+first. The body is one track, in the same shape as an entry in `tracks`. A track whose `id` is
+already in the playlist is not added a second time; `added` says which happened, and `playlist` is
+the summary as it now stands:
+
+```json
+{"added":true,"playlist":{"id":"p_9f31a04c7b2e5d18","name":"Late shift","trackCount":15,…}}
+```
+
+It answers `404` for a playlist you do not own, like `PATCH`.
 
 ### Covers
 

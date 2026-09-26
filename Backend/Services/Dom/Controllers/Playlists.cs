@@ -77,6 +77,26 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
         };
     }
 
+    /// <summary>
+    ///     One track onto the end, for a client that has a track and not the list — a PATCH would
+    ///     have it read the list first and send the whole of it back.
+    /// </summary>
+    [HttpPost("/Audio/Playlists/{id}/Tracks")]
+    public IActionResult Append(string id, [FromBody] TrackSnapshot? track)
+    {
+        var user = store.Resolve(Api.Bearer(Request));
+        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+
+        var (playlist, added, error, message) = store.Append(user, id, track);
+
+        return error switch
+        {
+            null => new JsonResult(new { added, playlist = Summary(playlist!) }),
+            "not_found" => NotFound(),
+            _ => Api.Error(400, error, message!)
+        };
+    }
+
     [HttpDelete("/Audio/Playlists/{id}")]
     public IActionResult Delete(string id)
     {
