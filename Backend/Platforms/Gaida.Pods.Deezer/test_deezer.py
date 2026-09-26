@@ -154,9 +154,17 @@ def test_artist_is_the_namesake_people_mean():
 
     # The busiest exact name wins, wherever Deezer ranked it; a busier inexact one never does.
     assert main._artist_in([empty, other, real], "drake") is real
-    # No exact name: Deezer's first hit. No hits: nothing.
-    assert main._artist_in([other, empty], "Drake Bell") is other
+    assert main._artist_in([hit("Emilie", 900), hit("Emilia", 5)], "Emilia")["name"] == "Emilia"
+    # One wrong letter in five is still her; more than that is somebody else, not a guess.
+    assert main._artist_in([hit("Lidia", 10)], "lidiya")["name"] == "Lidia"
+    assert main._artist_in([other, empty], "Drake Bell") is None
     assert main._artist_in([], "Drake") is None
+
+
+def test_romanises_a_cyrillic_credit():
+    assert "Цветелина Янева".casefold().translate(main._LATIN) == "tsvetelina yaneva"
+    assert "Деси Слава".casefold().translate(main._LATIN) == "desi slava"
+    assert main._distance("kitten", "sitting") == 3
 
 
 def test_duration_is_the_timespan_gaida_parses():

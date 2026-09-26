@@ -54,6 +54,13 @@ ALBUM_TRACK_LIMIT = int(os.environ.get("DEEZER_ALBUM_TRACK_LIMIT") or 200)
 How much of an album to read. A box set is the only thing that comes near this; a record is a dozen.
 """
 
+_LATIN = str.maketrans({
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ж": "zh", "з": "z", "и": "i", "й": "y",
+    "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "h", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sht", "ъ": "a", "ь": "y", "ю": "yu", "я": "ya",
+})
+"""Bulgaria's official romanisation, lowercase only: Deezer's search and :func:`_artist_in` ignore case."""
+
 ARTIST_LIMIT = int(os.environ.get("DEEZER_ARTIST_LIMIT") or 50)
 """
 How many of an artist's top tracks to hand back -- a page of their own on the artist view, so more
@@ -160,14 +167,28 @@ async def artist(term: str | None = None) -> Response:
     if not credit:
         return JSONResponse([])
 
-    found = await _ask(lambda: client.api.search_artist(credit, limit=25), f"artist {credit!r}")
-    chosen = _artist_in((found or {}).get("data") or [], credit)
+    tracks = await _artist_top(credit)
+
+    # Bulgarian artists mostly sit on Deezer under a Latin name ("Деси Слава" is "Desi Slava"), which a
+    # Cyrillic search does not find. Deezer's spellings follow no one system; the window in _artist_in
+    # is what absorbs that, rather than a transliteration tuned name by name.
+    latin = credit.casefold().translate(_LATIN)
+    if not tracks and latin != credit.casefold():
+        tracks = await _artist_top(latin)
+
+    return JSONResponse(tracks)
+
+
+async def _artist_top(name: str) -> list[dict[str, Any]]:
+    """The playable chart of the artist ``name`` means, or nothing when Deezer has no one close enough."""
+    found = await _ask(lambda: client.api.search_artist(name, limit=25), f"artist {name!r}")
+    chosen = _artist_in((found or {}).get("data") or [], name)
     if chosen is None:
-        return JSONResponse([])
+        return []
 
     top = await _ask(lambda: client.api.get_artist_top(chosen["id"], limit=ARTIST_LIMIT),
                      f"artist top {chosen['id']}")
-    return JSONResponse(_mapped((top or {}).get("data") or []))
+    return _mapped((top or {}).get("data") or [])
 
 
 @app.get("/album")
@@ -406,14 +427,31 @@ def _same(name: str | None, wanted: str) -> bool:
     return (name or "").casefold() == wanted.casefold()
 
 
-def _artist_in(hits: list[dict[str, Any]], credit: str) -> dict[str, Any] | None:
+def _artist_in(hits: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
     """
-    The artist a name means: of the hits carrying exactly that name, the one with the most fans, else
-    Deezer's first hit. Deezer ranks empty namesakes above the real one -- three "Drake" profiles with a
-    few hundred fans each sit around the one with twenty-four million, and their charts are empty.
+    The artist a name means: the closest name within one wrong letter in five, and of equally close ones
+    the one with the most fans. Deezer ranks empty namesakes above the real one -- three "Drake" profiles
+    with a few hundred fans each sit around the one with twenty-four million, and their charts are
+    empty. The window is for spelling: romanised, "Лидия" is "lidiya", and Deezer has her as "Lidia".
+    None rather than a guess at somebody else.
     """
-    exact = [hit for hit in hits if _same(hit.get("name"), credit)]
-    return max(exact, key=lambda hit: hit.get("nb_fan") or 0) if exact else next(iter(hits), None)
+    wanted = name.casefold()
+
+    def errors(hit: dict[str, Any]) -> int:
+        return _distance((hit.get("name") or "").casefold(), wanted)
+
+    near = [hit for hit in hits if errors(hit) <= len(wanted) // 5]
+    return min(near, key=lambda hit: (errors(hit), -(hit.get("nb_fan") or 0)), default=None)
+
+
+def _distance(a: str, b: str) -> int:
+    """Levenshtein: how many letters to insert, delete or change to turn one into the other."""
+    row = list(range(len(b) + 1))
+    for i, x in enumerate(a, 1):
+        previous, row[0] = row[0], i
+        for j, y in enumerate(b, 1):
+            previous, row[j] = row[j], min(row[j] + 1, row[j - 1] + 1, previous + (x != y))
+    return row[-1]
 
 
 def _album_in(hits: list[dict[str, Any]], artist: str, title: str) -> dict[str, Any] | None:
