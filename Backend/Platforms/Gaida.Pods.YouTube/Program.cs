@@ -39,16 +39,9 @@ app.MapAdmin(() => new { service = "gaida-youtube" });
 var youTube = new YouTubePlatform(Log.Logger);
 youTube.Initialize();
 
-app.MapGet("/classify", async (string? query, CancellationToken ct) =>
+app.MapGet("/classify", (string? query) =>
 {
     var result = Classify.Parse(query);
-
-    // A word that happens to be 11 characters long is a keyword search unless YouTube really has a video
-    // by that ID. ponytail: a real bare ID is looked up twice (here, then /resolve); cache it if that shows.
-    if (result.Status == 200 && Classify.IsBareVideoId(query) &&
-        await youTube.GetByIdAsync(query!.Trim(), ct) is null)
-        return Results.NotFound();
-
     return result.Status switch
     {
         200 => Results.Ok(new ClassifyDto(result.Kind, result.Id, null)),

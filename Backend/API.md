@@ -49,13 +49,13 @@ Two consequences for clients that do read it incrementally:
 | Input | `kind` | Response fields |
 | --- | --- | --- |
 | `audio://...` | `local` | `query` is the canonical local ID; `result` is one discovery result |
-| YouTube video URL, `yt://...`, or 11-character video ID (only when YouTube has that video; otherwise the word is ordinary text) | `youtubeVideo` | `query` is canonical `yt://...`; `result` is one discovery result |
-| YouTube playlist URL, `yt-playlist://...`, or recognised playlist ID | `youtubePlaylist` | `query` is a canonical playlist URL; `playlistId`. No entries — send `query` to `Search` |
+| YouTube video URL or `yt://...` | `youtubeVideo` | `query` is canonical `yt://...`; `result` is one discovery result |
+| YouTube playlist URL or `yt-playlist://...` | `youtubePlaylist` | `query` is a canonical playlist URL; `playlistId`. No entries — send `query` to `Search` |
 | Spotify track URL, `spotify:track:...`, or `spotify://...` | `local` or `youtubeVideo` | Spotify has no audio, so the track is looked up in the library, then on YouTube; `kind` and `result` describe whatever was found. `404 not_found` when nothing was |
 | Spotify playlist URL, `spotify:playlist:...`, or `spotify-playlist://...` | `spotifyPlaylist` | `query` is the canonical `spotify-playlist://...`; `playlistId`. No entries — send `query` to `Search` |
 | Deezer track URL or `deezer://...` | `deezerTrack` | `query` is the canonical `deezer://...`; `result` is one discovery result. In metadata-only mode this comes back as `local` or `youtubeVideo` instead, like a Spotify track |
 | Deezer playlist URL or `deezer-playlist://...` | `deezerPlaylist` | `query` is the canonical `deezer-playlist://...`; `playlistId`. No entries — send `query` to `Search` |
-| Ordinary text | `search` | `query` is the trimmed text; call `Search` with it |
+| Ordinary text, including a bare video or playlist ID | `search` | `query` is the trimmed text; call `Search` with it |
 
 Examples:
 

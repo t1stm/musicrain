@@ -12,9 +12,9 @@ public readonly record struct ClassifyResult(int Status, string? Kind, string? I
 /// <summary>
 ///     The YouTube half of what used to be Gaida.API's <c>QueryParser</c> (see
 ///     <c>Gaida.API/Contracts/QueryParser.cs</c>), scoped to this platform's own identifiers.
-///     Recognises <c>yt://</c> / <c>yt-playlist://</c> ids, YouTube URLs (watch/youtu.be/shorts/embed/live/playlist),
-///     a bare 11-character video ID and a bare playlist ID (<c>PL</c>/<c>UU</c>/<c>LL</c>/<c>RD</c>/<c>FL</c>/<c>WL</c>/
-///     <c>OLAK5uy_</c> prefixed). Pure string parsing -- no network, no platform instance needed.
+///     Recognises <c>yt://</c> / <c>yt-playlist://</c> ids and YouTube URLs (watch/youtu.be/shorts/embed/live/playlist).
+///     A bare ID is deliberately not claimed: ordinary words fit the alphabet ("Innervision" is 11 characters), so
+///     anything without a scheme or a YouTube link is a keyword search. Pure string parsing -- no network.
 /// </summary>
 public static partial class Classify
 {
@@ -34,25 +34,10 @@ public static partial class Classify
         if (Uri.TryCreate(query, UriKind.Absolute, out var uri))
             return ParseUrl(uri);
 
-        if (VideoIdRegex().IsMatch(query))
-            return ParseVideoId(query);
-
-        if (LooksLikePlaylistId(query))
-            return ParsePlaylistId(query);
-
         // Schemeless playlist link (e.g. "youtube.com/playlist?list=PL...") that Uri.TryCreate rejected for
         // lacking a scheme. Same shape YouTube.cs:72-75 (IsPlaylistUrl) matches against arbitrary text.
         var schemeless = SchemelessPlaylistRegex().Match(query);
         return schemeless.Success ? ParsePlaylistId(schemeless.Groups[1].Value) : NotMine;
-    }
-
-    /// <summary>
-    ///     A bare 11-character token is the one claim that ordinary text can make by accident: "Innervision" and
-    ///     "Imagination" fit the video-ID alphabet exactly. /classify checks YouTube before keeping these.
-    /// </summary>
-    public static bool IsBareVideoId(string? value)
-    {
-        return value is not null && VideoIdRegex().IsMatch(value.Trim());
     }
 
     private static ClassifyResult ParseUrl(Uri uri)
@@ -97,15 +82,6 @@ public static partial class Classify
                host.EndsWith(".youtu.be", StringComparison.OrdinalIgnoreCase) ||
                host.Equals("youtube.com", StringComparison.OrdinalIgnoreCase) ||
                host.EndsWith(".youtube.com", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool LooksLikePlaylistId(string value)
-    {
-        return value.Length is >= 10 and <= 128 && PlaylistIdRegex().IsMatch(value) &&
-               (value.StartsWith("PL", StringComparison.Ordinal) || value.StartsWith("UU", StringComparison.Ordinal) ||
-                value.StartsWith("LL", StringComparison.Ordinal) || value.StartsWith("RD", StringComparison.Ordinal) ||
-                value.StartsWith("FL", StringComparison.Ordinal) || value.StartsWith("WL", StringComparison.Ordinal) ||
-                value.StartsWith("OLAK5uy_", StringComparison.Ordinal));
     }
 
     private static Dictionary<string, string> ParseQuery(string query)

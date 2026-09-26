@@ -10,15 +10,15 @@ public static class ClassifySelfCheck
     {
         Expect(Classify.Parse("yt://dQw4w9WgXcQ"), 200, "id", "yt://dQw4w9WgXcQ", null);
         Expect(Classify.Parse("yt://short"), 400, null, null, "The YouTube video ID is invalid.");
-        Expect(Classify.Parse("dQw4w9WgXcQ"), 200, "id", "yt://dQw4w9WgXcQ", null);
+        Expect(Classify.Parse("dQw4w9WgXcQ"), 404, null, null, null);
+        Expect(Classify.Parse("Innervision"), 404, null, null, null);
         Expect(Classify.Parse("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), 200, "id", "yt://dQw4w9WgXcQ", null);
         Expect(Classify.Parse("https://youtu.be/dQw4w9WgXcQ"), 200, "id", "yt://dQw4w9WgXcQ", null);
         Expect(Classify.Parse("https://www.youtube.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"),
             200, "playlist", "yt-playlist://PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", null);
         Expect(Classify.Parse("yt-playlist://PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"),
             200, "playlist", "yt-playlist://PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", null);
-        Expect(Classify.Parse("PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"),
-            200, "playlist", "yt-playlist://PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", null);
+        Expect(Classify.Parse("PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"), 404, null, null, null);
         Expect(Classify.Parse("youtube.com/playlist?list=PLxyz123456"),
             200, "playlist", "yt-playlist://PLxyz123456", null);
         Expect(Classify.Parse("https://example.com/watch?v=dQw4w9WgXcQ"), 404, null, null, null);
@@ -27,10 +27,6 @@ public static class ClassifySelfCheck
         Expect(Classify.Parse("hello world search text"), 404, null, null, null);
         Expect(Classify.Parse(""), 404, null, null, null);
         Expect(Classify.Parse(null), 404, null, null, null);
-
-        if (!Classify.IsBareVideoId(" Innervision ") || Classify.IsBareVideoId("Innervision song") ||
-            Classify.IsBareVideoId("yt://dQw4w9WgXcQ") || Classify.IsBareVideoId("https://youtu.be/dQw4w9WgXcQ"))
-            throw new Exception("ClassifySelfCheck failed: IsBareVideoId");
 
         Console.WriteLine("ClassifySelfCheck: OK");
     }
