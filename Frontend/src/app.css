@@ -93,9 +93,10 @@ html {
    what it places absolutely — the floating bar — lands inside too. What goes fixed
    over the screen instead — the full player, micro, a menu's shade — is meant to
    run under the edges, and pads its own content back in. On a screen with no notch
-   or gesture bar every inset is 0 and this is the old `h-svh` on the shell. Android
-   still keeps an installed app below its status bar, so there the top inset stays 0
-   until Chrome lets one under it — Player.svelte tints the bar in the meantime. */
+   or gesture bar every inset is 0 and this is the old `h-svh` on the shell. Google
+   Chrome on Android still keeps an installed app below its status bar, so there the
+   top inset stays 0 until it lets one under — Player.svelte tints the bar in the
+   meantime. Chromium builds from 153 already let it under. */
 body {
 	height: 100svh;
 	padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)

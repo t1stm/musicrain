@@ -26,10 +26,12 @@
 	closeOnBack(() => full, collapse);
 
 	// The full shape's ground runs under the status bar (app.css) — except in an app
-	// installed on Android, which Chrome still keeps below it. There the bar takes the
-	// ground's colour instead, so the screen still reads as one surface.
+	// installed from Google Chrome on Android, which still keeps it below. There the bar
+	// takes the ground's colour instead, so the screen still reads as one surface. Where
+	// the app is let under (Chromium builds from 153) the bar is transparent and this
+	// only keeps its icons light.
 	// ponytail: a flat --color-dark-0, not the cover's tint under the veil. Drop this
-	// once Chrome lets an installed app under the bar.
+	// once Google Chrome lets an installed app under the bar.
 	$effect(() => {
 		if (!full) return;
 		const bar = document.querySelector('meta[name="theme-color"]');
