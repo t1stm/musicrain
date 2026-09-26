@@ -840,6 +840,19 @@ html {
 ::view-transition-group(track-menu-rows) {
 	overflow: clip;
 }
+/* The layers in the order the lift draws them: the shade, the frame and the lifted track
+   over it, the rows over the frame. Written down because Firefox does not keep that order
+   for a step's snapshots of the top layer, and drew the shade over everything else. */
+::view-transition-group(track-menu-shade) {
+	z-index: 1;
+}
+::view-transition-group(track-menu),
+::view-transition-group(track-menu-lift) {
+	z-index: 2;
+}
+::view-transition-group(track-menu-rows) {
+	z-index: 3;
+}
 ::view-transition-old(track-menu-rows),
 ::view-transition-new(track-menu-rows) {
 	height: 100%;

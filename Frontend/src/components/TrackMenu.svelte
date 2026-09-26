@@ -293,9 +293,12 @@
 			if (!(event.target as Element).closest('input')) event.preventDefault();
 		}}
 	>
-		<!-- the way out a tap expects; back and Escape work too -->
+		<!-- the way out a tap expects; back and Escape work too. Named, like everything else
+		     drawn in the lift: Firefox leaves the top layer out of a step's snapshot of the
+		     page, and the shade went with it until the step was over. -->
 		<div
 			class="fixed inset-0 bg-dark-0/75"
+			style:view-transition-name={open ? 'track-menu-shade' : undefined}
 			aria-hidden="true"
 			onclick={close}
 			transition:fade={{ duration: 220 }}
