@@ -46,6 +46,15 @@ public static partial class Classify
         return schemeless.Success ? ParsePlaylistId(schemeless.Groups[1].Value) : NotMine;
     }
 
+    /// <summary>
+    ///     A bare 11-character token is the one claim that ordinary text can make by accident: "Innervision" and
+    ///     "Imagination" fit the video-ID alphabet exactly. /classify checks YouTube before keeping these.
+    /// </summary>
+    public static bool IsBareVideoId(string? value)
+    {
+        return value is not null && VideoIdRegex().IsMatch(value.Trim());
+    }
+
     private static ClassifyResult ParseUrl(Uri uri)
     {
         if (!IsYouTubeHost(uri.Host)) return NotMine;

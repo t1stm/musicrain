@@ -29,7 +29,7 @@ dotnet run --project Platforms/Gaida.Pods.YouTube -- --self-check
 ## Interesting techniques
 
 - **Query classification as its own route.** [Classify.cs](Classify.cs) is the YouTube half of what used to be a central `QueryParser` in Gaida.API, moved here so each platform owns the shapes it recognises. It answers `200` for a recognised query, `400` for something recognisably YouTube's but malformed, and `404` for "not mine" — which the API defaults to a keyword search. Pure string parsing, so it needs no network and no platform instance.
-- **A parser that reads what people actually paste.** `yt://` and `yt-playlist://` IDs, `watch`, `youtu.be`, `shorts`, `embed`, `live` and `playlist` URLs, a bare 11-character video ID, and a bare playlist ID by its `PL` / `UU` / `LL` / `RD` / `FL` / `WL` / `OLAK5uy_` prefix.
+- **A parser that reads what people actually paste.** `yt://` and `yt-playlist://` IDs, `watch`, `youtu.be`, `shorts`, `embed`, `live` and `playlist` URLs, a bare 11-character video ID (checked against YouTube, so an 11-letter word like "Innervision" stays a search), and a bare playlist ID by its `PL` / `UU` / `LL` / `RD` / `FL` / `WL` / `OLAK5uy_` prefix.
 - **Source-generated regexes.** `Classify` is a `partial class` using `[GeneratedRegex]`, so the patterns are compiled at build time rather than at first match.
 - **A self-check with no dependencies.** `--self-check` runs the classifier's checks and exits, so the image is verifiable in CI with no cache volume and no port bound.
 - **An admin payload that is only a request ring.** This pod holds no state an operator edits, so its `/Admin` surface reports the recent-request ring and nothing else.

@@ -28,6 +28,10 @@ public static class ClassifySelfCheck
         Expect(Classify.Parse(""), 404, null, null, null);
         Expect(Classify.Parse(null), 404, null, null, null);
 
+        if (!Classify.IsBareVideoId(" Innervision ") || Classify.IsBareVideoId("Innervision song") ||
+            Classify.IsBareVideoId("yt://dQw4w9WgXcQ") || Classify.IsBareVideoId("https://youtu.be/dQw4w9WgXcQ"))
+            throw new Exception("ClassifySelfCheck failed: IsBareVideoId");
+
         Console.WriteLine("ClassifySelfCheck: OK");
     }
 
