@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { flushSync } from 'svelte';
 	import { Beaker, Cloud, FolderOpen, Icon, MagnifyingGlass, RectangleStack, User } from 'svelte-hero-icons';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
@@ -7,6 +8,10 @@
 	import user from '$states/user.svelte';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
 	import { dismiss } from '$lib/dismiss';
+
+	// The account panel drops from the header over the page, and the queue/chat sheet sits
+	// over the page too — the panel would open underneath it. Opening one closes the other.
+	let { onaccount }: { onaccount?: () => void } = $props();
 
 	const isAlpha = true;
 	let searchTerm = $derived(page.url.searchParams.get('term') ?? '');
@@ -22,7 +27,12 @@
 
 	function openName() {
 		draftName = user.username ?? '';
-		editingName = !editingName;
+		if (editingName) return (editingName = false);
+		// Two flushes, the sheet's close first, so the panel takes over the sheet's history
+		// entry (see `closeOnBack`) instead of stacking a second one on it: in a single flush
+		// this component's effects run before the layout's, and the panel would open first.
+		flushSync(() => onaccount?.());
+		flushSync(() => (editingName = true));
 	}
 
 	function saveName(event: SubmitEvent) {

@@ -81,7 +81,7 @@
 	<!-- micro hides the page rather than unmounting it: the route component owns
 	     the room's connect effect, so tearing it down would drop the listener out
 	     of the room the player is still playing. -->
-	<Header />
+	<Header onaccount={() => (dock = null)} />
 	{#if session.inRoom}
 		<SessionStrip />
 	{/if}
