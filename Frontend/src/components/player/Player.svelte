@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
 	import TrackInfo from './layers/track-info/TrackInfo.svelte';
 	import Controls from './layers/controls/Controls.svelte';
 	import Volume from './layers/volume/Volume.svelte';
@@ -76,6 +77,12 @@
 	function collapse() {
 		return morph(() => (full = false));
 	}
+
+	// The artist and the album in the full shape are links, and the page they open is
+	// under it: it folds away so the page is what you see.
+	afterNavigate(() => {
+		if (full) collapse();
+	});
 
 	// The record is the handle, the way it is in every phone's own player: flick it
 	// sideways to change track, up to open it out, down to put it away. A tap on the
@@ -218,18 +225,19 @@
 					>
 				{/key}
 			</button>
-			{#if current.name}
-				<button
-					type="button"
-					id="player-shape"
-					aria-label={full ? 'Close the full player' : 'Open the full player'}
-					aria-expanded={full}
-					class="flex size-11 items-center justify-center rounded-art text-fog hover:text-chalk focus-visible:outline-2 focus-visible:outline-primary-200 sm:size-7"
-					onclick={() => (full ? collapse() : expand())}
-				>
-					<Icon src={full ? ChevronDown : ChevronUp} mini size="16" />
-				</button>
-			{/if}
+			<!-- there from the first load, like lyrics beside it: greyed until there is a
+			     record to open out, rather than a gap that fills in later -->
+			<button
+				type="button"
+				id="player-shape"
+				aria-label={full ? 'Close the full player' : 'Open the full player'}
+				aria-expanded={full}
+				disabled={!current.name}
+				class="flex size-11 items-center justify-center rounded-art text-fog hover:text-chalk focus-visible:outline-2 focus-visible:outline-primary-200 disabled:opacity-40 disabled:hover:text-fog sm:size-7"
+				onclick={() => (full ? collapse() : expand())}
+			>
+				<Icon src={full ? ChevronDown : ChevronUp} mini size="16" />
+			</button>
 			<Quality />
 			<!-- ponytail: the slider is mouse-and-keyboard only by choice — on a phone
 			     the hardware keys own volume and this costs 96px of a 350px row. -->
