@@ -29,10 +29,17 @@
 		}
 	])
 
+  // The lock screen asks for a state, not a flip: a `play` that lands while this
+  // already plays must not pause it. The room only knows the flip, so it is sent
+  // only when it would change something.
+  function setPaused(paused: boolean) {
+    if (paused !== audio.paused) playPause();
+  }
+
   $effect(() => {
     // static navigator fields are not very reactive. shouldn't update them every time
-    navigator.mediaSession.setActionHandler('play', playPause);
-    navigator.mediaSession.setActionHandler('pause', playPause);
+    navigator.mediaSession.setActionHandler('play', () => setPaused(false));
+    navigator.mediaSession.setActionHandler('pause', () => setPaused(true));
     navigator.mediaSession.setActionHandler('previoustrack', () => {
       queue.previousTrack();
     });
