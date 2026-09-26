@@ -54,6 +54,12 @@ ALBUM_TRACK_LIMIT = int(os.environ.get("DEEZER_ALBUM_TRACK_LIMIT") or 200)
 How much of an album to read. A box set is the only thing that comes near this; a record is a dozen.
 """
 
+ARTIST_LIMIT = int(os.environ.get("DEEZER_ARTIST_LIMIT") or 50)
+"""
+How many of an artist's top tracks to hand back -- a page of their own on the artist view, so more
+than a search's worth.
+"""
+
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 client = stream.Client(os.environ.get("DEEZER_ARL"))
@@ -139,6 +145,31 @@ async def playlist(url: str | None = None) -> Response:
     # while the rest of the array is still being written.
     entries = _mapped((tracks or {}).get("data") or [])
     return StreamingResponse(_json_array(entries), media_type="application/json")
+
+
+@app.get("/artist")
+async def artist(term: str | None = None) -> Response:
+    """
+    An artist's top tracks, best-known first.
+
+    Found as the artist, then their chart, rather than as a track search: a bare name also matches
+    titles and other people's features, and Deezer's ``artist:"..."`` field syntax -- which /album
+    relies on -- returns next to nothing for most names now (two hits for Eminem). An exact name wins
+    over Deezer's first hit, so a term does not land on a busier namesake.
+    """
+    credit = (term or "").strip()
+    if not credit:
+        return JSONResponse([])
+
+    found = await _ask(lambda: client.api.search_artist(credit, limit=5), f"artist {credit!r}")
+    hits = (found or {}).get("data") or []
+    if not hits:
+        return JSONResponse([])
+
+    chosen = next((hit for hit in hits if (hit.get("name") or "").casefold() == credit.casefold()), hits[0])
+    top = await _ask(lambda: client.api.get_artist_top(chosen["id"], limit=ARTIST_LIMIT),
+                     f"artist top {chosen['id']}")
+    return JSONResponse(_mapped((top or {}).get("data") or []))
 
 
 @app.get("/album")

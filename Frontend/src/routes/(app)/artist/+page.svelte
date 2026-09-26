@@ -7,29 +7,60 @@
 
 	const { data }: { data: PageData } = $props();
 
-	let localResults = $state<SearchResult[]>([]);
-	let youtubeResults = $state<SearchResult[]>([]);
+	type Side = keyof NonNullable<PageData['streams']>;
+
+	// In the order worth reading them in — a local copy beats a Deezer stream beats somebody's upload —
+	// which is also the order the page steps along when a side turns out to have nothing.
+	const tabs: { side: Side; long: string; short: string; noun: string }[] = [
+		{ side: 'library', long: 'In the library', short: 'Library', noun: 'library' },
+		{ side: 'deezer', long: 'From Deezer', short: 'Deezer', noun: 'Deezer' },
+		{ side: 'youtube', long: 'From YouTube', short: 'YouTube', noun: 'YouTube' }
+	];
+
+	let results = $state<Record<Side, SearchResult[]>>({ library: [], deezer: [], youtube: [] });
 	// Only the first paint, before the effect below runs: the effect owns these from then on.
-	let localLoading = $state(untrack(() => Boolean(data.term)));
-	let youtubeLoading = $state(untrack(() => Boolean(data.term)));
+	let loading = $state<Record<Side, boolean>>(
+		untrack(() => {
+			const on = Boolean(data.streams);
+			return { library: on, deezer: on, youtube: on };
+		})
+	);
 
 	// The library is the tab this page opens on, but an artist the library has never
-	// heard of should not open on an empty one. Until the library side has answered
-	// there is nothing to move away from, and a tab pressed by hand is never moved.
-	let activeTab = $state<'library' | 'youtube'>('library');
+	// heard of should not open on an empty one. Until a side has answered there is
+	// nothing to move away from, and a tab pressed by hand is never moved.
+	let activeTab = $state<Side>('library');
 	let chosen = false;
-	let activeResults = $derived(activeTab === 'library' ? localResults : youtubeResults);
-	let activeLoading = $derived(activeTab === 'library' ? localLoading : youtubeLoading);
+	let active = $derived(tabs.find((tab) => tab.side === activeTab)!);
+	let activeResults = $derived(results[activeTab]);
+	let activeLoading = $derived(loading[activeTab]);
 	let waiting = $derived(activeLoading ? Math.max(0, 8 - activeResults.length) : 0);
 
-	function choose(tab: 'library' | 'youtube') {
+	function choose(side: Side) {
 		chosen = true;
-		activeTab = tab;
+		activeTab = side;
 	}
 
+	/** Steps past every side that answered with nothing, stopping at one still arriving. */
+	function settle() {
+		if (chosen) return;
+		let at = tabs.indexOf(active);
+		while (at < tabs.length - 1 && !loading[tabs[at].side] && results[tabs[at].side].length === 0) at++;
+		activeTab = tabs[at].side;
+	}
+
+	// Three tabs overflow a narrow phone, so the strip scrolls — and a tab the page stepped to on its
+	// own can be the one hanging off the edge. Horizontal only: scrollIntoView would also drag the
+	// page up to the strip. The smoothness comes from the strip's own scroll-behavior.
+	let tablist = $state<HTMLElement>();
+	$effect(() => {
+		const tab = tablist?.querySelector<HTMLElement>(`[data-side="${activeTab}"]`);
+		if (tab && tablist) tablist.scrollLeft = tab.offsetLeft - (tablist.clientWidth - tab.offsetWidth) / 2;
+	});
+
 	/** A side's count while it is still arriving is not a count yet. */
-	function count(results: SearchResult[], loading: boolean) {
-		return loading ? '…' : String(results.length);
+	function count(side: Side) {
+		return loading[side] ? '…' : String(results[side].length);
 	}
 
 	// Takes a push rather than the list itself, so the effect below never reads the state it just
@@ -49,36 +80,29 @@
 	// this component is reused and only `data` changes. onMount would fire once and leave the
 	// previous artist's rows on screen under the new artist's name.
 	$effect(() => {
-		const local = data.localResults;
-		const youtube = data.youtubeResults;
+		const streams = data.streams;
 
 		// Back to what a fresh load of this page would show — including the tab, since the artist
 		// whose empty library tab was worth stepping around is no longer the one on screen.
-		localResults = [];
-		youtubeResults = [];
+		results = { library: [], deezer: [], youtube: [] };
+		loading = { library: Boolean(streams), deezer: Boolean(streams), youtube: Boolean(streams) };
 		activeTab = 'library';
 		chosen = false;
-		localLoading = Boolean(local);
-		youtubeLoading = Boolean(youtube);
-		if (!local || !youtube) return;
+		if (!streams) return;
 
 		// An artist abandoned mid-stream keeps arriving; `live` is what stops those results being
 		// pushed into the lists the next artist is filling.
 		let live = true;
 		const alive = () => live;
 
-		fill(local, alive, (result) => localResults.push(result))
-			.catch(() => {})
-			.finally(() => {
-				if (!live) return;
-				localLoading = false;
-				if (!chosen && localResults.length === 0) activeTab = 'youtube';
-			});
-		fill(youtube, alive, (result) => youtubeResults.push(result))
-			.catch(() => {})
-			.finally(() => {
-				if (live) youtubeLoading = false;
-			});
+		for (const { side } of tabs)
+			fill(streams[side], alive, (result) => results[side].push(result))
+				.catch(() => {})
+				.finally(() => {
+					if (!live) return;
+					loading[side] = false;
+					settle();
+				});
 
 		return () => (live = false);
 	});
@@ -93,9 +117,10 @@
 	</div>
 
 	{#if data.term}
-		<div class="flex w-full rounded-panel border border-haze bg-surface-0 p-1 sm:w-fit" role="tablist" aria-label="Artist source">
-			<button type="button" role="tab" aria-selected={activeTab === 'library'} class={`min-h-10 flex-1 rounded-row px-3 py-1.5 text-sm font-semibold text-fog hover:text-chalk sm:flex-none ${activeTab === 'library' ? 'bg-primary-600 text-white' : ''}`} onclick={() => choose('library')}><span class="hidden sm:inline">In the library</span><span class="sm:hidden">Library</span> · {count(localResults, localLoading)}</button>
-			<button type="button" role="tab" aria-selected={activeTab === 'youtube'} class={`min-h-10 flex-1 rounded-row px-3 py-1.5 text-sm font-semibold text-fog hover:text-chalk sm:flex-none ${activeTab === 'youtube' ? 'bg-primary-600 text-white' : ''}`} onclick={() => choose('youtube')}><span class="hidden sm:inline">From YouTube</span><span class="sm:hidden">YouTube</span> · {count(youtubeResults, youtubeLoading)}</button>
+		<div bind:this={tablist} class="relative flex w-full overflow-x-auto rounded-panel border border-haze bg-surface-0 p-1 [scrollbar-width:none] motion-safe:scroll-smooth sm:w-fit [&::-webkit-scrollbar]:hidden" role="tablist" aria-label="Artist source">
+			{#each tabs as tab (tab.side)}
+				<button type="button" role="tab" data-side={tab.side} aria-selected={activeTab === tab.side} class={`min-h-10 flex-1 whitespace-nowrap rounded-row px-3 py-1.5 text-sm font-semibold text-fog hover:text-chalk sm:flex-none ${activeTab === tab.side ? 'bg-primary-600 text-white' : ''}`} onclick={() => choose(tab.side)}><span class="hidden sm:inline">{tab.long}</span><span class="sm:hidden">{tab.short}</span> · {count(tab.side)}</button>
+			{/each}
 		</div>
 
 		{#if activeResults.length > 0 || waiting > 0}
@@ -109,7 +134,7 @@
 			</div>
 			{#if activeLoading}<p class="sr-only" aria-live="polite">Loading this artist's tracks.</p>{/if}
 		{:else}
-			<p class="text-fog">No {activeTab === 'library' ? 'library' : 'YouTube'} tracks matched this artist.</p>
+			<p class="text-fog">No {active.noun} tracks matched this artist.</p>
 		{/if}
 	{:else}
 		<p class="max-w-lg text-fog">Search for an artist, or choose one from the library on the home page.</p>

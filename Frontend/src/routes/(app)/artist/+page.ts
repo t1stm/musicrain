@@ -1,14 +1,17 @@
 import type { PageLoad } from './$types';
-import { streamArtistLocal, streamArtistYouTube } from '$requests/songs';
+import { streamArtistDeezer, streamArtistLocal, streamArtistYouTube } from '$requests/songs';
 
-/** Awaits nothing: both sides render as placeholder rows and fill themselves in. */
+/** Awaits nothing: every side renders as placeholder rows and fills itself in. */
 export const load: PageLoad = ({ url, fetch }) => {
 	const term = url.searchParams.get('term')?.trim() ?? '';
-	if (!term) return { term, localResults: null, youtubeResults: null };
+	if (!term) return { term, streams: null };
 
 	return {
 		term,
-		localResults: streamArtistLocal(term, fetch),
-		youtubeResults: streamArtistYouTube(term, fetch)
+		streams: {
+			library: streamArtistLocal(term, fetch),
+			deezer: streamArtistDeezer(term, fetch),
+			youtube: streamArtistYouTube(term, fetch)
+		}
 	};
 };

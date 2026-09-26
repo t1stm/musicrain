@@ -71,7 +71,7 @@ public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist,
         return (folders, files);
     }
 
-    /// <summary>Local-pod-only: every track by an artist.</summary>
+    /// <summary>An artist's tracks: every one the library has, or Deezer's top tracks for them.</summary>
     public IAsyncEnumerable<PlatformResult> ArtistAsync(string term, CancellationToken cancellationToken = default)
     {
         return FetchList($"/artist?term={Uri.EscapeDataString(term)}", cancellationToken);

@@ -4,7 +4,7 @@ The example production base URL is `https://api.example.com`. All endpoints belo
 
 ## Discovery result
 
-`GET /Audio/Search?query={term}`, `GET /Audio/RandomResults?count={count}`, `GET /Audio/Artist/Local?term={artist}`, `GET /Audio/Artist/YouTube?term={artist}`, and `GET /Audio/Album?artist={artist}&album={album}` all return an array with exactly this shape:
+`GET /Audio/Search?query={term}`, `GET /Audio/RandomResults?count={count}`, `GET /Audio/Artist/Local?term={artist}`, `GET /Audio/Artist/Deezer?term={artist}`, `GET /Audio/Artist/YouTube?term={artist}`, and `GET /Audio/Album?artist={artist}&album={album}` all return an array with exactly this shape:
 
 ```json
 {
@@ -29,13 +29,13 @@ The example production base URL is `https://api.example.com`. All endpoints belo
 - Deezer results are *not* resolved away: that platform has its own audio, so a `deezer://` ID reaches the client and plays from Deezer. A deployment without Deezer credentials runs its pod in metadata-only mode, where Deezer hits are resolved to `audio://` or `yt://` exactly like Spotify's and no `deezer://` ID is ever returned.
 - `RandomResults` accepts `count` from 1 through 200, inclusive. An invalid count returns `400 {"error":{"code":"invalid_count","message":"..."}}`.
 - `RandomResults` also accepts `youTubeShare` from 0 through 1 (default `0.4`): the share of results drawn from YouTube, with the local library supplying the rest and backfilling anything YouTube is short of. Out of range returns `400 {"error":{"code":"invalid_share","message":"..."}}`.
-- `Artist/Local` returns `200 []` when the artist is empty or unmatched, and uses `artist`, then `name`, then `id` as its stable sort order. `Artist/YouTube` is a keyword search and comes back in YouTube's relevance order.
+- `Artist/Local` returns `200 []` when the artist is empty or unmatched, and uses `artist`, then `name`, then `id` as its stable sort order. `Artist/YouTube` is a keyword search and comes back in YouTube's relevance order. `Artist/Deezer` is the top tracks of the Deezer artist whose name matches `term` (Deezer's best match when none does exactly), best-known first; it returns `200 []` when the pod runs metadata-only, since its IDs would not play.
 - `Album` returns `200 []` when either parameter is empty, or when neither the library nor Deezer has the album. The library is asked first and Deezer only when the library has none, so the rows are all `audio://` or all `deezer://`, never mixed. Artist matching is `Artist/Local`'s. Order is the album's own: the library serves the order in the playlist file that defines the album, Deezer its catalogue track order.
 - The library answers `Album` only for albums it holds as a playlist file (an `.m3u`/`.m3u8` beside the tracks), not for every album name it has tagged. A result's `album` field is therefore not a promise that `Album` returns library rows for it — the answer may come from Deezer, and may be `[]`. Treat `album` as a link worth offering and the endpoint as the thing that decides.
 
 ### Streamed responses
 
-These five endpoints write their array element by element (`Transfer-Encoding: chunked`, no `Content-Length`), so a client reading the body incrementally can render each track as it arrives instead of waiting for the last one. It is an ordinary JSON array either way — a client that calls `response.json()` needs no change.
+These six endpoints write their array element by element (`Transfer-Encoding: chunked`, no `Content-Length`), so a client reading the body incrementally can render each track as it arrives instead of waiting for the last one. It is an ordinary JSON array either way — a client that calls `response.json()` needs no change.
 
 Two consequences for clients that do read it incrementally:
 

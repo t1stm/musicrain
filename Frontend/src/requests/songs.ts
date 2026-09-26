@@ -95,6 +95,10 @@ export function streamArtistLocal(term: string, fetcher: Fetcher) {
 	return streamResults(fetcher, `/Artist/Local?term=${encodeURIComponent(term)}`);
 }
 
+export function streamArtistDeezer(term: string, fetcher: Fetcher) {
+	return streamResults(fetcher, `/Artist/Deezer?term=${encodeURIComponent(term)}`);
+}
+
 export function streamArtistYouTube(term: string, fetcher: Fetcher) {
 	return streamResults(fetcher, `/Artist/YouTube?term=${encodeURIComponent(term)}`);
 }

@@ -25,6 +25,23 @@ public class Artist(IConfiguration configuration, IHostEnvironment environment) 
         return Ok(this.Mapped(local.ArtistAsync(term, HttpContext.RequestAborted), configuration, environment));
     }
 
+    /// <summary>
+    ///     The artist's top tracks on Deezer, best-known first — see API.md. Empty when Deezer is metadata-only
+    ///     here: its IDs would not play, and resolving each one elsewhere would just be the YouTube tab again.
+    /// </summary>
+    [HttpGet]
+    [Route("/Audio/Artist/Deezer")]
+    [Produces("application/json")]
+    [ProducesResponseType<IReadOnlyList<SearchResultDto>>(StatusCodes.Status200OK)]
+    public IActionResult GetArtistDeezer(string? term, [FromServices] ManagerService managerService)
+    {
+        if (string.IsNullOrWhiteSpace(term) || managerService.NeedsResolving("deezer://") ||
+            managerService.Manager.PlatformFor("deezer://") is not HttpPlatform deezer)
+            return Ok(Array.Empty<SearchResultDto>());
+
+        return Ok(this.Mapped(deezer.ArtistAsync(term, HttpContext.RequestAborted), configuration, environment));
+    }
+
     /// <summary>Relevance order, as YouTube returned it — see API.md.</summary>
     [HttpGet]
     [Route("/Audio/Artist/YouTube")]
