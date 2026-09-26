@@ -91,8 +91,11 @@
 		></div>
 	</div>
 	<span class="font-mono text-xs text-fog select-none">{currentTime}</span>
+	<!-- The track grows while the blip shows — hover, focus and a finger alike. On `:hover`
+	     alone a finger got the full-size blip on a track that stayed thin. -->
 	<div
-		class="relative flex h-2 w-full cursor-pointer touch-none rounded-lg bg-surface-200 duration-150 hover:h-3 focus-visible:h-3 focus-visible:outline-4 outline-surface-300"
+		class="relative flex h-2 w-full cursor-pointer touch-none rounded-lg bg-surface-200 duration-150 data-active:h-3 focus-visible:h-3 focus-visible:outline-4 outline-surface-300"
+		data-active={slider.blipVisible || undefined}
 		tabindex="0"
 		role="slider"
 		aria-valuenow={currentPercentage}
@@ -108,16 +111,22 @@
 		onpointermove={slider.pointerMove}
 		onkeydown={slider.keydown}
 	>
-		<div
-			class="absolute left-0 h-full max-w-full bg-primary-0 rounded-lg duration-75"
-			style:width={buffered + '%'}
-		></div>
-		<div
-			class="absolute left-0 h-full max-w-full rounded-lg duration-150"
-			class:bg-primary-500={!isBuffering}
-			class:bg-surface-400={isBuffering}
-			style:width={currentPercentage + '%'}
-		></div>
+		<!-- The fills are clipped to the track's own ends — rounded, or square in micro. A
+		     track just started fills a pixel or two, narrower than a fill's rounding, and that
+		     drew as a full-height sliver outside the curve of the track. The blip stays
+		     outside: it overhangs. -->
+		<div class="absolute inset-0 overflow-hidden rounded-[inherit]">
+			<div
+				class="absolute left-0 h-full max-w-full bg-primary-0 rounded-lg duration-75"
+				style:width={buffered + '%'}
+			></div>
+			<div
+				class="absolute left-0 h-full max-w-full rounded-lg duration-150"
+				class:bg-primary-500={!isBuffering}
+				class:bg-surface-400={isBuffering}
+				style:width={currentPercentage + '%'}
+			></div>
+		</div>
 		<div
 			class="absolute left-0 -translate-x-1/2 rounded-full size-3 bg-white duration-75 transition-opacity"
 			style:left={slider.hoverValue + '%'}
