@@ -87,10 +87,12 @@ type Swipe = Partial<Record<Direction, () => unknown>> & {
 export const swipe =
 	(handlers: Swipe): Attachment<HTMLElement> =>
 	(node) => {
-		// A drag that began on a link or a tab must not also click it once it lets go.
+		// A drag that began on a link or a tab must not also click it once it lets go. Only a
+		// pointer's click: a keyboard's has no press behind it, and one sent after a swipe that
+		// no click followed would otherwise be the one eaten.
 		let dragged = false;
 		const swallow = (event: MouseEvent) => {
-			if (!dragged) return;
+			if (!dragged || event.detail === 0) return;
 			dragged = false;
 			event.preventDefault();
 			event.stopPropagation();
