@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import ArtistLink from '$components/ArtistLink.svelte';
 	import PlaylistCover from '$components/playlist/PlaylistCover.svelte';
+	import ReplaceTray from '$components/playlist/ReplaceTray.svelte';
 	import SwipeRow from '$components/SwipeRow.svelte';
 	import TrackMenu from '$components/TrackMenu.svelte';
 	import { EllipsisHorizontal, QueueList } from 'svelte-hero-icons';
@@ -12,7 +13,7 @@
 	import { closeOnBack } from '$lib/backWatcher.svelte';
 	import { reorder } from '$lib/reorder';
 	import account from '$states/account.svelte';
-	import playlists from '$states/playlists.svelte';
+	import playlists, { toSnapshot } from '$states/playlists.svelte';
 	import queue from '$states/queue.svelte';
 	import type { SearchResult } from '$states/search.svelte';
 
@@ -35,6 +36,18 @@
 		() => confirmingDelete,
 		() => (confirmingDelete = false)
 	);
+
+	// The row whose tray is open, by position like the menu. Any edit to the list closes it:
+	// a position is only true of the list it was taken from.
+	let replacingAt = $state<number | null>(null);
+	closeOnBack(
+		() => replacingAt !== null,
+		() => (replacingAt = null)
+	);
+
+	// the row a replacement just landed in, for as long as its ripple runs
+	let landedAt = $state<number | null>(null);
+	let settle: ReturnType<typeof setTimeout>;
 
 	let tracks = $derived(playlist?.tracks ?? []);
 	let mine = $derived(!!playlist && playlist.owner === account.username);
@@ -65,6 +78,7 @@
 	/** Every edit is the same shape: change the list here, then send the list. */
 	async function commit(next: SearchResult[]) {
 		if (!playlist) return;
+		replacingAt = null;
 		playlist = { ...playlist, tracks: next, trackCount: next.length };
 		const saved = await playlists.update(playlist.id, { tracks: next });
 		if (saved) playlist = saved;
@@ -72,6 +86,13 @@
 
 	function remove(index: number) {
 		commit(tracks.filter((_, at) => at !== index));
+	}
+
+	function replaceAt(index: number, result: SearchResult) {
+		landedAt = index;
+		clearTimeout(settle);
+		settle = setTimeout(() => (landedAt = null), 700);
+		commit(tracks.with(index, toSnapshot(result)));
 	}
 
 	function move(from: number, to: number) {
@@ -320,7 +341,8 @@
 										src={track.thumbnailUrl ?? '/empty.png'}
 										alt=""
 										draggable="false"
-										class="size-10 rounded-art object-cover"
+										class="size-10 rounded-art object-cover motion-reduce:animate-none"
+										class:animate-ripple={landedAt === index}
 									/>
 								</span>
 								<div class="min-w-0 flex-1">
@@ -334,6 +356,7 @@
 								<TrackMenu
 									result={track}
 									bind:open={() => menuAt === index, (open) => setMenu(index, open)}
+									replace={mine ? () => (replacingAt = index) : undefined}
 									class="max-sm:[&>summary]:hidden pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100 pointer-fine:open:opacity-100"
 								/>
 								{#if mine}
@@ -351,6 +374,13 @@
 								{/if}
 							</div>
 						</SwipeRow>
+						{#if replacingAt === index}
+							<ReplaceTray
+								{track}
+								pick={(result) => replaceAt(index, result)}
+								close={() => (replacingAt = null)}
+							/>
+						{/if}
 					{/each}
 				</div>
 			{/if}

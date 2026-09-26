@@ -1,5 +1,6 @@
 import { audioApi, isDiscordActivity } from '$lib/discord';
 import {
+	appendTrack,
 	createPlaylist,
 	deletePlaylist,
 	getMyPlaylists,
@@ -108,6 +109,23 @@ class Playlists {
 		});
 
 		return changed;
+	}
+
+	/**
+	 * Puts a track on the end of one of yours: true if it went in, false if it was already
+	 * there, null if the add failed. The card changes where it stands rather than jumping to
+	 * the front — the list is under a finger in the track menu when this lands.
+	 */
+	async add(id: string, track: SearchResult): Promise<boolean | null> {
+		let added: boolean | null = null;
+		await this.attempt(async token => {
+			const answer = await appendTrack(token, id, toSnapshot(track));
+			this.mine = this.mine.map(p => (p.id === id ? answer.playlist : p));
+			this.reflect(answer.playlist);
+			added = answer.added;
+		});
+
+		return added;
 	}
 
 	/** Uploads a cover, then re-reads your list so every card picks up the new URL. */

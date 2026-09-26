@@ -50,6 +50,18 @@
 	--font-display: 'Unbounded Variable', 'Golos Text Variable', ui-sans-serif, system-ui, sans-serif;
 	--font-body: 'Golos Text Variable', ui-sans-serif, system-ui, sans-serif;
 	--font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+
+	/* The app's one motion idea is water. A track does not pop into a list, it lands in
+	   it — the ring is the ripple the drop leaves behind. */
+	--animate-ripple: ripple 700ms ease-out;
+	@keyframes ripple {
+		from {
+			box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary-200) 70%, transparent);
+		}
+		to {
+			box-shadow: 0 0 0 12px transparent;
+		}
+	}
 }
 
 /* Tailwind v4's preflight sets `cursor: default` on buttons. Put the pointer

@@ -104,7 +104,7 @@
 	rounded-full cursor-pointer
 	right-0 bottom-0 duration-150
 	outline-0 opacity-100 pointer-fine:opacity-0 focus-visible:opacity-100 group-hover:opacity-100
-	{added ? 'added bg-primary-0' : 'bg-primary-600'}"
+	{added ? 'animate-ripple bg-primary-0 motion-reduce:animate-none' : 'bg-primary-600'}"
 	>
 		<Icon src={added ? Check : Plus} mini size="20" color="white" />
 	</button>
@@ -113,22 +113,7 @@
 </div>
 
 <style>
-	/* The app's one motion idea is water. A track does not pop into the queue, it
-	   lands in it — the ring is the ripple the drop leaves behind. */
-	@keyframes ripple {
-		from {
-			box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary-200) 70%, transparent);
-		}
-		to {
-			box-shadow: 0 0 0 12px transparent;
-		}
-	}
-
-	.added {
-		animation: ripple 700ms ease-out;
-	}
-
-	/* Playing is the bigger verb, so it gets the bigger version of the same idea:
+	/* Playing is the bigger verb, so it gets the bigger version of `animate-ripple`:
 	   the drop lands on the artwork itself and the ring runs off its edges. */
 	@keyframes spread {
 		from {
@@ -204,7 +189,6 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.added,
 		.splash,
 		.art.landed img {
 			animation: none;

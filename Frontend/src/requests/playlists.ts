@@ -89,6 +89,14 @@ export async function patchPlaylist(token: string, id: string, edit: PlaylistEdi
 	);
 }
 
+/** One track onto the end. A track already in the playlist is left where it is, and `added` is false. */
+export function appendTrack(token: string, id: string, track: SearchResult) {
+	return send<{ added: boolean; playlist: PlaylistSummary }>(
+		`/${encodeURIComponent(id)}/Tracks`,
+		json(token, 'POST', track),
+	);
+}
+
 /** PNG, JPEG or WebP, at most 2 MB. Replaces whatever cover the playlist had. */
 export async function uploadCover(token: string, id: string, file: File) {
 	const body = new FormData();

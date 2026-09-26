@@ -1,10 +1,14 @@
 <script lang="ts">
 	import {
 		ArrowDownTray,
+		ArrowsRightLeft,
 		Check,
+		ChevronLeft,
+		ChevronRight,
 		ClipboardDocument,
 		EllipsisHorizontal,
 		Icon,
+		Plus,
 		QueueList,
 		User
 	} from 'svelte-hero-icons';
@@ -16,11 +20,16 @@
 	import { heroArtist } from '$lib';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
 	import { dismiss } from '$lib/dismiss';
+	import PlaylistCover from '$components/playlist/PlaylistCover.svelte';
+	import type { PlaylistSummary } from '$requests/playlists';
+	import account from '$states/account.svelte';
+	import playlists, { toSnapshot } from '$states/playlists.svelte';
 	import type { SearchResult } from '$states/search.svelte';
 	import queue from '$states/queue.svelte';
 
 	// A track's menu. Bindable so a swipe on a row or a held press on a card can open it
 	// without the "…". `trigger={false}` leaves the "…" out for a caller that opens it itself.
+	// `replace`, when given, is one more action: the menu closes and the caller takes over.
 	//
 	// Wider than a phone it drops from the "…". On a phone, and anywhere without a "…" to
 	// drop from, it lifts the track out instead: a copy of the `data-preview` around the menu
@@ -30,8 +39,15 @@
 		result,
 		open = $bindable(false),
 		trigger = true,
+		replace,
 		class: className = ''
-	}: { result: SearchResult; open?: boolean; trigger?: boolean; class?: string } = $props();
+	}: {
+		result: SearchResult;
+		open?: boolean;
+		trigger?: boolean;
+		replace?: () => void;
+		class?: string;
+	} = $props();
 
 	const phone = new MediaQuery('width < 40rem');
 	const still = new MediaQuery('prefers-reduced-motion: reduce');
@@ -71,6 +87,56 @@
 			open = false;
 		}, 900);
 	}
+
+	// "Add to playlist" swaps the actions for your playlists in the same box. The dropdown and
+	// the lift both draw `actions`, so neither grows a second menu of its own.
+	let picking = $state(false);
+	let naming = $state(false);
+	let draftName = $state('');
+	/** The answer on the playlist that was pressed, held until the menu takes itself away. */
+	let landed = $state<{ id: string; name: string; added: boolean } | null>(null);
+
+	$effect(() => {
+		if (open) return;
+		picking = false;
+		naming = false;
+	});
+
+	function pick() {
+		picking = true;
+		// fresh counts, and the first load on a page that never listed them
+		playlists.loadMine();
+	}
+
+	// the same exit as a copy: the answer stays long enough to read, then the menu goes
+	function answer(playlist: { id: string; name: string }, added: boolean) {
+		landed = { id: playlist.id, name: playlist.name, added };
+		clearTimeout(settle);
+		settle = setTimeout(() => {
+			landed = null;
+			open = false;
+		}, 1100);
+	}
+
+	async function addTo(playlist: PlaylistSummary) {
+		const added = await playlists.add(playlist.id, result);
+		if (added !== null) answer(playlist, added);
+	}
+
+	async function create(event: SubmitEvent) {
+		event.preventDefault();
+		const name = draftName.trim();
+		if (!name) return;
+
+		const made = await playlists.save({ name, tracks: [toSnapshot(result)] });
+		if (!made) return;
+		naming = false;
+		draftName = '';
+		answer(made, true);
+	}
+
+	// the control that was pressed is gone once the view swaps, so the focus goes somewhere real
+	const focus = (node: HTMLElement) => node.focus();
 
 	/** The row or card the lift copies, and the gap the copy goes back into. */
 	let source: HTMLElement | null = null;
@@ -158,11 +224,14 @@
 		</summary>
 		{#if !lifted}
 			<div
-				class="absolute right-0 z-20 mt-1 grid w-44 gap-0.5 rounded-panel border border-haze bg-surface-100 p-1 text-left text-xs"
+				class="absolute right-0 z-20 mt-1 grid gap-0.5 rounded-panel border border-haze bg-surface-100 p-1 text-left text-xs {picking
+					? 'w-60'
+					: 'w-44'}"
 			>
 				{@render actions(
-					'flex min-h-10 items-center gap-2 rounded-art px-2 text-left hover:bg-surface-200',
-					'14'
+					'flex min-h-10 w-full items-center gap-2 rounded-art px-2 text-left hover:bg-surface-200',
+					'14',
+					'gap-0.5'
 				)}
 			</div>
 		{/if}
@@ -205,8 +274,9 @@
 					out:fade={{ duration: 120 }}
 				>
 					{@render actions(
-						'flex min-h-13 items-center gap-3.5 px-4 text-left outline-none hover:bg-surface-200 focus-visible:bg-surface-200 active:transform-none active:bg-surface-200',
-						'18'
+						'flex min-h-13 w-full items-center gap-3.5 px-4 text-left outline-none hover:bg-surface-200 focus-visible:bg-surface-200 active:transform-none active:bg-surface-200',
+						'18',
+						'divide-y divide-haze'
 					)}
 				</div>
 			</div>
@@ -215,10 +285,37 @@
 {/if}
 
 <!-- One list, two sizes. Play next wears the primary colour of its own swipe key. -->
-{#snippet actions(item: string, size: string)}
+{#snippet actions(item: string, size: string, list: string)}
+	{#if picking}
+		{@render playlistPicker(item, size, list)}
+	{:else}
+		{@render trackActions(item, size)}
+	{/if}
+{/snippet}
+
+{#snippet trackActions(item: string, size: string)}
 	<button type="button" class={item} onclick={playNext}>
 		<Icon src={QueueList} mini {size} class="shrink-0 text-primary-500" /> Play next
 	</button>
+	<!-- a playlist is an account's, so signed out there is nothing to add to -->
+	{#if account.token}
+		<button type="button" class={item} onclick={pick}>
+			<Icon src={Plus} mini {size} class="shrink-0 text-fog" /> Add to playlist
+			<Icon src={ChevronRight} mini {size} class="ml-auto shrink-0 text-fog" />
+		</button>
+	{/if}
+	{#if replace}
+		<button
+			type="button"
+			class={item}
+			onclick={() => {
+				open = false;
+				replace();
+			}}
+		>
+			<Icon src={ArrowsRightLeft} mini {size} class="shrink-0 text-fog" /> Replace…
+		</button>
+	{/if}
 	<!-- room queue items carry no contentUrl; hide the action rather than
 	     linking nowhere -->
 	{#if result.contentUrl}
@@ -233,4 +330,84 @@
 	<a href={artistUrl} class={item}>
 		<Icon src={User} mini {size} class="shrink-0 text-fog" /> Go to artist
 	</a>
+{/snippet}
+
+<!-- Every row leads with a sleeve, the new one an empty dashed one, so the names line up. -->
+{#snippet playlistPicker(item: string, size: string, list: string)}
+	<button type="button" class={item} onclick={() => (picking = false)} {@attach focus}>
+		<Icon src={ChevronLeft} mini {size} class="shrink-0 text-fog" /> Add to playlist
+	</button>
+	<!-- scrolls on its own, so a long list keeps the way back where it was; the names truncate
+	     to the box rather than widen it past the lifted track -->
+	<div
+		class="grid max-h-[min(20rem,50dvh)] grid-cols-1 overflow-y-auto overscroll-contain contain-inline-size {list}"
+	>
+		{#if naming}
+			<form class={item} onsubmit={create}>
+				<!-- select-text: iOS will not type into a field under the lift's select-none -->
+				<input
+					type="text"
+					bind:value={draftName}
+					maxlength="80"
+					placeholder="Playlist name"
+					aria-label="New playlist name"
+					class="min-w-0 flex-1 select-text rounded-art border border-haze bg-dark-0 px-2 py-1 text-chalk placeholder:text-fog focus:border-primary-0 focus:ring-primary-0"
+					{@attach focus}
+				/>
+				<button
+					type="submit"
+					class="shrink-0 rounded-art bg-primary-600 px-2.5 py-1 font-semibold text-white hover:bg-primary-0 disabled:opacity-60"
+					disabled={!draftName.trim() || playlists.loading}
+				>
+					Create
+				</button>
+			</form>
+		{:else}
+			<button type="button" class={item} onclick={() => (naming = true)}>
+				<span
+					class="grid size-8 shrink-0 place-items-center rounded-art border border-dashed border-surface-400 text-fog"
+				>
+					<Icon src={Plus} mini size="14" />
+				</span>
+				New playlist
+			</button>
+		{/if}
+		{#each playlists.mine as playlist (playlist.id)}
+			<button
+				type="button"
+				class={item}
+				disabled={playlists.loading || landed !== null}
+				onclick={() => addTo(playlist)}
+			>
+				<PlaylistCover {playlist} class="size-8 shrink-0 rounded-art object-cover" />
+				<span class="min-w-0 flex-1 truncate">{playlist.name}</span>
+				{#if landed?.id === playlist.id}
+					{#if landed.added}
+						<span class="flex shrink-0 items-center gap-1.5 text-primary-500">
+							<span
+								class="grid size-5 animate-ripple place-items-center rounded-full bg-primary-600 text-white motion-reduce:animate-none"
+							>
+								<Icon src={Check} mini size="12" />
+							</span>
+							Added
+						</span>
+					{:else}
+						<span class="shrink-0 text-fog">Already in</span>
+					{/if}
+				{:else}
+					<span class="shrink-0 font-mono text-[0.68rem] text-fog">{playlist.trackCount}</span>
+				{/if}
+			</button>
+		{:else}
+			{#if playlists.loading}
+				<p class="px-2 py-2 text-fog">Loading your playlists…</p>
+			{/if}
+		{/each}
+	</div>
+	{#if playlists.error}
+		<p class="px-2 py-2 text-ember" role="alert">{playlists.error}</p>
+	{/if}
+	<p class="sr-only" aria-live="polite">
+		{landed ? `${landed.added ? 'Added to' : 'Already in'} ${landed.name}` : ''}
+	</p>
 {/snippet}
