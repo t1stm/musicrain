@@ -2,6 +2,7 @@ import { untrack } from 'svelte';
 import { getSettings, patchSettings } from '$requests/accounts';
 import { AudioApiError } from '$requests/songs';
 import account from './account.svelte';
+import advanced, { vibrations } from './advanced.svelte';
 import lyrics from './lyrics.svelte';
 import quality, { bitrates, codecs, type Bitrate, type Codec } from './quality.svelte';
 import user from './user.svelte';
@@ -17,8 +18,11 @@ type Field<T> = {
 	set(value: T): void;
 	/** Everything read back from Dom or from storage passes through here first. */
 	valid(value: unknown): value is T;
-	/** Whether one device may keep its own. */
-	deviceOnlyAllowed: boolean;
+	/**
+	 * `always` goes to the account. `optional` does too, unless a device keeps its own.
+	 * `never` describes this device — a phone's motor, this browser's console — and stays on it.
+	 */
+	sync: 'always' | 'optional' | 'never';
 };
 
 type Quality = { codec: Codec; bitrate: Bitrate };
@@ -40,7 +44,7 @@ const fields = {
 			value !== null &&
 			codecs.includes((value as Quality).codec) &&
 			bitrates.includes((value as Quality).bitrate),
-		deviceOnlyAllowed: true,
+		sync: 'optional',
 	} satisfies Field<Quality>,
 	chatName: {
 		get: () => (user.source === 'discord' ? undefined : user.username),
@@ -49,13 +53,31 @@ const fields = {
 		},
 		valid: (value): value is string | null =>
 			value === null || (typeof value === 'string' && value.length <= 60),
-		deviceOnlyAllowed: true,
+		sync: 'optional',
 	} satisfies Field<string | null>,
 	lyricsOpen: {
 		get: () => lyrics.open,
 		set: (value) => (lyrics.open = value),
 		valid: (value): value is boolean => typeof value === 'boolean',
-		deviceOnlyAllowed: false,
+		sync: 'always',
+	} satisfies Field<boolean>,
+	trackTools: {
+		get: () => advanced.trackTools,
+		set: (value) => (advanced.trackTools = value),
+		valid: (value): value is boolean => typeof value === 'boolean',
+		sync: 'always',
+	} satisfies Field<boolean>,
+	vibrationMs: {
+		get: () => advanced.vibrationMs,
+		set: (value) => (advanced.vibrationMs = value),
+		valid: (value): value is number => vibrations.some((vibration) => vibration.ms === value),
+		sync: 'never',
+	} satisfies Field<number>,
+	logSync: {
+		get: () => advanced.logSync,
+		set: (value) => (advanced.logSync = value),
+		valid: (value): value is boolean => typeof value === 'boolean',
+		sync: 'never',
 	} satisfies Field<boolean>,
 };
 
@@ -80,7 +102,8 @@ type Stored = {
  * store reads it on every load and on every sign-in, and sends each change a second after
  * it settles. The rules, in the order they are applied:
  *
- * - A device-only key is never sent, and never overwritten by the account's value.
+ * - A device-only key is never sent, and never overwritten by the account's value. Some
+ *   keys are device-only by nature (`sync: 'never'`); the rest can be made so.
  * - A key changed here while signed in, and not yet acknowledged, is newer than the
  *   account's copy: it is sent, not overwritten. That is an edit made offline.
  * - Otherwise the account wins. Changes made while signed out never count as newer, so
@@ -98,7 +121,12 @@ class Settings {
 	#stop: (() => void) | null = null;
 
 	isDeviceOnly(key: SettingKey) {
-		return this.deviceOnly.includes(key);
+		return fields[key].sync === 'never' || this.deviceOnly.includes(key);
+	}
+
+	/** Where a key's value lives — see `Field.sync`. */
+	syncOf(key: SettingKey) {
+		return fields[key].sync;
 	}
 
 	/** Restores this device's values, then follows every change and the account. Browser only. */
@@ -106,7 +134,7 @@ class Settings {
 		if (this.#stop) return;
 
 		const stored = read();
-		this.deviceOnly = stored.deviceOnly.filter((key) => fields[key].deviceOnlyAllowed);
+		this.deviceOnly = stored.deviceOnly.filter((key) => fields[key].sync === 'optional');
 		this.#dirty = new Set(stored.dirty);
 
 		for (const key of keys) {
@@ -126,7 +154,7 @@ class Settings {
 	 * a sign-in in miniature: the account's value replaces this one, or this one fills it.
 	 */
 	setDeviceOnly(key: SettingKey, on: boolean) {
-		if (!fields[key].deviceOnlyAllowed || on === this.isDeviceOnly(key)) return;
+		if (fields[key].sync !== 'optional' || on === this.isDeviceOnly(key)) return;
 
 		if (on) {
 			this.deviceOnly = [...this.deviceOnly, key];

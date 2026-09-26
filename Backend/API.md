@@ -237,8 +237,11 @@ body that is not a JSON object is `400 invalid_request`.
 What the frontend keeps there today — each key is optional:
 
 ```json
-{"quality":{"codec":"Opus","bitrate":192},"chatName":"Радост","lyricsOpen":true}
+{"quality":{"codec":"Opus","bitrate":192},"chatName":"Радост","lyricsOpen":true,"trackTools":false}
 ```
+
+Some of its settings describe the device rather than the person — the vibration length, the output
+delay, whether room sync is logged to the console — and those never reach Dom.
 
 ### Changing the account
 

@@ -79,7 +79,7 @@ it('fills an account that never saved any from this device', async () => {
 	await settle();
 
 	expect(sent()).toEqual([
-		{ quality: { codec: 'FLAC', bitrate: 320 }, chatName: 'kris', lyricsOpen: true },
+		{ quality: { codec: 'FLAC', bitrate: 320 }, chatName: 'kris', lyricsOpen: true, trackTools: false },
 	]);
 });
 
@@ -88,7 +88,7 @@ it("sends a change made offline rather than taking the account's older value", a
 		'musicrain.settings',
 		JSON.stringify({ values: { quality: { codec: 'FLAC', bitrate: 320 } }, dirty: ['quality'] }),
 	);
-	remote({ quality: { codec: 'MP3', bitrate: 128 }, chatName: 'kris', lyricsOpen: false });
+	remote({ quality: { codec: 'MP3', bitrate: 128 }, chatName: 'kris', lyricsOpen: false, trackTools: false });
 	const { settings, quality } = await fresh(true);
 
 	settings.load();
@@ -99,7 +99,7 @@ it("sends a change made offline rather than taking the account's older value", a
 });
 
 it('never sends a device-only setting, and never overwrites it', async () => {
-	remote({ quality: { codec: 'MP3', bitrate: 128 }, chatName: 'kris', lyricsOpen: false });
+	remote({ quality: { codec: 'MP3', bitrate: 128 }, chatName: 'kris', lyricsOpen: false, trackTools: false });
 	const { settings, quality } = await fresh(true);
 	settings.load();
 	await settle();
@@ -112,8 +112,24 @@ it('never sends a device-only setting, and never overwrites it', async () => {
 	expect(JSON.parse(kept.get('musicrain.settings')!).values.quality.codec).toBe('FLAC');
 });
 
+it('never sends what describes this device, signed in or not', async () => {
+	remote({ quality: { codec: 'Opus', bitrate: 192 }, chatName: 'kris', lyricsOpen: false, trackTools: false });
+	const { settings } = await fresh(true);
+	const advanced = (await import('./advanced.svelte')).default;
+	settings.load();
+	await settle();
+
+	advanced.vibrationMs = 20;
+	advanced.logSync = false;
+	advanced.trackTools = true;
+	await settle();
+
+	expect(sent()).toEqual([{ trackTools: true }]);
+	expect(JSON.parse(kept.get('musicrain.settings')!).values).toMatchObject({ vibrationMs: 20, logSync: false });
+});
+
 it('leaves a value it cannot read alone, on both sides', async () => {
-	remote({ quality: { codec: 'Opus 2', bitrate: 192 }, chatName: 'kris', lyricsOpen: false });
+	remote({ quality: { codec: 'Opus 2', bitrate: 192 }, chatName: 'kris', lyricsOpen: false, trackTools: false });
 	const { settings, quality } = await fresh(true);
 
 	settings.load();
@@ -124,7 +140,7 @@ it('leaves a value it cannot read alone, on both sides', async () => {
 });
 
 it('sends a change a second after it, once', async () => {
-	remote({ quality: { codec: 'Opus', bitrate: 192 }, chatName: 'kris', lyricsOpen: false });
+	remote({ quality: { codec: 'Opus', bitrate: 192 }, chatName: 'kris', lyricsOpen: false, trackTools: false });
 	const { settings, quality } = await fresh(true);
 	settings.load();
 	await settle();
@@ -138,7 +154,7 @@ it('sends a change a second after it, once', async () => {
 });
 
 it('never saves the name Discord gave', async () => {
-	remote({ quality: { codec: 'Opus', bitrate: 192 }, chatName: 'kris', lyricsOpen: false });
+	remote({ quality: { codec: 'Opus', bitrate: 192 }, chatName: 'kris', lyricsOpen: false, trackTools: false });
 	const { settings, user } = await fresh(true);
 	settings.load();
 	await settle();
@@ -151,7 +167,7 @@ it('never saves the name Discord gave', async () => {
 });
 
 it('keeps a change for the next try when Dom cannot be reached, and signs out on a 401', async () => {
-	remote({ quality: { codec: 'Opus', bitrate: 192 }, chatName: 'kris', lyricsOpen: false });
+	remote({ quality: { codec: 'Opus', bitrate: 192 }, chatName: 'kris', lyricsOpen: false, trackTools: false });
 	const { settings, account, quality } = await fresh(true);
 	settings.load();
 	await settle();

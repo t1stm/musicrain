@@ -4,8 +4,12 @@
  * screen then is under the thumb doing it. `vibrate` is Chromium's — Android — and answers
  * only once the page has had a tap; anywhere else nothing is felt and nothing else changes.
  *
- * ponytail: one length for every phone, and motors differ. Tune it here.
+ * Motors differ, so the length is per device: Settings → Advanced sets it, and 0 is off.
  */
-const TICK_MS = 10;
+let tickMs = 10;
 
-export const haptic = () => navigator.vibrate?.(TICK_MS);
+export const setTickMs = (ms: number) => (tickMs = ms);
+
+export const haptic = () => {
+	if (tickMs > 0) navigator.vibrate?.(tickMs);
+};

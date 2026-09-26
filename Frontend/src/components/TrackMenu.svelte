@@ -24,6 +24,7 @@
 	import ReplacePicker from '$components/playlist/ReplacePicker.svelte';
 	import type { PlaylistSummary } from '$requests/playlists';
 	import account from '$states/account.svelte';
+	import advanced from '$states/advanced.svelte';
 	import playlists, { toSnapshot } from '$states/playlists.svelte';
 	import type { SearchResult } from '$states/search.svelte';
 	import queue from '$states/queue.svelte';
@@ -79,10 +80,6 @@
 		open = false;
 	}
 
-	// ponytail: "Download raw" and "Copy id" are hidden, not gone — taken out of the menu for
-	// now, until a settings page exists where they can be turned back on. This is the switch
-	// until then; it becomes that setting.
-	const toolActions = false;
 
 	let copied = $state(false);
 	let settle: ReturnType<typeof setTimeout>;
@@ -386,8 +383,8 @@
 			<Icon src={ArrowsRightLeft} mini {size} class="shrink-0 text-fog" /> Replace…
 		</button>
 	{/if}
-	<!-- off until the settings page can turn them on: see `toolActions` -->
-	{#if toolActions}
+	<!-- off unless Settings → Advanced turns them on -->
+	{#if advanced.trackTools}
 		<!-- room queue items carry no contentUrl; hide the action rather than
 		     linking nowhere -->
 		{#if result.contentUrl}

@@ -134,9 +134,13 @@ export type LinkSample = { at: number; rtt: number; skew: number | null };
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
 /** Every action the loop takes, in the browser only — the room simulator and the
- *  tests import this same module and would drown in it.
+ *  tests import this same module and would drown in it. On unless Settings → Advanced
+ *  turns it off.
  *  ponytail: a boolean, not log levels. Add levels when one is actually wanted. */
-const debug = typeof window !== 'undefined' && !import.meta.env?.VITEST;
+const inBrowser = typeof window !== 'undefined' && !import.meta.env?.VITEST;
+let debug = inBrowser;
+
+export const logSync = (on: boolean) => (debug = on && inBrowser);
 const ms = (seconds: number) => `${(seconds * 1000).toFixed(1)}ms`;
 const log = (action: string, detail: string) => {
 	if (debug) console.log(`[syncClock] ${action}: ${detail}`);

@@ -28,7 +28,8 @@
 			href: resolve('/settings/rooms'),
 			label: 'Rooms',
 			summary: () => user.username || 'Anonymous'
-		}
+		},
+		{ href: resolve('/settings/advanced'), label: 'Advanced', summary: () => '' }
 	];
 
 	let index = $derived(page.route.id === '/(app)/settings');
