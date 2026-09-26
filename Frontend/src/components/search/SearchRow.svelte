@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { EllipsisHorizontal, Icon, Play, QueueList } from 'svelte-hero-icons';
+	import { EllipsisHorizontal, Icon, Play, Plus, QueueList } from 'svelte-hero-icons';
 	import { resolve } from '$app/paths';
 	import { convertTimeSpanStringToSeconds, getTimeString, heroArtist, pressKeys, sourceOf } from '$lib';
 	import type { SearchResult } from '$states/search.svelte';
@@ -46,14 +46,25 @@
 	}
 </script>
 
+<!-- Two steps the same width apart: the queue's end, then the front of it. The phone has no
+     Queue button on the row, so this is its way to one. -->
 <SwipeRow
-	right={{
-		label: 'Play next',
-		icon: QueueList,
-		color: 'var(--color-primary-600)',
-		done: 'Next up',
-		run: () => queue.playNext(result)
-	}}
+	right={[
+		{
+			label: 'Queue',
+			icon: Plus,
+			color: 'var(--color-surface-400)',
+			done: 'Queued',
+			run: () => queue.add(result)
+		},
+		{
+			label: 'Play next',
+			icon: QueueList,
+			color: 'var(--color-primary-600)',
+			done: 'Next up',
+			run: () => queue.playNext(result)
+		}
+	]}
 	left={{
 		label: 'More',
 		icon: EllipsisHorizontal,

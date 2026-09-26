@@ -6,7 +6,7 @@
 	import PlaylistCover from '$components/playlist/PlaylistCover.svelte';
 	import SwipeRow from '$components/SwipeRow.svelte';
 	import TrackMenu from '$components/TrackMenu.svelte';
-	import { EllipsisHorizontal, QueueList } from 'svelte-hero-icons';
+	import { EllipsisHorizontal, Plus, QueueList } from 'svelte-hero-icons';
 	import { convertTimeSpanStringToSeconds, getTimeString, pressKeys } from '$lib';
 	import { getPlaylist, type Playlist } from '$requests/playlists';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
@@ -295,13 +295,22 @@
 						<!-- your own list: the grip is the reorder's, so a swipe starts anywhere else -->
 						<SwipeRow
 							ignore={mine ? '[data-grip]' : undefined}
-							right={{
-								label: 'Play next',
-								icon: QueueList,
-								color: 'var(--color-primary-600)',
-								done: 'Next up',
-								run: () => queue.playNext(track)
-							}}
+							right={[
+								{
+									label: 'Queue',
+									icon: Plus,
+									color: 'var(--color-surface-400)',
+									done: 'Queued',
+									run: () => queue.add(track)
+								},
+								{
+									label: 'Play next',
+									icon: QueueList,
+									color: 'var(--color-primary-600)',
+									done: 'Next up',
+									run: () => queue.playNext(track)
+								}
+							]}
 							left={{
 								label: 'More',
 								icon: EllipsisHorizontal,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ignored, settle } from './swipe';
+import { ignored, settle, stepAt } from './swipe';
 
 describe('settle', () => {
 	it('takes a long drag at any speed', () => {
@@ -39,5 +39,19 @@ describe('ignored', () => {
 	it('takes everything outside it', () => {
 		expect(ignored(at('outside'), '[data-body]', '[data-handle]')).toBe(false);
 		expect(ignored(at('outside'))).toBe(false);
+	});
+});
+
+describe('stepAt', () => {
+	it('reaches a step a trigger further on for each', () => {
+		expect(stepAt(0.99, 2)).toBe(-1);
+		expect(stepAt(1, 2)).toBe(0);
+		expect(stepAt(1.99, 2)).toBe(0);
+		expect(stepAt(2, 2)).toBe(1);
+	});
+
+	it('holds the last step however far past it', () => {
+		expect(stepAt(5, 2)).toBe(1);
+		expect(stepAt(3, 1)).toBe(0);
 	});
 });

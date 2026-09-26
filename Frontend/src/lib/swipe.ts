@@ -22,6 +22,14 @@ export function settle(dx: number, dy: number, ms: number): Direction | null {
 	return dy < 0 ? 'up' : 'down';
 }
 
+/**
+ * Which of `count` steps a pull has reached, the pull measured in triggers: every step is
+ * one trigger further on than the last. -1 short of the first; past the last is the last.
+ */
+export function stepAt(pull: number, count: number): number {
+	return Math.min(Math.floor(pull), count) - 1;
+}
+
 /** Whether a press on `target` is left alone: inside `ignore`, unless a `handle` is nearer. */
 export function ignored(target: Element, ignore?: string, handle?: string): boolean {
 	if (!ignore) return false;

@@ -12,36 +12,45 @@
 		 *  answer (a menu opening). */
 		done?: string;
 	};
+
+	/** One action, or steps of it: the first a trigger's width out, the next two, and so on. */
+	export type SwipeSteps = SwipeAction | SwipeAction[];
 </script>
 
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { Check, Icon } from 'svelte-hero-icons';
-	import { swipe } from '$lib/swipe';
+	import { stepAt, swipe } from '$lib/swipe';
 
 	// A row a finger can slide, the way a mail app's full swipe works: carried past a
-	// fifth of the row and let go, `right` or `left` fires. Anything short of that springs
-	// back — there is no half-open row to tap, so the keys are pictures of the action, not
-	// buttons. A mouse never swipes (see `swipe`), so on a desktop this is only the row.
+	// fifth of the row and let go, `right` or `left` fires. A side with steps goes on: each
+	// the same width further than the last, the furthest reached firing — the key says
+	// which as it goes. Anything short of the first springs back — there is no half-open
+	// row to tap, so the keys are pictures of the action, not buttons. A mouse never
+	// swipes (see `swipe`), so on a desktop this is only the row.
 	let {
 		right,
 		left,
 		ignore,
 		children
-	}: { right: SwipeAction; left: SwipeAction; ignore?: string; children: Snippet } = $props();
+	}: { right: SwipeSteps; left: SwipeSteps; ignore?: string; children: Snippet } = $props();
 
 	type Side = 'right' | 'left';
 
-	// How far into the full swipe the finger is: 0 at rest, 1 where letting go fires it.
-	// The key's colour is this number.
+	const stepsOf = (side: Side) => [side === 'right' ? right : left].flat();
+
+	// How far into the swipe the finger is, in triggers: 0 at rest, 1 where letting go
+	// fires the first step, 2 the second. The key's colour is the first of that.
 	let pull = $state(0);
 	let toward = $state<Side>('right');
-	let armed = $derived(pull < 1 ? null : toward);
+	/** What letting go now would fire. */
+	let reached = $derived(stepsOf(toward)[stepAt(pull, stepsOf(toward).length)] ?? null);
 	let row: HTMLElement;
 
-	// The answer: the key holds, filled, with a tick, then the action runs and the row
+	// The answer: the key holds, filled, with a tick, then the step runs and the row
 	// goes home.
 	let done = $state<Side | null>(null);
+	let fired = $state<SwipeAction | null>(null);
 	let settle: ReturnType<typeof setTimeout>;
 
 	function drag(dx: number) {
@@ -51,20 +60,23 @@
 		toward = dx > 0 ? 'right' : 'left';
 		// a fifth of the row, but never under the 72px `swipe` needs to call it a swipe at
 		// all — a full key that fires nothing on release would be a lie
-		pull = Math.min(Math.abs(dx) / Math.max(row.offsetWidth / 5, 72), 1);
+		pull = Math.min(Math.abs(dx) / Math.max(row.offsetWidth / 5, 72), stepsOf(toward).length);
 	}
 
 	function fire(side: Side) {
-		const action = side === 'right' ? right : left;
+		const action = toward === side ? reached : null;
+		if (!action) return;
 		if (!action.done) return action.run();
 		done = side;
+		fired = action;
 		settle = setTimeout(finish, 600);
 	}
 
 	function finish() {
 		clearTimeout(settle);
-		const action = done === 'right' ? right : done === 'left' ? left : null;
+		const action = fired;
 		done = null;
+		fired = null;
 		action?.run();
 	}
 </script>
@@ -73,25 +85,28 @@
 	bind:this={row}
 	class="swipe-row"
 	data-done={done}
-	style:--pull={pull}
+	style:--pull={Math.min(pull, 1)}
 	{@attach swipe({
 		// A row's menu (TrackMenu's <details>) drops over the rows below it, but in the DOM
 		// it is still inside the row: without this every press on it drags the row.
 		ignore: ignore ? `${ignore}, details` : 'details',
 		drag,
-		right: () => armed === 'right' && fire('right'),
-		left: () => armed === 'left' && fire('left')
+		right: () => fire('right'),
+		left: () => fire('left')
 	})}
 >
 	<div class="swipe-track">
-		{@render key('right', right)}
+		{@render key('right')}
 		{@render children()}
-		{@render key('left', left)}
+		{@render key('left')}
 	</div>
 </div>
 
-<!-- `side` is the way the finger goes: a swipe right uncovers the key on the left edge -->
-{#snippet key(side: Side, action: SwipeAction)}
+<!-- `side` is the way the finger goes: a swipe right uncovers the key on the left edge.
+     The key is the step that fired while it answers, else the one the pull has reached,
+     else the first. -->
+{#snippet key(side: Side)}
+	{@const action = (done === side && fired) || (toward === side && reached) || stepsOf(side)[0]}
 	<div data-side={side} style:--fill={action.color} aria-hidden="true">
 		<div class="key {side === 'right' ? 'justify-end' : 'justify-start'}">
 			<span class="flex w-20 flex-col items-center gap-1">
