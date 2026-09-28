@@ -24,4 +24,10 @@ public class CacheEntry
     public string ContentType { get; set; } = "application/octet-stream";
     public string? ContentDisposition { get; set; }
     public string? ETag { get; set; }
+
+    /// <summary>
+    ///     The status to answer with when the fetch never started, in place of a body: upstream's own 4xx
+    ///     (a track missing from the library is a 404, not a gateway fault), or 502 for anything else.
+    /// </summary>
+    public int? Failure { get; set; }
 }

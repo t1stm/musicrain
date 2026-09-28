@@ -16,7 +16,7 @@ internal static class SelfCheck
 {
     public static async Task<bool> RunAsync()
     {
-        return await CoalescingAsync() & await FollowAsync() & AdminRing();
+        return await CoalescingAsync() & await UpstreamStatusAsync() & await FollowAsync() & AdminRing();
     }
 
     /// <summary>
@@ -63,13 +63,45 @@ internal static class SelfCheck
             entry => cache.FetchAsync(entry, "/probe", CancellationToken.None), out _)));
 
         var ok = fetchCount == 1
-                 && results.All(r => r is not null)
-                 && results.Select(r => r!.Body.Path).Distinct().Count() == 1;
+                 && results.All(r => r.Failure is null)
+                 && results.Select(r => r.Body.Path).Distinct().Count() == 1;
 
         Console.WriteLine(ok
             ? $"OK: {results.Length} concurrent requests -> {fetchCount} upstream fetch(es)"
             : $"FAIL: {results.Length} concurrent requests -> {fetchCount} upstream fetch(es), " +
-              $"{results.Count(r => r is null)} null result(s)");
+              $"{results.Count(r => r.Failure is not null)} failed result(s)");
+
+        return ok;
+    }
+
+    /// <summary>
+    ///     What a client is told when upstream refuses: its 4xx as it is, since a missing track answered as a
+    ///     502 reads as a gateway worth retrying, and 502 for its 5xx and for no answer at all.
+    /// </summary>
+    private static async Task<bool> UpstreamStatusAsync()
+    {
+        var ok = true;
+        foreach (var (upstream, expected) in new (HttpStatusCode?, int)[]
+                 {
+                     (HttpStatusCode.NotFound, 404), (HttpStatusCode.BadRequest, 400),
+                     (HttpStatusCode.InternalServerError, 502), (null, 502)
+                 })
+        {
+            using var http = new HttpClient(new StatusHandler(upstream));
+            http.BaseAddress = new Uri("http://unit-test.local");
+            using var scratch = new ScratchDir();
+            var cache = new CacheService(http, Log.Logger, scratch.Configuration);
+
+            var entry = await cache.GetOrStartAsync("status-key",
+                fetching => cache.FetchAsync(fetching, "/probe", CancellationToken.None), out _);
+            var cached = cache.Has("status-key");
+
+            var passed = entry.Failure == expected && !cached;
+            ok &= passed;
+            Console.WriteLine(passed
+                ? $"OK: upstream {(int?)upstream ?? 0} -> {expected}, and nothing cached"
+                : $"FAIL: upstream {(int?)upstream ?? 0} -> {entry.Failure}, expected {expected}; cached: {cached}");
+        }
 
         return ok;
     }
@@ -181,6 +213,18 @@ internal static class SelfCheck
             {
                 // Best effort -- it is a temp directory.
             }
+        }
+    }
+
+    /// <summary>Answers every request with <paramref name="status" />, or fails to connect when it is null.</summary>
+    private sealed class StatusHandler(HttpStatusCode? status) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            return status is { } code
+                ? Task.FromResult(new HttpResponseMessage(code))
+                : Task.FromException<HttpResponseMessage>(new HttpRequestException("connection refused"));
         }
     }
 

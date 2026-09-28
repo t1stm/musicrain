@@ -17,7 +17,7 @@ namespace Dunav;
 /// </summary>
 public class CacheService
 {
-    private readonly ConcurrentDictionary<string, Lazy<Task<CacheEntry?>>> _cachedEntries = new();
+    private readonly ConcurrentDictionary<string, Lazy<Task<CacheEntry>>> _cachedEntries = new();
     private readonly ConcurrentDictionary<string, DateTime> _expireTimes = new();
     private readonly string _cacheDir;
     private readonly HttpClient _http;
@@ -86,19 +86,22 @@ public class CacheService
     ///     losers await the winner's task instead of issuing a second upstream request for the same bytes.
     /// </summary>
     /// <param name="key">Identifies the entry; see <see cref="EncodedKey" />.</param>
-    /// <param name="start">Feeds the entry's spreader from upstream. Returns <c>false</c> when the fetch could not be started.</param>
+    /// <param name="start">
+    ///     Feeds the entry's spreader from upstream. Returns <c>false</c> when the fetch could not be started,
+    ///     having set <see cref="CacheEntry.Failure" />.
+    /// </param>
     /// <param name="started">
     ///     <c>true</c> for the single caller whose call actually started the fetch; every racer that found the
     ///     key already there gets <c>false</c>. Preload answers 202 or 200 off this.
     /// </param>
     /// <param name="label">Human-readable description of the entry, for <see cref="Snapshot" />. Never used for lookup.</param>
-    public Task<CacheEntry?> GetOrStartAsync(string key, Func<CacheEntry, Task<bool>> start, out bool started,
+    public Task<CacheEntry> GetOrStartAsync(string key, Func<CacheEntry, Task<bool>> start, out bool started,
         string? label = null)
     {
         // Built before the add so that the add is the only race: GetOrAdd's factory overload may run for more
         // than one caller, and then two of them would each believe they started the fetch. A Lazy that loses
         // is discarded before it ever calls upstream.
-        var lazy = new Lazy<Task<CacheEntry?>>(async () =>
+        var lazy = new Lazy<Task<CacheEntry>>(async () =>
         {
             var entry = new CacheEntry
             {
@@ -108,10 +111,12 @@ public class CacheService
             };
             if (await start(entry)) return entry;
 
-            // A failed start must not stay cached, or every later request inherits the failure.
+            // A failed start must not stay cached, or every later request inherits the failure. The entry
+            // still goes back to every racer that awaited it, carrying the status to answer with.
             Forget(key);
             Delete(entry);
-            return null;
+            entry.Failure ??= StatusCodes.Status502BadGateway;
+            return entry;
         }, LazyThreadSafetyMode.ExecutionAndPublication);
 
         var cached = _cachedEntries.GetOrAdd(key, lazy);
@@ -168,6 +173,10 @@ public class CacheService
         if (!response.IsSuccessStatusCode)
         {
             Logger.Warning("Upstream returned {Status} for {Path}", response.StatusCode, upstreamPath);
+            // Upstream's 4xx is the answer, not a fault on the way to it: a track missing from the library
+            // relayed as 502 reads as a gateway to retry. Its 5xx is still a gateway failure from here.
+            var status = (int)response.StatusCode;
+            if (status is >= 400 and < 500) entry.Failure = status;
             response.Dispose();
             return false;
         }

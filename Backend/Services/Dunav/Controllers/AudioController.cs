@@ -18,7 +18,7 @@ public class AudioController(ILogger<AudioController> logger, CacheService cache
 
         var key = CacheService.RawKey(id);
         var entry = await GetOrFetch(key, $"/Audio/DownloadRaw?id={Uri.EscapeDataString(id)}", out _, $"raw {id}");
-        if (entry is null) return StatusCode(502);
+        if (entry.Failure is { } failure) return StatusCode(failure);
 
         return await Respond(key, entry);
     }
@@ -32,7 +32,7 @@ public class AudioController(ILogger<AudioController> logger, CacheService cache
 
         var key = CacheService.EncodedKey(codec, bitrate, id);
         var entry = await GetOrFetch(key, UpstreamDownloadPath(codec, bitrate, id), out _, Label(codec, bitrate, id));
-        if (entry is null) return StatusCode(502);
+        if (entry.Failure is { } failure) return StatusCode(failure);
 
         return await Respond(key, entry);
     }
@@ -57,7 +57,7 @@ public class AudioController(ILogger<AudioController> logger, CacheService cache
         logger.LogInformation("Preloading '{ID}' {Codec} {Bitrate}", id, codec, bitrate);
         var entry = await GetOrFetch(key, UpstreamDownloadPath(codec, bitrate, id), out var started,
             Label(codec, bitrate, id));
-        if (entry is null) return StatusCode(502);
+        if (entry.Failure is { } failure) return StatusCode(failure);
 
         // Two callers can reach this together and both find TryGet empty; only one of them added the
         // entry, and only that one gets the 202.
@@ -75,7 +75,7 @@ public class AudioController(ILogger<AudioController> logger, CacheService cache
         return $"{codec} {bitrate}k {id}";
     }
 
-    private Task<CacheEntry?> GetOrFetch(string key, string upstreamPath, out bool started, string? label = null)
+    private Task<CacheEntry> GetOrFetch(string key, string upstreamPath, out bool started, string? label = null)
     {
         return cache.GetOrStartAsync(key, entry => cache.FetchAsync(entry, upstreamPath, CancellationToken.None),
             out started, label);
