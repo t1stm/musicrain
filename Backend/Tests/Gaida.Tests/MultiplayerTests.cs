@@ -594,6 +594,34 @@ public class VirtualPlayerTests
         Assert.Equal(["playing False", "current 2"], listening.Messages);
     }
 
+    /// <summary>
+    ///     `next` off the last track leaves current one past the end, and everyone answers the
+    ///     loading barrier for that nothing as well. The clock must not start on it: it would
+    ///     tell every client the room is playing, with no track, until something is added.
+    /// </summary>
+    [Fact]
+    public async Task TheClockDoesNotStartPastTheEndOfTheQueue()
+    {
+        var (player, store) = TestObjects.Player();
+        var socket = new RecordingWebSocket();
+        await store.GetOrAddUser("listening", socket);
+        player.Items.Add(TestObjects.Result("audio://last"));
+
+        await player.SetLoaded("listening");
+        await player.SetFinished("listening");
+        Assert.Equal("current 1", socket.Messages[^1]);
+        socket.ClearMessages();
+
+        await player.SetLoaded("listening");
+        Assert.Empty(socket.Messages);
+
+        // the next track added is the one that starts it, through its own barrier
+        await player.Enqueue(TestObjects.Result("audio://added"));
+        socket.ClearMessages();
+        await player.SetLoaded("listening");
+        Assert.Equal(["seek 0", "playing True"], TestObjects.Unstamped(socket.Messages));
+    }
+
     [Fact]
     public async Task SeekingPastAQuarterOfAnHourStaysOnTheClock()
     {

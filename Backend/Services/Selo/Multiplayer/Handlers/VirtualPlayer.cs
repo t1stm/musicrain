@@ -508,10 +508,11 @@ public class VirtualPlayer(MessageQueue messageQueue)
         var count = messageQueue.CurrentStore.Count;
         // as in HandleFinishedCore: on an empty room `0 < 0` is false, and this
         // releases the barrier — rewinding the clock and force-playing a room
-        // that the next person to join then walks into mid-track. An empty queue
-        // is the same mistake in the other direction: starting the clock with
-        // nothing to play leaves it running until something is added.
-        if (!_loading || count == 0 || Items.Count == 0 || _loaded.Count < count) return;
+        // that the next person to join then walks into mid-track. Nothing to play
+        // is the same mistake in the other direction: starting the clock leaves it
+        // running until something is added. That is an empty queue, and also the
+        // index past the end that `next` leaves after the last track.
+        if (!_loading || count == 0 || CurrentItemCore() is null || _loaded.Count < count) return;
 
         _loading = false;
         _loaded.Clear();
