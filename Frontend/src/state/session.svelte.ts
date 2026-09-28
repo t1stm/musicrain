@@ -85,9 +85,9 @@ class Session {
 	description: string = $state('');
 	status: SessionStatus = $state('offline');
 	chat: ChatLine[] = $state([]);
-	/** Presence exists only as system chat notices, so this misses everyone who
-	 *  arrived before you and resets on reconnect. Label it honestly. */
-	roster: string[] = $state([]);
+	/** How many are in the room, this client included, as the room last said.
+	 *  Zero until it says, which is how the strip knows to leave it out. */
+	members: number = $state(0);
 	unread: number = $state(0);
 	chatOpen: boolean = $state(false);
 	/** A well-formed but unknown room GUID is accepted, then closed with no
@@ -166,7 +166,7 @@ class Session {
 		this.named = '';
 		this.description = '';
 		this.chat = [];
-		this.roster = [];
+		this.members = 0;
 		this.unread = 0;
 		this.currentTrackId = '';
 		this.positionedAt = null;
@@ -354,6 +354,9 @@ class Session {
 				break;
 			case 'room':
 				this.setRoomField(argument);
+				break;
+			case 'members':
+				this.members = Number(argument) || 0;
 				break;
 		}
 	}
@@ -549,8 +552,6 @@ class Session {
 		const text = (separator === -1 ? '' : argument.slice(separator + 4)).trim();
 		const system = username === 'System';
 
-		if (system) this.updateRoster(text);
-
 		const line: ChatLine = {
 			id: nextLineId++,
 			username,
@@ -563,18 +564,6 @@ class Session {
 		};
 		this.chat = [...this.chat, line].slice(-maximumChatLines);
 		if (!this.chatOpen) this.unread++;
-	}
-
-	private updateRoster(text: string) {
-		const notice = /^User '(.*)' (joined|left)/.exec(text);
-		if (!notice) return;
-		const who = notice[1].trim();
-
-		if (notice[2] === 'joined') {
-			if (!this.roster.includes(who)) this.roster = [...this.roster, who];
-			return;
-		}
-		this.roster = this.roster.filter((name) => name !== who);
 	}
 
 	private setRoomField(argument: string) {

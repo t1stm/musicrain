@@ -113,10 +113,11 @@ public class Room
         // is what the unconditional call did — allocated a closure and a delegate per frame
         if (_store.GetUser(id) is { } present) return new ValueTask<User>(present);
 
-        return _store.GetOrAddUser(id, webSocket, user =>
+        return _store.GetOrAddUser(id, webSocket, async user =>
         {
             user.Username = initialUsername;
-            return _player.Joined(user);
+            await _player.Joined(user);
+            await SendMemberCount();
         });
     }
 
@@ -128,10 +129,20 @@ public class Room
 
         await _store.RemoveUser(id);
         await _queue.Send($"chat System %% User '{user.ChatUsername}' left from the session.");
+        await SendMemberCount();
         await _player.UserLeft(id);
 
         if (_store.Count == 0)
             OnEmptied?.Invoke();
+    }
+
+    /// <summary>
+    ///     How many are here, to everyone, on every join and leave. The chat notices only reach the people
+    ///     already in the room, so a count built from them misses whoever was here first.
+    /// </summary>
+    private Task SendMemberCount()
+    {
+        return _queue.Send($"members {_store.Count}");
     }
 
     public Task HandleUserMessage(User user, string message)

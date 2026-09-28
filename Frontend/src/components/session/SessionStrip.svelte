@@ -101,7 +101,7 @@
 
 	<div class="flex shrink-0 items-center gap-3">
 		<span class="state font-mono text-[0.72rem] tracking-[0.08em]"
-			>{session.status}{session.roster.length > 0 ? ` · ${session.roster.length}` : ''}</span
+			>{session.status}{session.members > 0 ? ` · ${session.members}` : ''}</span
 		>
 		{#if session.status !== 'offline'}
 			<span class="hidden font-mono text-[0.68rem] text-fog md:block" title={legend}

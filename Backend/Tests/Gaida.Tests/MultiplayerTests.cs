@@ -780,7 +780,26 @@ public class MultiplayerRoomTests
         await room.RemoveUser("leaving");
 
         Assert.Empty(leavingSocket.Messages);
-        Assert.Equal(["chat System %% User 'Leaving User' left from the session."], remainingSocket.Messages);
+        Assert.Equal(["chat System %% User 'Leaving User' left from the session.", "members 1"],
+            remainingSocket.Messages);
+    }
+
+    [Fact]
+    public async Task EveryMemberIsToldHowManyAreInTheRoom()
+    {
+        var room = new Room(Guid.NewGuid(), new HttpClient());
+        var first = new RecordingWebSocket();
+        var second = new RecordingWebSocket();
+        await room.GetOrAddUser("first", first, "Ada");
+        await room.GetOrAddUser("second", second, "Ada");
+
+        // the newcomer counts the member who was already here, whom no notice ever
+        // named to them, and one name twice is still two people
+        Assert.Equal("members 2", second.Messages[^1]);
+        Assert.Equal("members 2", first.Messages[^1]);
+
+        await room.RemoveUser("second");
+        Assert.Equal("members 1", first.Messages[^1]);
     }
 }
 

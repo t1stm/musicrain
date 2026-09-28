@@ -348,12 +348,16 @@ describe('parsing', () => {
 		expect(session.name).toBe('Friday mix');
 	});
 
-	it('builds the roster from system notices', () => {
+	it('counts the members the room says it has', () => {
+		// the join notices only cover people who arrived after you, and two of the
+		// same name are still two people, so the count is the room's to give
 		receive("chat System %%  User 'ana' joined the session.");
-		receive("chat System %%  User 'bo' joined the session.");
-		receive("chat System %%  User 'ana' left the session.");
+		receive('members 3');
+		expect(session.members).toBe(3);
 
-		expect(session.roster).toEqual(['bo']);
+		receive("chat System %%  User 'ana' left from the session.");
+		receive('members 2');
+		expect(session.members).toBe(2);
 	});
 });
 
