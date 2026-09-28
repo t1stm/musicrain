@@ -76,9 +76,10 @@ public class CacheService
         return $"raw-{HashId(id)}";
     }
 
+    /// <remarks>Upstream reads the codec in any case, so <c>opus</c> and <c>Opus</c> are one entry.</remarks>
     public static string EncodedKey(string codec, int bitrate, string id)
     {
-        return $"{codec}-{bitrate}-{HashId(id)}";
+        return $"{codec.ToLowerInvariant()}-{bitrate}-{HashId(id)}";
     }
 
     /// <summary>

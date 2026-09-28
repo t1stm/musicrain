@@ -164,7 +164,8 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
         if (string.IsNullOrWhiteSpace(id)) return NotFound("No ID provided");
         logger.LogInformation("Downloading '{ID}' {Codec} {Bitrate}", id, codec, bitrate);
 
-        var (contentType, ffmpegCodec, ffmpegOutputFormat) = Encoding(codec);
+        if (Encoding(codec) is not { } encoding) return BadRequest($"Unknown codec '{codec}'");
+        var (contentType, ffmpegCodec, ffmpegOutputFormat) = encoding;
 
         var platform = PlatformFor(managerService.Manager, id);
         if (platform is null) return NotFound("Search resulted in error");
@@ -188,17 +189,21 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
         return new EmptyResult();
     }
 
-    /// <summary>The ffmpeg arguments and response content type for a codec name, defaulting to Opus in Matroska.</summary>
-    private static (string ContentType, string FfmpegCodec, string OutputFormat) Encoding(string codec)
+    /// <summary>
+    ///     The ffmpeg arguments and response content type for a codec name, in any case, or <c>null</c> for one
+    ///     this does not encode. There used to be a default, Opus in Matroska, but ffmpeg has no <c>mka</c>
+    ///     muxer, so it failed every time — and a lowercase <c>opus</c> fell through to it.
+    /// </summary>
+    public static (string ContentType, string FfmpegCodec, string OutputFormat)? Encoding(string codec)
     {
-        return codec switch
+        return codec.ToUpperInvariant() switch
         {
-            "Opus" => ("audio/ogg", "-c:a libopus", "-f ogg"),
-            "Vorbis" => ("audio/ogg", "-c:a libvorbis", "-f ogg"),
+            "OPUS" => ("audio/ogg", "-c:a libopus", "-f ogg"),
+            "VORBIS" => ("audio/ogg", "-c:a libvorbis", "-f ogg"),
             "AAC" => ("audio/aac", "-c:a aac", "-f adts"),
             "FLAC" => ("audio/flac", "-c:a flac", "-f flac"),
             "MP3" => ("audio/mpeg", "-c:a libmp3lame", "-f mp3"),
-            _ => ("audio/mka", "-c:a libopus", "-f mka")
+            _ => null
         };
     }
 
