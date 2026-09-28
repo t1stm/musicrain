@@ -188,10 +188,10 @@
 	aria-labelledby="gate-title"
 	oncancel={(event) => event.preventDefault()}
 >
-	<div class="rain" aria-hidden="true">
+	<div class="gate-rain" aria-hidden="true">
 		{#each drops as index (index)}
 			<span
-				class="drop"
+				class="gate-drop"
 				style:--i={index}
 				style:--hang={18 + ((index * 11) % 26)}
 				style:left="{(index / (drops.length - 1)) * 100}%"
@@ -216,87 +216,3 @@
 		</button>
 	</div>
 </dialog>
-
-<style>
-	.gate {
-		width: calc(100% - 2rem);
-		max-width: 25rem;
-		margin: auto;
-		padding: 0;
-		overflow: hidden;
-		border: 1px solid var(--color-haze);
-		border-radius: var(--radius-panel);
-		background: var(--color-surface-100);
-		font-family: var(--font-body);
-	}
-
-	.gate::backdrop {
-		background: color-mix(in srgb, var(--color-dark-0) 84%, transparent);
-		backdrop-filter: blur(6px);
-	}
-
-	.gate[open] {
-		opacity: 1;
-		transform: translateY(0);
-		transition:
-			opacity 0.3s ease,
-			transform 0.3s cubic-bezier(0.2, 0.7, 0.3, 1);
-	}
-
-	@starting-style {
-		.gate[open] {
-			opacity: 0;
-			transform: translateY(10px);
-		}
-	}
-
-	/* the fall carries the dismissal — `close()` lands after it, on nothing */
-	.gate[data-state='released'] {
-		opacity: 0;
-		transition: opacity 0.28s ease 0.08s;
-	}
-
-	/* Where the rain waits. The hairline underneath is the room's own line: the
-	   drops hang above it, and the press is what puts them through. */
-	.rain {
-		position: relative;
-		height: 78px;
-		border-bottom: 1px solid var(--color-haze);
-		background: radial-gradient(
-			120% 130% at 50% 0%,
-			color-mix(in srgb, var(--color-primary-0) 14%, transparent),
-			transparent 72%
-		);
-	}
-
-	.drop {
-		position: absolute;
-		bottom: 1px;
-		width: 1px;
-		height: 14px;
-		background: linear-gradient(to bottom, transparent, var(--color-primary-500));
-		opacity: 0.85;
-		transform: translateY(calc(var(--hang) * -1px));
-		transition:
-			transform 0.34s cubic-bezier(0.45, 0, 0.9, 0.45) calc(var(--i) * 5ms),
-			opacity 0.34s linear calc(var(--i) * 5ms);
-	}
-
-	[data-state='released'] .drop {
-		transform: translateY(2px);
-		opacity: 0;
-	}
-
-	/* keep the meaning, drop the movement — same trade the strip makes */
-	@media (prefers-reduced-motion: reduce) {
-		.gate[open],
-		.gate[data-state='released'],
-		.drop {
-			transition: none;
-		}
-		.drop {
-			transform: none;
-			height: 8px;
-		}
-	}
-</style>
