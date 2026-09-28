@@ -197,6 +197,10 @@
 	});
 
 	function recover() {
+		// Nothing is loaded: the element fails `src=""` on every idle join, and an
+		// empty room has already had its barrier answered by the session.
+		if (!url) return;
+
 		// A truncated download surfaces as MEDIA_ERR_NETWORK, or as MEDIA_ERR_DECODE
 		// when the bytes ran out mid-frame — so both are worth another go. So is
 		// SRC_NOT_SUPPORTED: Chrome answers a 502 or 503 from the encoder with it
