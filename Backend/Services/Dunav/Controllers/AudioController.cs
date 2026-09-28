@@ -111,6 +111,9 @@ public class AudioController(ILogger<AudioController> logger, CacheService cache
             // drop it and let the client retry into a fresh fetch.
             logger.LogInformation("Cache entry {Key} was evicted before it could be served", key);
             cache.Forget(key);
+            // The year-long header above is for the audio. Left on this, the browser keeps the 503 instead:
+            // every retry is answered from its cache, and the track never plays there again.
+            Response.Headers.CacheControl = "no-store";
             return StatusCode(503);
         }
         catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
