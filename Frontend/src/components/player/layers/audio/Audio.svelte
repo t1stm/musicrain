@@ -210,7 +210,12 @@
 		// ABORTED is never retried, since that is us.
 		const failure = element?.error;
 		const code = failure?.code;
-		const retryable = code !== undefined && code !== MediaError.MEDIA_ERR_ABORTED;
+		// Chrome files bytes it cannot parse under SRC_NOT_SUPPORTED too, but says
+		// so: "PipelineStatus::DEMUXER_ERROR_COULD_NOT_OPEN". That body arrived and
+		// is broken, and it came with a year-long cache header, so a retry is
+		// answered with the same bytes. Only a status reaches here without a body.
+		const unreadable = failure?.message.includes('DEMUXER_ERROR') ?? false;
+		const retryable = code !== undefined && code !== MediaError.MEDIA_ERR_ABORTED && !unreadable;
 		const retrying = !!element && retryable && retries < 4;
 
 		// `message` is where the useful half lives — it is what carries Firefox's
@@ -232,7 +237,9 @@
 		if (!retrying || !element) {
 			// The element keeps the HTTP status to itself: a 502 or 503 lands here as
 			// NETWORK or SRC_NOT_SUPPORTED depending on the browser.
-			session.giveUp(['network', 'network', 'network', 'decode', 'unavailable'][code ?? 0]);
+			session.giveUp(
+				unreadable ? 'decode' : ['network', 'network', 'network', 'decode', 'unavailable'][code ?? 0]
+			);
 			return;
 		}
 
