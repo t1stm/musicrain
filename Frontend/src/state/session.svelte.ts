@@ -4,6 +4,7 @@ import queue from './queue.svelte';
 import current from './current.svelte';
 import audio from './audio.svelte';
 import rooms from './rooms.svelte';
+import skipped from './skipped.svelte';
 import { isUnnamed, roomLabel } from '$requests/rooms';
 import { SyncClock, minSyncSpacingMs, settledSyncSpacingMs } from '$lib/syncClock';
 
@@ -229,6 +230,27 @@ class Session {
 		if (this.endedFor === queue.currentIndex) return;
 		this.endedFor = queue.currentIndex;
 		this.send('end');
+	}
+
+	/**
+	 * The player gave up on the current track. Sat out, not skipped: the room plays on
+	 * for everyone who has it, so this never sends `next`. Both barriers still count
+	 * this client, so it answers both now — or the room waits on it at the top of the
+	 * track, and again at the end of it for a sound that never started here. When the
+	 * file is broken for everyone, everyone answers `end` this way, and that is what
+	 * moves the room on.
+	 *
+	 * ponytail: a room-wide outage walks the room's queue one barrier at a time. Hold
+	 * `end` after a streak, the way playing alone does, if that ever bites.
+	 */
+	giveUp(reason: string) {
+		this.reportLoaded();
+		// `src=""` fails too, and an `end` sent with nothing playing is a vote for a
+		// barrier nobody armed
+		const track = queue.items[queue.currentIndex];
+		if (!current.url || !track) return;
+		skipped.add(track, reason);
+		this.reportEnded();
 	}
 
 	/** The strip's resync button. Drops the position window so the next reading

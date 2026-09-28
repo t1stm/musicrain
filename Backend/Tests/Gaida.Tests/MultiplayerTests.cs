@@ -505,6 +505,95 @@ public class VirtualPlayerTests
         Assert.Equal(firstSocket.Messages, secondSocket.Messages);
     }
 
+    /// <summary>
+    ///     A track that failed for one member only — their connection, their browser's
+    ///     decoder. The client sits it out by answering both barriers the moment it gives
+    ///     up (<c>session.giveUp</c> in the frontend), and never sends <c>next</c>.
+    /// </summary>
+    [Fact]
+    public async Task AMemberWhoseTrackFailedSitsItOutWithoutHoldingTheRoom()
+    {
+        var (player, store) = TestObjects.Player();
+        var listening = new RecordingWebSocket();
+        await store.GetOrAddUser("listening", listening);
+        await store.GetOrAddUser("failed", new RecordingWebSocket());
+        player.Items.AddRange([TestObjects.Result("audio://one"), TestObjects.Result("audio://two")]);
+
+        await player.SetLoaded("failed");
+        await player.SetFinished("failed");
+        Assert.Empty(listening.Messages);
+
+        // the room still starts for the member who has the track
+        await player.SetLoaded("listening");
+        Assert.Equal(["seek 0", "playing True"], TestObjects.Unstamped(listening.Messages));
+        listening.ClearMessages();
+
+        // The early `end` outlives the loading barrier's release: the room moves on
+        // when the listener finishes, not a track early and not never.
+        await player.SetFinished("listening");
+        Assert.Equal(["playing False", "current 1"], listening.Messages);
+    }
+
+    /// <summary>
+    ///     A file that is broken for everybody — a 502 from the encoder, bytes nobody can
+    ///     decode. Every client gives up on arrival and answers both barriers, and the
+    ///     last `end` is what skips it. No one has to press Next.
+    /// </summary>
+    [Fact]
+    public async Task ATrackThatFailsForEveryoneMovesTheRoomOn()
+    {
+        var (player, store) = TestObjects.Player();
+        var first = new RecordingWebSocket();
+        var second = new RecordingWebSocket();
+        await store.GetOrAddUser("one", first);
+        await store.GetOrAddUser("two", second);
+        player.Items.AddRange([TestObjects.Result("audio://broken"), TestObjects.Result("audio://fine")]);
+
+        await player.SetLoaded("one");
+        await player.SetFinished("one");
+        await player.SetLoaded("two");
+        await player.SetFinished("two");
+
+        Assert.Equal(
+            ["seek 0", "playing True", "playing False", "current 1"],
+            TestObjects.Unstamped(first.Messages));
+        Assert.Equal(first.Messages, second.Messages);
+    }
+
+    /// <summary>
+    ///     A member's `end` for a track they sat out belongs to that track. If the room
+    ///     moves on some other way first, the next track waits for them again — the
+    ///     failure was transient, and they are expected to play this one.
+    /// </summary>
+    [Fact]
+    public async Task ASatOutTracksEndDoesNotCarryIntoTheNextTrack()
+    {
+        var (player, store) = TestObjects.Player();
+        var listening = new RecordingWebSocket();
+        await store.GetOrAddUser("listening", listening);
+        await store.GetOrAddUser("recovered", new RecordingWebSocket());
+        player.Items.AddRange([
+            TestObjects.Result("audio://one"), TestObjects.Result("audio://two"),
+            TestObjects.Result("audio://three")
+        ]);
+
+        await player.SetLoaded("recovered");
+        await player.SetFinished("recovered");
+        await player.SetLoaded("listening");
+        // somebody presses Next before the listener finishes
+        await player.Next();
+
+        await player.SetLoaded("recovered");
+        await player.SetLoaded("listening");
+        listening.ClearMessages();
+
+        await player.SetFinished("listening");
+        Assert.DoesNotContain("current 2", listening.Messages);
+
+        await player.SetFinished("recovered");
+        Assert.Equal(["playing False", "current 2"], listening.Messages);
+    }
+
     [Fact]
     public async Task SeekingPastAQuarterOfAnHourStaysOnTheClock()
     {

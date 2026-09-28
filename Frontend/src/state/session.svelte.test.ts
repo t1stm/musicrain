@@ -606,3 +606,101 @@ describe('queue verbs while connected', () => {
 		expect(queue.currentIndex).toBe(0);
 	});
 });
+
+describe('a track that will not load here', () => {
+	// the room's votes and its one skip verb, without the sync chatter around them
+	const votes = () =>
+		FakeSocket.last.sent.filter((command) => ['loaded', 'end', 'next'].includes(command));
+	const skippedState = async () => (await import('./skipped.svelte')).default;
+
+	beforeEach(() => {
+		receive(`queue ${JSON.stringify([item(), item({ id: 'audio://b', name: 'Bicycle Race' })])}`);
+		receive('current 0');
+	});
+
+	it('sits it out: answers both barriers at once, so the room is held for it at neither', () => {
+		session.giveUp('network');
+
+		// and never `next`: the track is only broken here, and everyone else still has it
+		expect(votes()).toEqual(['loaded', 'end']);
+	});
+
+	it('lists it as missed, with what went wrong', async () => {
+		session.giveUp('decode');
+
+		const skipped = await skippedState();
+		expect(skipped.tracks.map(({ track, reason }) => [track.name, reason])).toEqual([
+			['Stone Cold Crazy', 'decode']
+		]);
+	});
+
+	it('answers once, however many times the player gives up and the load timer fires', () => {
+		vi.useFakeTimers();
+		try {
+			receive('current 1');
+			FakeSocket.last.sent.length = 0;
+
+			session.giveUp('network');
+			session.giveUp('network');
+			vi.advanceTimersByTime(15_000);
+
+			expect(votes()).toEqual(['loaded', 'end']);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('owes only the end when it dropped out after the room had started', () => {
+		// a connection that buffered the opening, then died mid-track past every retry
+		session.reportLoaded();
+		receive('playing True');
+		FakeSocket.last.sent.length = 0;
+
+		session.giveUp('network');
+
+		expect(votes()).toEqual(['end']);
+	});
+
+	it('plays the next track as usual: nothing is answered early for a track that loads', () => {
+		session.giveUp('network');
+		receive('playing False');
+		receive('current 1');
+		FakeSocket.last.sent.length = 0;
+
+		expect(votes()).toEqual([]);
+		expect(session.awaitingLoad).toBe(true);
+
+		session.reportLoaded();
+		session.reportEnded();
+		expect(votes()).toEqual(['loaded', 'end']);
+	});
+
+	it('keeps answering through a streak that would stop playing alone', async () => {
+		// the file is broken for everybody: each track fails on arrival, and every
+		// client's `end` is what moves the room on to the next one
+		const queued = ['a', 'b', 'c', 'd'].map((id) => item({ id: `audio://${id}`, name: id }));
+		receive(`queue ${JSON.stringify(queued)}`);
+
+		for (const index of [0, 1, 2, 3]) {
+			receive(`current ${index}`);
+			session.giveUp('unavailable');
+		}
+
+		expect(votes()).toEqual(Array.from({ length: 4 }, () => ['loaded', 'end']).flat());
+		const skipped = await skippedState();
+		expect(skipped.stopped).toBe(true);
+		expect(skipped.tracks.map(({ track }) => track.name)).toEqual(['a', 'b', 'c', 'd']);
+	});
+
+	it('sends no end when there is nothing playing to sit out', async () => {
+		// an emptied `src` fails the element as well
+		receive('queue []');
+		receive('current 0');
+		FakeSocket.last.sent.length = 0;
+
+		session.giveUp('unavailable');
+
+		expect(votes()).toEqual([]);
+		expect((await skippedState()).tracks).toEqual([]);
+	});
+});

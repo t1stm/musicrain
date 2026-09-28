@@ -4,6 +4,7 @@
 	import queue from '$states/queue.svelte';
 	import session from '$states/session.svelte';
 	import quality from '$states/quality.svelte';
+	import skipped from '$states/skipped.svelte';
 	import { dropPrefetch, prefetchSong } from '$requests/songs';
 	import { interpolate } from '$lib/playbackClock';
 	let url = $derived(current.url);
@@ -223,7 +224,9 @@
 		});
 
 		if (!retrying || !element) {
-			session.reportLoaded();
+			// The element keeps the HTTP status to itself: a 502 or 503 lands here as
+			// NETWORK or SRC_NOT_SUPPORTED depending on the browser.
+			session.giveUp(['network', 'network', 'network', 'decode', 'unavailable'][code ?? 0]);
 			return;
 		}
 
@@ -273,6 +276,7 @@
 	oncanplaythrough={() => {
 		audio.bufferedSeconds = current.lengthSeconds;
 		session.reportLoaded();
+		skipped.loaded();
 	}}
 	onerror={recover}
 	onended={() => {
