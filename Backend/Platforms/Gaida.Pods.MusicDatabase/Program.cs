@@ -579,8 +579,9 @@ static async Task ImportCheck(Action<bool, string> assert)
 // The album backfill, against a throwaway library whose one entry predates the tag being read. The
 // thing that would go wrong quietly is the ID: RereadTags re-rolls it, and re-rolling every ID in
 // the library to fill an album would orphan every playlist, cache key and recently-played entry
-// that holds one. The media file does not exist here, so the ffprobe read is skipped and only the
-// bookkeeping is under test.
+// that holds one. The media file is a stand-in with no tags, so ffprobe finds no album and only the
+// bookkeeping is under test. A second entry has no file at all: it is left out of the library and
+// kept in Info.json, where it would come back with its ID if the file did.
 static async Task BackfillCheck(Action<bool, string> assert)
 {
     var root = Path.Combine(Path.GetTempPath(), "gaida-local-backfill-" + Guid.NewGuid().ToString("n"));
@@ -590,8 +591,11 @@ static async Task BackfillCheck(Action<bool, string> assert)
     var info = Path.Combine(folder, "Info.json");
     await File.WriteAllTextAsync(info, """
         [{"ID":"ducome-un","Titles":["Come Undone"],"Artists":["Duran Duran"],
-          "RelativeLocation":"Duran Duran/Duran Duran - Come Undone.mp3","Length":256000}]
+          "RelativeLocation":"Duran Duran/Duran Duran - Come Undone.mp3","Length":256000},
+         {"ID":"duordin-ar","Titles":["Ordinary World"],"Artists":["Duran Duran"],
+          "RelativeLocation":"Duran Duran/Duran Duran - Ordinary World.flac","Length":340000}]
         """);
+    await File.WriteAllBytesAsync(Path.Combine(folder, "Duran Duran - Come Undone.mp3"), new byte[4096]);
 
     Environment.SetEnvironmentVariable("STORAGE", root, EnvironmentVariableTarget.Process);
 
@@ -601,13 +605,14 @@ static async Task BackfillCheck(Action<bool, string> assert)
         await database.InitializeAsync();
 
         var songs = database.FindForAdmin("Duran Duran", 10);
-        assert(songs.Count == 1, "backfill: the throwaway library loaded one song");
+        assert(songs.Count == 1, "backfill: the throwaway library loaded the one song on disk");
         assert(songs[0].Id == "ducome-un", "backfill: the ID survives it -- playlists and cache keys hold it");
         assert(songs[0].Scan == MusicManager.ScanVersion, "backfill: the entry is stamped with the pass that read it");
 
         var saved = await File.ReadAllTextAsync(info);
         assert(saved.Contains("\"Scan\": 1"), "backfill: the stamp reached the file, so it runs once");
         assert(saved.Contains("ducome-un"), "backfill: the saved entry kept its ID");
+        assert(saved.Contains("duordin-ar"), "backfill: an entry whose file is gone stays in Info.json");
     }
     finally
     {
@@ -630,6 +635,7 @@ static async Task EditCheck(Action<bool, string> assert)
           "Album":"A Night at the Opera","CoverUrl":"$[DOMAIN]/cover.jpg",
           "RelativeLocation":"Queen/Queen - You_re My Best Friend.mp3","Length":175000}]
         """);
+    await File.WriteAllBytesAsync(Path.Combine(folder, "Queen - You_re My Best Friend.mp3"), new byte[4096]);
 
     Environment.SetEnvironmentVariable("STORAGE", root, EnvironmentVariableTarget.Process);
     Environment.SetEnvironmentVariable("DOMAIN", "https://music.example.com", EnvironmentVariableTarget.Process);

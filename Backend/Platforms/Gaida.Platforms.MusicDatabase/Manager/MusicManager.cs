@@ -76,6 +76,12 @@ public partial class MusicManager(ILogger logger)
         // ponytail: folder order is no longer stable; nothing downstream depends on it (search scores, random shuffles).
         var songs = parsed.SelectMany(f => f).ToList();
 
+        // An entry whose file is gone -- converted to another format beside it, moved, deleted by hand -- is
+        // a search hit that answers every play with a 404. It stays in its Info.json, ID and all, and comes
+        // back at the next boot if the file does.
+        var missing = songs.RemoveAll(song => !File.Exists(StorageDirectory + "/" + song.RelativeLocation));
+        if (missing > 0) Logger.Warning("Left out {Count} entries whose file is gone", missing);
+
         songs.ForEach(s => s.CoverUrl = s.CoverUrl?.Replace("$[DOMAIN]", AlbumCoverLocation));
 
         lock (Songs)
