@@ -13,6 +13,7 @@
 	import { swipe } from '$lib/swipe';
 	import Header from '$components/header/Header.svelte';
 	import Player from '$components/player/Player.svelte';
+	import SkipNotice from '$components/player/SkipNotice.svelte';
 	import Queue from '$components/queue/Queue.svelte';
 	import Chat from '$components/chat/Chat.svelte';
 	import SessionStrip from '$components/session/SessionStrip.svelte';
@@ -165,6 +166,7 @@
 		{/if}
 	</div>
 	<Player bind:dock />
+	<SkipNotice />
 </div>
 
 <style>

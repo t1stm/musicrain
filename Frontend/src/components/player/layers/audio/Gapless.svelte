@@ -1,9 +1,11 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import audio from '$states/audio.svelte';
 	import current from '$states/current.svelte';
 	import queue from '$states/queue.svelte';
 	import quality from '$states/quality.svelte';
-	import { downloadUrl } from '$requests/songs';
+	import skipped, { reasonOf } from '$states/skipped.svelte';
+	import { AudioApiError, downloadUrl } from '$requests/songs';
 	import { interpolate } from '$lib/playbackClock';
 	import { Splicer, TAIL } from '$lib/splicer';
 
@@ -27,7 +29,7 @@
 	 *  one after it: decoded audio is about 10 MB a minute whatever it arrived as. */
 	const decoded: Record<string, AudioBuffer> = {};
 	/** Downloads in flight, so two triggers for one track cost one request. */
-	const loading: Record<string, Promise<AudioBuffer | null>> = {};
+	const loading: Record<string, Promise<AudioBuffer>> = {};
 
 	/** Whether this browser decodes a truncated stream. Chrome and Safari do; one
 	 *  refusal anywhere else turns it off for good and every track waits for its
@@ -121,7 +123,8 @@
 		for (let attempt = 0; ; attempt++) {
 			try {
 				const response = await fetch(downloadUrl(id));
-				if (!response.ok) throw new Error(`the audio service returned ${response.status}`);
+				if (!response.ok)
+					throw new AudioApiError(`the audio service returned ${response.status}`, response.status);
 				// no streams here: take the whole body, as this always did.
 				if (!response.body) return await context!.decodeAudioData(await response.arrayBuffer());
 
@@ -129,7 +132,7 @@
 			} catch (error) {
 				if (attempt >= 3 || !context) {
 					console.error(`audio ${context ? 'gave up' : 'was torn down'}: ${id}`, error);
-					return null;
+					throw error;
 				}
 				await new Promise((wait) => setTimeout(wait, 250 * 2 ** attempt));
 			}
@@ -193,7 +196,7 @@
 	function load(
 		id: string,
 		onPart?: (buffer: AudioBuffer, partial: boolean) => void
-	): Promise<AudioBuffer | null> {
+	): Promise<AudioBuffer> {
 		const held = decoded[key(id)];
 		if (held) return Promise.resolve(held);
 
@@ -203,11 +206,11 @@
 		const running = loading[key(id)];
 		if (running) return running;
 
-		const started = download(id, onPart).then((buffer) => {
-			delete loading[key(id)];
-			if (buffer) decoded[key(id)] = buffer;
-			return buffer;
-		});
+		// a download that gave up must not stay in `loading`, or every later try at
+		// the track is handed the same rejection
+		const started = download(id, onPart)
+			.then((buffer) => (decoded[key(id)] = buffer))
+			.finally(() => delete loading[key(id)]);
 		loading[key(id)] = started;
 
 		return started;
@@ -223,12 +226,23 @@
 		// track in the wrong place.
 		pending = audio.currentSeconds;
 
-		const buffer = await load(id, (part, partial) => hand(id, part, partial));
+		let buffer: AudioBuffer;
+		try {
+			buffer = await load(id, (part, partial) => hand(id, part, partial));
+		} catch (error) {
+			if (!splicer || wanted !== id) return;
+			// Out of retries: the notice says so and the queue moves past it — unless
+			// this is the third in a row, which is the server rather than the track, and
+			// skipping on would walk the whole queue. Paused on it instead, where Play is
+			// a retry (see the paused effect), so a prefix that did play is dropped too.
+			splicer.stop();
+			const track = queue.items[queue.currentIndex];
+			if (track && skipped.add(track, reasonOf(error))) queue.nextTrack();
+			else audio.paused = true;
+			return;
+		}
 		// superseded while it downloaded, or the player went away underneath it
 		if (!splicer || wanted !== id) return;
-		// a track that will not download is a track that sits there, not one that
-		// skips the queue past itself four tracks a second.
-		if (!buffer) return;
 
 		hand(id, buffer, false);
 		schedule();
@@ -254,6 +268,7 @@
 
 			splicer.start({ key: key(id), buffer, partial }, pending + latency(), !audio.paused);
 			pending = 0;
+			skipped.loaded();
 			return;
 		}
 
@@ -300,6 +315,13 @@
 		if (!splicer) return;
 		if (paused) return splicer.pause();
 
+		// A track that gave up has nothing to resume: playing it is asking for it
+		// again. Only then is there no key and no download in flight — a first
+		// prefix still on its way holds a `loading` entry.
+		untrack(() => {
+			if (!splicer?.key && current.id && !loading[key(current.id)]) void begin(current.id);
+		});
+
 		// a suspended graph is silence whatever the nodes do, and it starts
 		// suspended until a gesture resumes it.
 		void context?.resume();
@@ -343,7 +365,9 @@
 		for (const stale of Object.keys(decoded)) if (!keep.includes(stale)) delete decoded[stale];
 
 		if (!next) return;
-		void load(next).then(schedule);
+		// one that will not download is tried again, and reported, once it is the
+		// track being played
+		void load(next).then(schedule, () => {});
 	});
 
 	$effect(() => {
