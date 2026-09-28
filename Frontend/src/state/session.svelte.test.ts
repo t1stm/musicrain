@@ -108,6 +108,21 @@ describe('losing the connection', () => {
 		vi.useRealTimers();
 	});
 
+	it('closes the socket as the page goes away, and rejoins if it comes back', () => {
+		const leaving = FakeSocket.last;
+
+		// a page entering the back/forward cache is frozen with its socket open: the
+		// room would keep this member, and every barrier would wait on them
+		window.dispatchEvent(new Event('pagehide'));
+		expect(leaving.readyState).toBe(3);
+
+		// restored from the cache: the close lands, and the backoff brings the room back
+		leaving.onclose?.();
+		vi.advanceTimersByTime(30_000);
+		expect(FakeSocket.last).not.toBe(leaving);
+		expect(FakeSocket.last.url).toContain('room=0f0f4e0c');
+	});
+
 	it('drops commands issued while down instead of replaying them at the room', () => {
 		FakeSocket.last.onclose?.();
 

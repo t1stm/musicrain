@@ -595,6 +595,17 @@ class Session {
 		this[which] = null;
 	}
 
+	/**
+	 * The page is going away, maybe into the back/forward cache. Chrome freezes a cached
+	 * page with its socket still open and keeps answering the server's pings for it, so
+	 * the room holds a member who has left, and both barriers wait on them until the
+	 * cache lets the page go. Closed here, it is a dropped connection like any other:
+	 * `closed` queues the rejoin, which runs if the page ever comes back.
+	 */
+	leavePage() {
+		this.socket?.close();
+	}
+
 	/** Drops the socket and its timers without touching primed commands. */
 	private teardown() {
 		this.clearTimer('syncTimer');
@@ -607,4 +618,9 @@ class Session {
 	}
 }
 
-export default new Session();
+const session = new Session();
+
+// absent during server rendering, which has no page to leave
+globalThis.addEventListener?.('pagehide', () => session.leavePage());
+
+export default session;
