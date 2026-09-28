@@ -198,13 +198,15 @@
 
 	function recover() {
 		// A truncated download surfaces as MEDIA_ERR_NETWORK, or as MEDIA_ERR_DECODE
-		// when the bytes ran out mid-frame — so both are worth another go. The other
-		// two never are: ABORTED is us, SRC_NOT_SUPPORTED is a codec this browser
-		// will refuse just as flatly the second time. Out of retries, or not ours to
-		// fix: answer the barrier and sit the track out, as before.
+		// when the bytes ran out mid-frame — so both are worth another go. So is
+		// SRC_NOT_SUPPORTED: Chrome answers a 502 or 503 from the encoder with it
+		// ("Format error"), the same as a codec it cannot play, and a busy encoder
+		// is usually free a moment later. A codec that really is refused costs the
+		// retry budget, a few seconds, before this client sits the track out. Only
+		// ABORTED is never retried, since that is us.
 		const failure = element?.error;
 		const code = failure?.code;
-		const retryable = code === MediaError.MEDIA_ERR_NETWORK || code === MediaError.MEDIA_ERR_DECODE;
+		const retryable = code !== undefined && code !== MediaError.MEDIA_ERR_ABORTED;
 		const retrying = !!element && retryable && retries < 4;
 
 		// `message` is where the useful half lives — it is what carries Firefox's
