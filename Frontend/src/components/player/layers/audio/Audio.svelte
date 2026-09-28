@@ -243,6 +243,13 @@
 			return;
 		}
 
+		// The room is held for one quick retry, which is all a busy encoder needs.
+		// Failing again is more likely a file that will not load, and waiting out
+		// the rest of the budget costs everyone seconds at the top of the track.
+		// Answered now, the room starts, and a retry that lands joins it where it
+		// is, the way anyone who joins late does.
+		if (retries >= 1) session.reportLoaded();
+
 		const resumeAt = element.currentTime;
 		// ponytail: `load()` re-requests the whole resource and the HTTP cache is
 		// what makes the part already downloaded cheap. Swap in an explicit Range
@@ -290,6 +297,10 @@
 		audio.bufferedSeconds = current.lengthSeconds;
 		session.reportLoaded();
 		skipped.loaded();
+		// A retry that landed after the room started is a late join, and the
+		// clock spent its opening snap while the element had nothing. Without a
+		// fresh one, half a second behind is steered away at 2% over half a minute.
+		if (retries) session.resync();
 	}}
 	onerror={recover}
 	onended={() => {
