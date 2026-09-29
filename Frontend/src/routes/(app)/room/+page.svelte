@@ -49,6 +49,9 @@
 		// `!== false` and not `!audio.blocked`: `null` is the player still building
 		// the graph, and joining on that guess is the race the gate exists to lose.
 		if (!roomId || user.username === null || audio.blocked !== false) return;
+		// going clears `roomId`, which would read as not yet joined and join again,
+		// straight into the same close: a tight loop against the server
+		if (session.gone === roomId) return;
 		if (session.roomId === roomId && session.joinedAs === user.username) return;
 		session.connect(roomId, user.username);
 	});
@@ -66,7 +69,7 @@
 		<p class="text-sm text-fog">
 			No room in the link. <a class="text-primary-500 underline-offset-4 hover:underline" href={resolve('/rooms')}>Browse rooms</a>
 		</p>
-	{:else if session.gone}
+	{:else if session.gone === roomId}
 		<section class="max-w-md">
 			<h1 class="font-display mb-2 text-xl font-extralight">That room is gone.</h1>
 			<p class="text-sm text-fog">Rooms disappear when the server restarts.</p>

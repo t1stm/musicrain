@@ -85,7 +85,7 @@ describe('joining', () => {
 	it('treats a close with zero frames as a room that does not exist', () => {
 		FakeSocket.last.onclose?.();
 
-		expect(session.gone).toBe(true);
+		expect(session.gone).toBe('0f0f4e0c');
 		expect(session.inRoom).toBe(false);
 	});
 });

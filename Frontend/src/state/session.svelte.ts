@@ -90,9 +90,11 @@ class Session {
 	members: number = $state(0);
 	unread: number = $state(0);
 	chatOpen: boolean = $state(false);
-	/** A well-formed but unknown room GUID is accepted, then closed with no
-	 *  frames. Zero frames received is the only "room does not exist" signal. */
-	gone: boolean = $state(false);
+	/** The room that went. A well-formed but unknown room GUID is accepted, then
+	 *  closed with no frames. Zero frames received is the only "room does not
+	 *  exist" signal. Kept as the id, not a flag, because `roomId` is cleared with
+	 *  it: the room page needs to know which room not to join again. */
+	gone: string | null = $state(null);
 
 	// The clock's readouts, mirrored out of `SyncClock` rather than read through
 	// getters: it is a plain class, so nothing about mutating it is reactive, and
@@ -162,7 +164,7 @@ class Session {
 		this.attempts = 0;
 		this.roomId = roomId;
 		this.joinedAs = username;
-		this.gone = false;
+		this.gone = null;
 		this.named = '';
 		this.description = '';
 		this.chat = [];
@@ -302,7 +304,7 @@ class Session {
 		if (this.closing || this.roomId === null) return;
 
 		if (this.frames === 0) {
-			this.gone = true;
+			this.gone = this.roomId;
 			this.roomId = null;
 			this.status = 'offline';
 			queue.remote = null;
