@@ -610,7 +610,7 @@ static async Task BackfillCheck(Action<bool, string> assert)
         assert(songs[0].Scan == MusicManager.ScanVersion, "backfill: the entry is stamped with the pass that read it");
 
         var saved = await File.ReadAllTextAsync(info);
-        assert(saved.Contains("\"Scan\": 1"), "backfill: the stamp reached the file, so it runs once");
+        assert(saved.Contains($"\"Scan\": {MusicManager.ScanVersion}"), "backfill: the stamp reached the file, so it runs once");
         assert(saved.Contains("ducome-un"), "backfill: the saved entry kept its ID");
         assert(saved.Contains("duordin-ar"), "backfill: an entry whose file is gone stays in Info.json");
     }

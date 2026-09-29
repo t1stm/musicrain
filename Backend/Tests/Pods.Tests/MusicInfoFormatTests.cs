@@ -87,7 +87,7 @@ public class MusicInfoFormatTests
 
         var json = JsonSerializer.Serialize(song, MusicInfo.SerializerOptions);
 
-        Assert.Contains("\"Scan\": 1", json);
+        Assert.Contains($"\"Scan\": {MusicManager.ScanVersion}", json);
         Assert.Contains("\"Album\": \"Duran Duran\"", json);
     }
 
@@ -101,6 +101,97 @@ public class MusicInfoFormatTests
         Assert.Equal("You're My Best Friend", song.Title);
         Assert.Contains("You_re My Best Friend", song.Titles);
         Assert.Equal(["Queen"], song.Artists);
+    }
+
+    [Theory]
+    // A tag crediting someone else first loses to the filename, and stays on as a variant.
+    [InlineData("Ash Riser", "Kendrick Lamar", "Kendrick Lamar")]
+    [InlineData("Galin", "Преслава", "Преслава")]
+    [InlineData("Andrea", "Андреа", "Андреа")]
+    [InlineData("Dragan Kojic Keba", "Dragan Kojić", "Dragan Kojić")]
+    // The same name, better spelled: the tag leads.
+    [InlineData("A$AP Rocky feat. ScHoolboy Q", "A_AP Rocky feat. ScHoolboy Q", "A$AP Rocky, ScHoolboy Q")]
+    [InlineData("Boney M.", "Boney M", "Boney M.")]
+    [InlineData("Трамвай №5", "Трамвай 5", "Трамвай №5")]
+    [InlineData("Ана-Мария", "Ана Мария", "Ана-Мария")]
+    [InlineData("Los Del Río", "Los Del Rio", "Los Del Río")]
+    [InlineData("Djoko, Kolter", "Djoko", "Djoko, Kolter")]
+    // Never towards the poorer spelling.
+    [InlineData("Dragana Mirkovic", "Dragana Mirković", "Dragana Mirković")]
+    public void LetsTheFilenameLeadWhenTheTagNamesSomeoneElse(string tag, string path, string lead)
+    {
+        var song = new MusicInfo { Artists = MusicInfo.Variants(tag) };
+
+        song.AddNames("Title", path, path);
+
+        Assert.Equal(lead, song.Artist);
+        Assert.Contains(tag, song.Artists);
+        Assert.Contains(path, song.Artists);
+    }
+
+    [Theory]
+    [InlineData("Слави Трифонов & Ку-ку Бенд", "Слави Трифонов, Ку-ку Бенд")]
+    [InlineData("Meek Mill feat. Drake", "Meek Mill, Drake")]
+    [InlineData("Деси и Тони Стораро", "Деси, Тони Стораро")]
+    [InlineData("Крисия Тодорова, Ку-ку Бенд & Слави Трифонов", "Крисия Тодорова, Ку-ку Бенд, Слави Трифонов")]
+    public void LeadsASharedCreditWithCommasAndKeepsTheJoinedForm(string credit, string lead)
+    {
+        var song = new MusicInfo();
+
+        song.AddNames("Title", credit, "Folder");
+
+        Assert.Equal(lead, song.Artist);
+        Assert.Contains(credit, song.Artists);
+    }
+
+    [Fact]
+    public void KeepsACyrillicFilenameTitleAheadOfARomanizedTag()
+    {
+        var song = new MusicInfo { Titles = MusicInfo.Variants("Kitka rychenica") };
+
+        song.AddNames("Китка ръченица", "Оркестър Кристали", "Оркестър Кристали");
+
+        Assert.Equal("Китка ръченица", song.Title);
+        Assert.Contains("Kitka rychenica", song.Titles);
+    }
+
+    [Fact]
+    public void RederivingKeepsTheIdAndWhatAPersonTyped()
+    {
+        var scanned = new MusicInfo { Id = "tetaka-ni-7Q", Titles = ["Така ни се пада"], Artists = ["Galin", "Преслава"] };
+        var typed = new MusicInfo { Titles = ["Επιμένω"], Artists = ["Χρήστος Κυριαζής", "Christos Kiriazis"] };
+
+        var fresh = new MusicInfo { Titles = ["Така ни се пада"], Artists = MusicInfo.Variants("Преслава", "Galin") };
+        scanned.Rederive(fresh);
+        typed.Rederive(new MusicInfo { Titles = ["Epimeno"], Artists = ["Christos Kiriazis"] });
+
+        Assert.Equal("tetaka-ni-7Q", scanned.Id);
+        Assert.Equal("Преслава", scanned.Artist);
+        Assert.Contains("Galin", scanned.Artists);
+        Assert.Equal("Επιμένω", typed.Title);
+        Assert.Equal("Χρήστος Κυριαζής", typed.Artist);
+    }
+
+    [Theory]
+    [InlineData("Îðê. Öàðèìèð", true)]
+    [InlineData("����� - ��������", true)]
+    [InlineData("Àë÷î", true)]
+    [InlineData("ROSALÍA", false)]
+    [InlineData("Équinoxe", false)]
+    [InlineData("Makèz", false)]
+    public void RecognisesACp1251TagReadAsSomethingElse(string tag, bool garbled)
+    {
+        Assert.Equal(garbled, MediaInfo.Garbled(tag));
+    }
+
+    [Fact]
+    public void SplitsTheAuthorOffAtTheFirstSeparatorOnly()
+    {
+        var (title, author, folder) = MusicManager.PathNames("/music/Bulgarian/Щурците/Щурците - Клетва - Live.wv");
+
+        Assert.Equal("Клетва - Live", title);
+        Assert.Equal("Щурците", author);
+        Assert.Equal("Щурците", folder);
     }
 
     [Fact]

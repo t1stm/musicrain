@@ -51,7 +51,9 @@ public static class MediaInfo
         if (!format.TryGetProperty("tags", out var tags)) return musicInfo;
 
         musicInfo.Titles = MusicInfo.Variants(Tag(tags, "TITLE"));
-        musicInfo.Artists = MusicInfo.Variants(Merge(Tag(tags, "ARTISTS")), Merge(Tag(tags, "ARTIST")));
+        // ARTIST first: it is the credit as released. ARTISTS is a tagger's list, and in this library as often
+        // the romanized names (Kondio for Кондьо) or only the featured act as the whole of it.
+        musicInfo.Artists = MusicInfo.Variants(Merge(Tag(tags, "ARTIST")), Merge(Tag(tags, "ARTISTS")));
         musicInfo.Album = Tag(tags, "ALBUM")?.Trim() is { Length: > 0 } album ? album : null;
 
         return musicInfo;
@@ -80,8 +82,21 @@ public static class MediaInfo
         foreach (var name in names)
         foreach (var tag in tags.EnumerateObject())
             if (string.Equals(tag.Name, name, StringComparison.OrdinalIgnoreCase))
-                return tag.Value.GetString();
+                return tag.Value.GetString() is { } value && !Garbled(value) ? value : null;
 
         return null;
+    }
+
+    /// <summary>
+    ///     A tag written in cp1251 and read back as something else: ffprobe's U+FFFD where it could not decode
+    ///     it, or Latin-1 letters where it decoded the wrong page ("Îðê. Öàðèìèð" for "Орк. Царимир"). Either
+    ///     one says nothing the filename does not say better, and the first is not Latin so it would lead.
+    /// </summary>
+    /// <remarks>ponytail: half the letters in À–ÿ is the cut. Real Latin-1 text rarely gets near it.</remarks>
+    internal static bool Garbled(string value)
+    {
+        var letters = value.Count(char.IsLetter);
+        return value.Contains('�') ||
+               letters > 0 && value.Count(character => character is >= 'À' and <= 'ÿ') * 2 > letters;
     }
 }

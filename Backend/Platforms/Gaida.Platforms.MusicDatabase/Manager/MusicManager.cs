@@ -37,9 +37,10 @@ public partial class MusicManager(ILogger logger)
     /// <summary>
     ///     The current tag-reading pass. Bump it when the scanner learns to read a tag it did not before:
     ///     every entry stamped below this is re-read once on the next load, and stamped. Pass 1 is the
-    ///     album, which <see cref="MediaInfo" /> never asked ffprobe for.
+    ///     album, which <see cref="MediaInfo" /> never asked ffprobe for. Pass 2 is which name leads, and
+    ///     pass 3 writes a shared credit with commas — see <see cref="MusicInfo.AddNames" />.
     /// </summary>
-    public const int ScanVersion = 1;
+    public const int ScanVersion = 3;
 
     public async Task Initialize()
     {
@@ -128,12 +129,12 @@ public partial class MusicManager(ILogger logger)
         if (legacy.Count > 0)
             Logger.Information("Re-read tags for {Count} entries of '{Artist}'", legacy.Count, artist);
 
-        // Tags the scanner did not read when these entries were indexed. Unlike the legacy re-read this
-        // must not re-roll the ID, so it goes through BackfillAlbum rather than RereadTags.
+        // Passes the scanner had not learned when these entries were indexed. Unlike the legacy re-read this
+        // must not re-roll the ID, so it goes through Backfill rather than RereadTags.
         var behind = existing.Where(entry => entry.Scan < ScanVersion).ToList();
         foreach (var entry in behind)
         {
-            await BackfillAlbum(entry);
+            await Backfill(entry);
             entry.Scan = ScanVersion;
         }
 
@@ -177,16 +178,26 @@ public partial class MusicManager(ILogger logger)
     }
 
     /// <summary>
-    ///     Fills the album on an entry indexed before the tag was read. Never touches the ID: playlists,
-    ///     cache keys and recently-played lists hold it, and <see cref="MusicInfo.UpdateRandomId" /> ends in
-    ///     a random suffix. An album an admin typed outranks the file, so this only fills a missing one.
+    ///     Brings an entry up from the pass that indexed it. Never touches the ID: playlists, cache keys and
+    ///     recently-played lists hold it, and <see cref="MusicInfo.UpdateRandomId" /> ends in a random suffix.
     /// </summary>
-    private static async Task BackfillAlbum(MusicInfo entry)
+    private static async Task Backfill(MusicInfo entry)
     {
         var path = StorageDirectory + "/" + entry.RelativeLocation;
-        if (entry.Album is not null || !File.Exists(path)) return;
+        if (!File.Exists(path)) return;
 
-        entry.Album = (await MediaInfo.GetInformation(path)).Album;
+        var fresh = await MediaInfo.GetInformation(path);
+
+        // Pass 1. An album an admin typed outranks the file, so this only fills a missing one.
+        if (entry.Scan < 1) entry.Album ??= fresh.Album;
+
+        // Passes 2 and 3, both nothing but AddNames run again.
+        if (entry.Scan < 3)
+        {
+            var (title, author, folder) = PathNames(path);
+            fresh.AddNames(title, author, folder);
+            entry.Rederive(fresh);
+        }
     }
 
     private static IEnumerable<string> NewFiles(List<MusicInfo> existing, List<string> files)
@@ -200,19 +211,25 @@ public partial class MusicManager(ILogger logger)
         return Path.GetRelativePath(StorageDirectory, location);
     }
 
-    private static async Task<MusicInfo> ParseFile(string location)
+    /// <summary>
+    ///     <c>Genre/Folder/Author - Title.ext</c>. A title with its own " - " keeps it: only the first one
+    ///     separates the author.
+    /// </summary>
+    internal static (string Title, string Author, string Folder) PathNames(string location)
     {
         var split = location.Split('/');
-        var filename = split[^1];
-        var folder = split[^2];
+        var filenameSplit = split[^1].Split(" - ");
 
-        var filenameSplit = filename.Split(" - ");
-        var author = filenameSplit[0];
-        var title = string.Join('.',
-            string.Join('-', filenameSplit[1..]).Split('.')[..^1]);
+        return (Path.GetFileNameWithoutExtension(string.Join(" - ", filenameSplit[1..])), filenameSplit[0],
+            split.Length > 1 ? split[^2] : string.Empty);
+    }
 
-        // Tags first, then the filename, then the folder: the path spellings are kept as alternates rather
-        // than discarded, so a folder typo costs a variant instead of the whole name.
+    private static async Task<MusicInfo> ParseFile(string location)
+    {
+        var (title, author, folder) = PathNames(location);
+
+        // The path spellings are kept as alternates rather than discarded, so a folder typo costs a variant
+        // instead of the whole name. AddNames decides whether the tag or the filename leads.
         var entry = await MediaInfo.GetInformation(location);
         entry.AddNames(title, author, folder);
         entry.RelativeLocation ??= RelativeLocation(location);
