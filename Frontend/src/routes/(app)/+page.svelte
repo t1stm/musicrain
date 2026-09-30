@@ -102,10 +102,10 @@
 	let deltaText = $derived(delta === 0 ? '' : `${Math.abs(delta)}s ${delta < 0 ? 'shorter' : 'longer'}`);
 	let eyebrow = $derived(
 		variant?.match === 'variant'
-			? 'The original is in your library'
+			? 'The original is in the library'
 			: variant?.match === 'weak'
 				? 'Possibly the same track'
-				: 'In your library'
+				: 'In the library'
 	);
 	let variantLine = $derived(
 		variant
@@ -500,7 +500,7 @@
 							class="group relative flex h-7 cursor-pointer touch-none items-center rounded-row outline-surface-300 focus-visible:outline-4"
 							role="slider"
 							tabindex="0"
-							aria-label="Share of each roll drawn from your library, in percent"
+							aria-label="Share of each roll drawn from the library, in percent"
 							aria-valuemin="0"
 							aria-valuemax="100"
 							aria-valuenow={libraryPercent}
