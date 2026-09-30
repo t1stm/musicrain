@@ -47,12 +47,13 @@
 	// out from under its edge or back in. Every state change goes in the one callback, so
 	// a switch between the full shape and the sheet still closes one layer and opens the
 	// other in the same tick — `closeOnBack` hands the history entry over only then.
-	// Without view transitions it is the old snap. `kind` names a morph that app.css
-	// stages differently, on the root for as long as it runs.
+	// Without view transitions it is the old snap. The root carries `data-morph` for as
+	// long as one runs, so the sheet leaves its own way in and out to it (+layout.svelte);
+	// `kind` names a morph that app.css stages differently.
 	function morph(update: () => void, kind?: 'open') {
 		if (!document.startViewTransition) return update();
 		const root = document.documentElement;
-		if (kind) root.dataset.morph = kind;
+		root.dataset.morph = kind ?? '';
 		const transition = document.startViewTransition(async () => {
 			update();
 			await tick();

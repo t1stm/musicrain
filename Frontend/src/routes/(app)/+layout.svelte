@@ -5,6 +5,8 @@
 	import '@fontsource-variable/jetbrains-mono/wght.css';
 	import '../../app.css';
 	import { onMount } from 'svelte';
+	import { cubicOut } from 'svelte/easing';
+	import { fade } from 'svelte/transition';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
@@ -34,6 +36,26 @@
 
 	// a swipe turns the sheet's tabs the way the finger goes, onto the one beyond that edge
 	const turn = { left: () => (dock = 'queue'), right: () => (dock = 'chat') };
+
+	// The sheet's way in and out: on a phone up from under the player's edge and back down
+	// the way a pull-down sends it, wider up in from the right edge beside the page.
+	// Without motion, a fade. None when something else already moves it — a pull-down
+	// that has carried it out, or a morph (Player.svelte) — and none for the shade either
+	// then: the two leave the page together, once the slower of them is done.
+	let sheet = $state<HTMLElement>();
+	const moved = (node = sheet) =>
+		!!node?.dataset.swiped || document.documentElement.dataset.morph !== undefined;
+	function slide(node: HTMLElement) {
+		if (moved(node)) return { duration: 0 };
+		if (matchMedia('(prefers-reduced-motion: reduce)').matches)
+			return { duration: 150, css: (t: number) => `opacity: ${t}` };
+		const axis = matchMedia('(min-width: 640px)').matches ? 'X' : 'Y';
+		return {
+			duration: 300,
+			easing: cubicOut,
+			css: (_: number, u: number) => `transform: translate${axis}(calc(${u} * (100% + 0.5rem)))`
+		};
+	}
 
 	$effect(() => {
 		session.chatOpen = dock === 'chat';
@@ -94,7 +116,7 @@
 	<div class="relative flex min-h-0 flex-1 flex-col max-sm:overflow-clip micro:hidden">
 		<main
 			class:queue-open={dock !== null}
-			class="relative m-2 mt-0 flex h-full min-h-0 flex-col rounded-lg bg-dark-0 transition-[margin]"
+			class="relative m-2 mt-0 flex h-full min-h-0 flex-col rounded-lg bg-dark-0 transition-[margin] duration-300 ease-[cubic-bezier(0.2,0.7,0.3,1)]"
 		>
 			{@render children()}
 		</main>
@@ -103,7 +125,8 @@
 			     out, not a place to keep working in. Wider, it is a dock beside the page
 			     and the page stays live. -->
 			<div
-				class="absolute inset-0 z-50 bg-dark-0/60 transition-opacity starting:opacity-0 has-[+aside[data-swiped=down]]:opacity-0 sm:hidden"
+				transition:fade={{ duration: moved() ? 0 : 300 }}
+				class="absolute inset-0 z-50 bg-dark-0/60 transition-opacity has-[+aside[data-swiped=down]]:opacity-0 sm:hidden"
 				aria-hidden="true"
 				onclick={() => (dock = null)}
 			></div>
@@ -127,6 +150,8 @@
 					ignore: '[data-sheet-body]',
 					handle: '[data-sheet-handle]'
 				})}
+				bind:this={sheet}
+				transition:slide
 				class="absolute inset-x-2 bottom-2 z-50 flex [view-transition-name:sheet] h-[70dvh] max-h-[calc(100%-0.5rem)] flex-col overflow-hidden rounded-panel border border-haze bg-surface-100/95 backdrop-blur-xl max-sm:translate-y-[max(0px,var(--swipe-y,0px))] max-sm:transition-[translate] max-sm:duration-300 max-sm:ease-[cubic-bezier(0.2,0.7,0.3,1)] max-sm:data-swiping:transition-none max-sm:data-[swiped=down]:translate-y-[calc(100%+0.5rem)] motion-reduce:transition-none sm:inset-x-auto sm:bottom-20 sm:right-2 sm:top-2 sm:h-auto sm:w-[380px]"
 			>
 				<div class="touch-none py-2 sm:hidden" aria-hidden="true">
