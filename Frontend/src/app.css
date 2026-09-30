@@ -902,13 +902,19 @@ body {
 	}
 }
 
-/* The full shape growing out of the bar over the sheet (`expand` in Player.svelte) is
-   the rise, from the bar's edge: it comes up whole and solid, over the sheet on its way
-   down. The morph's own way would fade it in, so the page shows through it, and draw it
-   under the sheet, so the two slide past each other — and the sleeve would grow from
-   40px on the way, re-laying the whole shape out every frame. */
+/* The full shape growing out of the bar (`expand` in Player.svelte) is the rise, from
+   the bar's edge: it comes up whole and solid — on a phone over the sheet on its way
+   down, on a wide screen under the sheet that stays beside it. The morph's own way would
+   fade it in, so the page shows through it, and draw it under a phone's sheet, so the
+   two slide past each other — and the sleeve would grow from 40px on the way, re-laying
+   the whole shape out every frame. */
 :root[data-morph='open']::view-transition-group(player) {
 	z-index: 1;
+}
+@media (min-width: 640px) {
+	:root[data-morph='open']::view-transition-group(sheet) {
+		z-index: 2;
+	}
 }
 :root[data-morph='open']::view-transition-old(player) {
 	display: none;

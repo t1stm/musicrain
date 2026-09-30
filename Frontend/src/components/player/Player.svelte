@@ -76,15 +76,17 @@
 	// micro is a player-only frame with no room for a bigger shape
 	async function expand() {
 		if (!current.name || window.matchMedia('(max-height: 320px)').matches) return;
-		// The other half of `toggle`: on a phone the sheet would sit over the full shape, so
-		// the two trade places in one morph — the sheet slides down under its edge as the
-		// full shape grows out of the bar.
-		rise = !(dock && phone());
+		// A phone with nothing over the bar rises. Otherwise it grows out of the bar, the
+		// way it folds back into it — and on a phone, the other half of `toggle`: the sheet
+		// would sit over the full shape, so the two trade places in the same morph, the
+		// sheet sliding down under its edge.
+		const trade = phone();
+		rise = trade && !dock;
 		if (rise) return (full = true);
 		await decoded();
 		return morph(() => {
 			full = true;
-			dock = null;
+			if (trade) dock = null;
 		}, 'open');
 	}
 

@@ -127,7 +127,7 @@
 					ignore: '[data-sheet-body]',
 					handle: '[data-sheet-handle]'
 				})}
-				class="absolute inset-x-2 bottom-2 z-50 flex max-sm:[view-transition-name:sheet] h-[70dvh] max-h-[calc(100%-0.5rem)] flex-col overflow-hidden rounded-panel border border-haze bg-surface-100/95 backdrop-blur-xl max-sm:translate-y-[max(0px,var(--swipe-y,0px))] max-sm:transition-[translate] max-sm:duration-300 max-sm:ease-[cubic-bezier(0.2,0.7,0.3,1)] max-sm:data-swiping:transition-none max-sm:data-[swiped=down]:translate-y-[calc(100%+0.5rem)] motion-reduce:transition-none sm:inset-x-auto sm:bottom-20 sm:right-2 sm:top-2 sm:h-auto sm:w-[380px]"
+				class="absolute inset-x-2 bottom-2 z-50 flex [view-transition-name:sheet] h-[70dvh] max-h-[calc(100%-0.5rem)] flex-col overflow-hidden rounded-panel border border-haze bg-surface-100/95 backdrop-blur-xl max-sm:translate-y-[max(0px,var(--swipe-y,0px))] max-sm:transition-[translate] max-sm:duration-300 max-sm:ease-[cubic-bezier(0.2,0.7,0.3,1)] max-sm:data-swiping:transition-none max-sm:data-[swiped=down]:translate-y-[calc(100%+0.5rem)] motion-reduce:transition-none sm:inset-x-auto sm:bottom-20 sm:right-2 sm:top-2 sm:h-auto sm:w-[380px]"
 			>
 				<div class="touch-none py-2 sm:hidden" aria-hidden="true">
 					<span class="mx-auto block h-1 w-9 rounded-full bg-surface-300"></span>
