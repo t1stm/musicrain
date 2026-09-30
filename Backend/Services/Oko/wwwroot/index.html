@@ -638,7 +638,7 @@
         ]));
     },
 
-    local(s) {
+    local(s, name) {
       return `<div class="cards">
           <div class="card"><b>${s.songs}</b><span>songs</span></div>
           <div class="card"><b>${s.folders}</b><span>folders</span></div>
@@ -646,6 +646,10 @@
           <div class="card"><b>${s.withoutArtist}</b><span>no artist</span></div>
         </div>
         <div class="scroll"><div class="empty">Storage: <span class="mono">${esc(s.storage)}</span>.</div></div>
+        <div class="rowbar">${s.scanning
+          ? `<span class="hint">Scanning the library…</span>`
+          : act("Rescan library", name, "rescan", {})}
+          <span class="hint">Picks up files added to storage since the pod started.</span></div>
         <h3 class="section">Library</h3>
         <div id="lib">${libHtml || `<div class="scroll"><div class="empty">Loading…</div></div>`}</div>`;
     },

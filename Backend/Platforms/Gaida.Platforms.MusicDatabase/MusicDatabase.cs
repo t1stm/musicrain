@@ -62,6 +62,9 @@ public sealed class MusicDatabase : Platform, ISupportsSearch, ISupportsRandomRe
     /// <returns>Counts for the admin panel's overview.</returns>
     public object Summary() => _provider.Summary();
 
+    /// <summary>Starts the library scan again in the background — see <see cref="Manager.MusicManager.TryRescan" />.</summary>
+    public bool TryRescan() => _provider.TryRescan();
+
     /// <summary>Rewrites one song's names and album, and saves its folder's Info.json.</summary>
     public Task<(MusicInfo? entry, string? error)> EditAsync(string id, IReadOnlyList<string>? titles,
         IReadOnlyList<string>? artists, string? album) => _provider.EditAsync(id, titles, artists, album);

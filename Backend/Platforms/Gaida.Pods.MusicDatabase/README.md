@@ -53,6 +53,7 @@ Both are ordinary routes rather than `/Admin` ones: this is service-to-service t
 ## Interesting techniques
 
 - **A scan that does not block the boot.** `Initialize()` starts the library scan and returns, so the pod is listening while it reads thousands of folders. Folders are parsed with `Parallel.ForEachAsync` into a `ConcurrentBag`; folder order stops being stable, and nothing downstream depends on it.
+- **A rescan without a restart.** `POST /Admin/rescan` (Oko's *Rescan library* button) runs the boot scan again in the background and answers 202 straight away; the snapshot's `scanning` flag says when it is done. It holds the same gate as edits and imports, so neither can be written over by a scan that read `Info.json` before them.
 - **Environment variables copied out of configuration.** The platform layer reads `STORAGE`, `ALBUM_COVERS` and `DOMAIN` as process environment variables, so `Program.cs` copies them out of `IConfiguration` at startup. That keeps the library usable from a CLI or a bot with no host builder, while a container still configures it the normal way.
 - **Admin routes split by HTTP verb on purpose.** Reads are `GET` so they pass through Oko's plain read proxy; anything that changes the library is a `POST` through its audited action proxy.
 - **Repeated query parameters as an ordered list.** `/variant` takes repeated `title=` and `artist=` parameters — the variant list, in preference order, without inventing a body format for a GET.

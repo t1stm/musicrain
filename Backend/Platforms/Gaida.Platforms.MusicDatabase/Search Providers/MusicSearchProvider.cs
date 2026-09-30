@@ -57,6 +57,9 @@ public class MusicSearchProvider(ILogger logger) : SearchProvider(logger),
     /// <summary>Admin: counts for the panel's overview.</summary>
     public object Summary() => _musicManager.Summary();
 
+    /// <summary>Admin: read the library off disk again.</summary>
+    public bool TryRescan() => _musicManager.TryRescan();
+
     /// <summary>Admin: rewrite one song's names and album.</summary>
     public Task<(MusicInfo? entry, string? error)> EditAsync(string id, IReadOnlyList<string>? titles,
         IReadOnlyList<string>? artists, string? album) => _musicManager.EditAsync(id, titles, artists, album);

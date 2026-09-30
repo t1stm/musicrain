@@ -67,6 +67,12 @@ admin?.MapPost("/edit-song", async Task<IResult> (string id, HttpRequest request
     return Results.Ok(LibraryRow(entry!));
 });
 
+// Picks up files added to the library by hand since boot. 202 because it only starts the scan — the
+// snapshot's `scanning` flag and song count are where the result shows.
+admin?.MapPost("/rescan", IResult (MusicDatabase db) => db.TryRescan()
+    ? Results.Accepted()
+    : Results.Conflict(new ErrorDto("A scan is already running.")));
+
 // Pulls one Deezer track into the library. The Deezer pod owns the download and its cache; this end
 // owns the storage, so the bytes come over the wire rather than the volume being shared. The entry is
 // left exactly as its tags describe it -- the Library tab above is where an operator fixes it up.
@@ -488,6 +494,7 @@ static async Task RunSelfCheck()
     await EditCheck(Assert);
     await BackfillCheck(Assert);
     await ImportCheck(Assert);
+    await RescanCheck(Assert);
 
     Console.WriteLine("selftest OK");
     return;
@@ -569,6 +576,47 @@ static async Task ImportCheck(Action<bool, string> assert)
         assert(art!.CoverUrl!.StartsWith("https://music.example.com/Album_Covers/"),
             $"import: the entry holds the substituted URL, not the placeholder ({art.CoverUrl})");
         assert(Directory.GetFiles(covers).Length == 1, "import: the cover file was written once");
+    }
+    finally
+    {
+        try { Directory.Delete(root, true); } catch (IOException) { /* temp dir */ }
+    }
+}
+
+// The Oko rescan, against a throwaway library that gains a file after boot. What would go wrong quietly:
+// the new file not being picked up, or the existing entry's ID being re-rolled by the second read.
+static async Task RescanCheck(Action<bool, string> assert)
+{
+    var root = Path.Combine(Path.GetTempPath(), "gaida-local-rescan-" + Guid.NewGuid().ToString("n"));
+    var folder = Path.Combine(root, "Queen");
+    Directory.CreateDirectory(folder);
+    await File.WriteAllBytesAsync(Path.Combine(folder, "Queen - Bohemian Rhapsody.mp3"), new byte[4096]);
+
+    Environment.SetEnvironmentVariable("STORAGE", root, EnvironmentVariableTarget.Process);
+    Environment.SetEnvironmentVariable("ALBUM_COVERS", Path.Combine(root, "covers"), EnvironmentVariableTarget.Process);
+
+    try
+    {
+        var database = new MusicDatabase(Serilog.Core.Logger.None);
+        await database.InitializeAsync();
+
+        var before = database.FindForAdmin("Queen", 10);
+        assert(before.Count == 1, "rescan: the throwaway library loaded one song at boot");
+
+        await File.WriteAllBytesAsync(Path.Combine(folder, "Queen - Somebody to Love.mp3"), new byte[4096]);
+        assert(database.TryRescan(), "rescan: a rescan starts when none is running");
+        assert(!database.TryRescan(), "rescan: a second one is refused while the first runs");
+
+        for (var waited = 0; Scanning() && waited < 300; waited++) await Task.Delay(100);
+        assert(!Scanning(), "rescan: the scan finished and cleared its flag");
+
+        var after = database.FindForAdmin("Queen", 10);
+        assert(after.Count == 2, $"rescan: the file added after boot is in the library ({after.Count})");
+        assert(after.Any(song => song.Id == before[0].Id), "rescan: the existing entry kept its ID");
+        assert((await File.ReadAllTextAsync(Path.Combine(folder, "Info.json"))).Contains("Somebody"),
+            "rescan: the new entry reached Info.json");
+
+        bool Scanning() => System.Text.Json.JsonSerializer.Serialize(database.Summary()).Contains("\"scanning\":true");
     }
     finally
     {

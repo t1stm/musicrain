@@ -20,6 +20,9 @@ public partial class MusicManager(ILogger logger)
     /// </remarks>
     private readonly SemaphoreSlim _editGate = new(1, 1);
 
+    /// <summary>1 while a scan runs, so a second Rescan click is refused rather than queued behind it.</summary>
+    private int _scanning;
+
     protected List<MusicInfo> Songs = [];
     private ILogger Logger { get; } = logger;
 
@@ -59,10 +62,62 @@ public partial class MusicManager(ILogger logger)
             Directory.CreateDirectory(albumCovers);
         }
 
-        await Load();
-        Logger.Debug("Extracting covers from {StorageDirectory}", StorageDirectory);
-        _coverExtractor.Extract(StorageDirectory);
+        _scanning = 1;
+        await Scan();
         Logger.Information("MusicManager initialization complete. Loaded {Count} songs", Songs.Count);
+    }
+
+    /// <summary>
+    ///     Starts the boot scan again, for files dropped into the library while the pod is up. Returns without
+    ///     waiting: new files each cost an ffprobe, which outlasts Oko's action timeout. The snapshot's
+    ///     <c>scanning</c> flag is how the panel sees it finish.
+    /// </summary>
+    /// <returns><c>false</c> when a scan is already running.</returns>
+    public bool TryRescan()
+    {
+        if (Interlocked.CompareExchange(ref _scanning, 1, 0) != 0) return false;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Scan();
+                Logger.Information("Rescan complete. {Count} songs", Songs.Count);
+            }
+            catch (Exception exception)
+            {
+                Logger.Error(exception, "Rescan failed");
+            }
+        });
+
+        return true;
+    }
+
+    /// <summary>
+    ///     The whole library off disk. Under the edit gate, because both halves rewrite Info.json from what
+    ///     they read a moment earlier: an edit, import or lyrics stamp landing in between would be written
+    ///     over with the file as it was before it.
+    /// </summary>
+    private async Task Scan()
+    {
+        await _editGate.WaitAsync();
+
+        try
+        {
+            await Load();
+            Logger.Debug("Extracting covers from {StorageDirectory}", StorageDirectory);
+            _coverExtractor.Extract(StorageDirectory);
+
+            // Extract writes covers into Info.json, not onto the entries in memory, and only for entries Load
+            // has already written there. Without this second read a new file's cover shows up at the next
+            // boot instead of now. Nothing is new by then, so it reads every Info.json and writes none.
+            await Load();
+        }
+        finally
+        {
+            _editGate.Release();
+            Volatile.Write(ref _scanning, 0);
+        }
     }
 
     protected async Task Load()
@@ -406,6 +461,7 @@ public partial class MusicManager(ILogger logger)
             withoutArtist,
             withLyrics,
             synchronized,
+            scanning = Volatile.Read(ref _scanning) == 1,
             storage = StorageDirectory
         };
     }
