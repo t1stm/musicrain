@@ -22,8 +22,9 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
 # MusicManager.Manager/MediaInfo.cs shells out to ffprobe to read audio tags; MusicGetter.cs shells
-# out to wvunpack, the only decoder here that reads a .wvc WavPack correction file.
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg wavpack \
+# out to wvunpack, the only decoder here that reads a .wvc WavPack correction file; Flac.cs shells
+# out to metaflac (package flac) for embedded covers -- without it every FLAC scans with no cover.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg wavpack flac \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app .
