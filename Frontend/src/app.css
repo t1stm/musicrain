@@ -908,6 +908,49 @@ body {
 	}
 }
 
+/* A morph draws the full shape where it lands, so the transitions that would carry the
+   live shape there on their own are off while one runs: the sleeve's size, and the
+   padding the record moves over by. */
+:root[data-morph] #player,
+:root[data-morph] #player #track-info img {
+	transition: none;
+}
+
+/* The lyrics pane opening or closing in the full shape (the lyrics button in
+   Player.svelte) deals the grid out again — the sleeve and the name move into one block,
+   the transport drops a row — and no transition can follow that. The morph carries each
+   part from where it was to where it lands instead, on the sleeve's own curve, and the
+   pane fades in or out where it stands. The name is faded from one wrap to the other
+   rather than stretched between them. */
+:root[data-morph='lyrics'] #player #track-info img {
+	view-transition-name: sleeve;
+}
+:root[data-morph='lyrics'] #player #track-info > div {
+	view-transition-name: words;
+}
+:root[data-morph='lyrics'] #player #seekbar {
+	view-transition-name: seek;
+}
+:root[data-morph='lyrics'] #player #controls {
+	view-transition-name: transport;
+}
+:root[data-morph='lyrics'] #player-lyrics {
+	view-transition-name: lyrics;
+}
+::view-transition-group(sleeve),
+::view-transition-group(words),
+::view-transition-group(seek),
+::view-transition-group(transport),
+::view-transition-group(lyrics) {
+	animation-duration: 320ms;
+	animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+::view-transition-old(words),
+::view-transition-new(words) {
+	height: 100%;
+	object-fit: none;
+}
+
 /* The full shape growing out of the bar (`expand` in Player.svelte) is the rise, from
    the bar's edge: it comes up whole and solid — on a phone over the sheet on its way
    down, on a wide screen under the sheet that stays beside it. The morph's own way would
@@ -927,10 +970,6 @@ body {
 }
 :root[data-morph='open']::view-transition-new(player) {
 	animation: none;
-}
-:root[data-morph='open'] #player,
-:root[data-morph='open'] #player #track-info img {
-	transition: none;
 }
 @media (width < 40rem) {
 	#player[data-shape='full'][data-rise] {

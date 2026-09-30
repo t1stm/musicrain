@@ -50,7 +50,7 @@
 	// Without view transitions it is the old snap. The root carries `data-morph` for as
 	// long as one runs, so the sheet leaves its own way in and out to it (+layout.svelte);
 	// `kind` names a morph that app.css stages differently.
-	function morph(update: () => void, kind?: 'open') {
+	function morph(update: () => void, kind?: 'open' | 'lyrics') {
 		if (!document.startViewTransition) return update();
 		const root = document.documentElement;
 		root.dataset.morph = kind ?? '';
@@ -206,7 +206,7 @@
 					class="flex size-11 items-center justify-center rounded-art text-fog hover:text-chalk focus-visible:outline-2 focus-visible:outline-primary-200 sm:size-7"
 					class:bg-surface-200={lyrics.open}
 					class:text-chalk={lyrics.open}
-					onclick={() => (lyrics.open = !lyrics.open)}
+					onclick={() => morph(() => (lyrics.open = !lyrics.open), 'lyrics')}
 				>
 					<Icon src={MusicalNote} mini size="16" />
 				</button>
