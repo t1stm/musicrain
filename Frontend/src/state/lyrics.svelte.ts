@@ -26,6 +26,11 @@ class LyricsState {
 	#inFlight: AbortController | null = null;
 	#loadedId = '';
 
+	/** How an answer that puts the pane on screen or takes it off is applied. The full
+	 *  player hands in its morph while it is open (Player.svelte), so the shape moves to
+	 *  its new layout rather than jumping there. */
+	shift?: (update: () => void) => unknown;
+
 	get open() {
 		return this.#open;
 	}
@@ -73,24 +78,37 @@ class LyricsState {
 		this.activeIndex = -1;
 
 		getLyrics(fetcher, id, controller.signal)
-			.then((found) => {
-				if (generation !== this.#generation) return;
-				this.#loadedId = id;
-				this.lyrics = found;
-				this.status = found ? 'ready' : 'none';
-				this.#wordless = !found;
-			})
+			.then((found) =>
+				this.#answer(generation, !found, () => {
+					this.#loadedId = id;
+					this.lyrics = found;
+					this.status = found ? 'ready' : 'none';
+				})
+			)
 			.catch((error) => {
-				if (generation !== this.#generation) return;
 				if (error instanceof DOMException && error.name === 'AbortError') return;
 
 				// A lyrics service that is down must not be able to break playback, a room or
 				// the transport controls, so the error stops here. The next track tries again.
-				this.#loadedId = '';
-				this.lyrics = null;
-				this.status = 'error';
-				this.#wordless = false;
+				this.#answer(generation, false, () => {
+					this.#loadedId = '';
+					this.lyrics = null;
+					this.status = 'error';
+				});
 			});
+	}
+
+	/** Applies an answer, unless a newer load has made it stale — checked again as it is
+	 *  applied, since `shift` may hold it until a morph already running has landed. */
+	#answer(generation: number, wordless: boolean, apply: () => void) {
+		if (generation !== this.#generation) return;
+		const update = () => {
+			if (generation !== this.#generation) return;
+			apply();
+			this.#wordless = wordless;
+		};
+		if (this.shift && this.#open && wordless !== this.#wordless) this.shift(update);
+		else update();
 	}
 
 	#cancel() {

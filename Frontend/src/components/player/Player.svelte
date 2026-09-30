@@ -49,18 +49,36 @@
 	// other in the same tick — `closeOnBack` hands the history entry over only then.
 	// Without view transitions it is the old snap. The root carries `data-morph` for as
 	// long as one runs, so the sheet leaves its own way in and out to it (+layout.svelte);
-	// `kind` names a morph that app.css stages differently.
+	// `kind` names a morph that app.css stages differently. One at a time: a morph asked
+	// for while another runs — the lyrics service answering mid-toggle, back pressed
+	// mid-open — waits for it to land, rather than cutting it short and taking the root's
+	// `data-morph` away from the new one as it ends.
+	let running: Promise<unknown> = Promise.resolve();
 	function morph(update: () => void, kind?: 'open' | 'lyrics') {
 		if (!document.startViewTransition) return update();
 		const root = document.documentElement;
-		root.dataset.morph = kind ?? '';
-		const transition = document.startViewTransition(async () => {
-			update();
-			await tick();
+		const started = running.then(() => {
+			root.dataset.morph = kind ?? '';
+			return document.startViewTransition(async () => {
+				update();
+				await tick();
+			});
 		});
-		transition.finished.finally(() => delete root.dataset.morph);
-		return transition.updateCallbackDone;
+		running = started
+			.then((transition) => transition.finished)
+			.catch(() => {})
+			.finally(() => delete root.dataset.morph);
+		return started.then((transition) => transition.updateCallbackDone);
 	}
+
+	// An answer from the lyrics service can open or close the pane long after the press
+	// that asked for it — "none" closes it, words for the next track open it again — so
+	// it takes the same morph the press does.
+	$effect(() => {
+		if (!full) return;
+		lyrics.shift = (update) => morph(update, 'lyrics');
+		return () => (lyrics.shift = undefined);
+	});
 
 	// Whether the full shape rises into place when it opens. Not when it grows out of the
 	// bar in a morph: the rise would start it off the foot of the screen, and the morph
