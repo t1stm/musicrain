@@ -51,7 +51,7 @@
 			return { duration: 150, css: (t: number) => `opacity: ${t}` };
 		const axis = matchMedia('(min-width: 640px)').matches ? 'X' : 'Y';
 		return {
-			duration: 300,
+			duration: 200,
 			easing: cubicOut,
 			css: (_: number, u: number) => `transform: translate${axis}(calc(${u} * (100% + 0.5rem)))`
 		};
@@ -116,7 +116,7 @@
 	<div class="relative flex min-h-0 flex-1 flex-col max-sm:overflow-clip micro:hidden">
 		<main
 			class:queue-open={dock !== null}
-			class="relative m-2 mt-0 flex h-full min-h-0 flex-col rounded-lg bg-dark-0 transition-[margin] duration-300 ease-[cubic-bezier(0.2,0.7,0.3,1)]"
+			class="relative m-2 mt-0 flex h-full min-h-0 flex-col rounded-lg bg-dark-0 transition-[margin] duration-200 ease-[cubic-bezier(0.2,0.7,0.3,1)]"
 		>
 			{@render children()}
 		</main>
@@ -125,7 +125,7 @@
 			     out, not a place to keep working in. Wider, it is a dock beside the page
 			     and the page stays live. -->
 			<div
-				transition:fade={{ duration: moved() ? 0 : 300 }}
+				transition:fade={{ duration: moved() ? 0 : 200 }}
 				class="absolute inset-0 z-50 bg-dark-0/60 transition-opacity has-[+aside[data-swiped=down]]:opacity-0 sm:hidden"
 				aria-hidden="true"
 				onclick={() => (dock = null)}
