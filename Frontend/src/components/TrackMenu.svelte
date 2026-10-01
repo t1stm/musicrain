@@ -457,7 +457,11 @@
 				onclick={() => addTo(playlist)}
 			>
 				<PlaylistCover {playlist} class="size-8 shrink-0 rounded-art object-cover" />
-				<span class="min-w-0 flex-1 truncate">{playlist.name}</span>
+				<span class="min-w-0 flex-1 truncate"
+					>{playlist.name}{#if playlist.owner !== account.username}<span class="text-fog"
+							>&nbsp;· {playlist.owner}</span
+						>{/if}</span
+				>
 				{#if landed?.id === playlist.id}
 					{#if landed.added}
 						<span class="flex shrink-0 items-center gap-1.5 text-primary-500">

@@ -72,6 +72,15 @@
 	});
 
 	onMount(async () => {
+		// A link the installed app caught — a friend code, mostly — arrives here instead of
+		// reloading the window, which would end the queue and the music: route to it in place.
+		// No launchQueue (Safari, Firefox) and the link simply opens the way it always did.
+		window.launchQueue?.setConsumer(({ targetURL }) => {
+			if (!targetURL) return;
+			const url = new URL(targetURL);
+			if (url.origin === location.origin) goto(url.pathname + url.search);
+		});
+
 		account.load();
 		// after the account, so the first thing it does is read the account's settings
 		settings.load();

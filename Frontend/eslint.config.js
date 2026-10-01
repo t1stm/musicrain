@@ -48,7 +48,8 @@ export default ts.config(
 	},
 	{
 		// resolve() types accept a route, not a query string, so search, artist,
-		// room and playlist links resolve the route and append their own query.
+		// room, playlist and friend-code links resolve the route and append their own
+		// query. The account page follows a `next` path built that way.
 		files: [
 			'src/routes/(app)/+page.svelte',
 			'src/routes/(app)/+layout.svelte',
@@ -58,7 +59,10 @@ export default ts.config(
 			'src/components/player/layers/track-info/TrackInfo.svelte',
 			'src/components/playlist/PlaylistCard.svelte',
 			'src/routes/(app)/album/+page.svelte',
-			'src/components/queue/Queue.svelte'
+			'src/components/queue/Queue.svelte',
+			'src/components/friends/AcceptGate.svelte',
+			'src/routes/(app)/settings/friends/+page.svelte',
+			'src/routes/(app)/settings/account/+page.svelte'
 		],
 		rules: {
 			'svelte/no-navigation-without-resolve': 'off'

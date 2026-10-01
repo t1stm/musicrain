@@ -4,14 +4,21 @@
 	import { resolve } from '$app/paths';
 	import ArtistLink from '$components/ArtistLink.svelte';
 	import PlaylistCover from '$components/playlist/PlaylistCover.svelte';
+	import Switch from '$components/settings/Switch.svelte';
 	import SwipeRow from '$components/SwipeRow.svelte';
 	import TrackMenu from '$components/TrackMenu.svelte';
 	import { EllipsisHorizontal, Plus, QueueList } from 'svelte-hero-icons';
 	import { convertTimeSpanStringToSeconds, getTimeString, pressKeys } from '$lib';
-	import { getPlaylist, type Playlist } from '$requests/playlists';
+	import {
+		getPlaylist,
+		type Playlist,
+		type PlaylistTrack,
+		type Visibility
+	} from '$requests/playlists';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
 	import { reorder } from '$lib/reorder';
 	import account from '$states/account.svelte';
+	import friends from '$states/friends.svelte';
 	import playlists, { toSnapshot } from '$states/playlists.svelte';
 	import queue from '$states/queue.svelte';
 	import type { SearchResult } from '$states/search.svelte';
@@ -23,7 +30,10 @@
 	let missing = $state(false);
 	let renaming = $state(false);
 	let confirmingDelete = $state(false);
+	let sharing = $state(false);
 	let draftName = $state('');
+	/** A save found the tracks changed by somebody else; the page shows theirs now. */
+	let stale = $state(false);
 
 	// Two separate layers: back gets out of the delete confirmation without also
 	// throwing away the rename that was open behind it.
@@ -35,14 +45,53 @@
 		() => confirmingDelete,
 		() => (confirmingDelete = false)
 	);
+	closeOnBack(
+		() => sharing,
+		() => (sharing = false)
+	);
 
 	// the row a replacement just landed in, for as long as its ripple runs
 	let landedAt = $state<number | null>(null);
 	let settle: ReturnType<typeof setTimeout>;
 
+	const same = (a: string | null | undefined, b: string | null | undefined) =>
+		!!a && !!b && a.toLowerCase() === b.toLowerCase();
+
 	let tracks = $derived(playlist?.tracks ?? []);
+	/** The owner: everything on the page is theirs to change. */
 	let mine = $derived(!!playlist && playlist.owner === account.username);
+	/** The owner or a friend they share it with: the tracks, and nothing else. */
+	let canEdit = $derived(
+		mine || (!!playlist && playlist.collaborators.some((name) => same(name, account.username)))
+	);
+	/** Who added what is only worth saying once somebody besides the owner can add. */
+	let shared = $derived((playlist?.collaborators.length ?? 0) > 0);
 	let length = $derived(getTimeString(convertTimeSpanStringToSeconds(playlist?.duration ?? '00:00:00')));
+
+	/** What the chosen visibility means, said under the picker. */
+	const visibilityHelp: Record<Visibility, string> = {
+		private: 'Only you, and the friends who can edit it.',
+		friends: 'Your friends can open it. Nobody else can.',
+		public: 'Anyone with the link can open it, and it shows under Playlists.'
+	};
+
+	/** Whoever is looking reads their own additions as "you"; `null` is the owner's. */
+	function addedBy(track: PlaylistTrack) {
+		const who = track.addedBy ?? playlist?.owner ?? '';
+		return same(who, account.username) ? 'you' : who;
+	}
+
+	/** Resolves when the read lands; `live` lets an effect that has moved on ignore it. */
+	async function load(token: string | null, live = () => true) {
+		try {
+			const found = await getPlaylist(id, token);
+			if (!live()) return;
+			playlist = found;
+			missing = false;
+		} catch {
+			if (live()) missing = true;
+		}
+	}
 
 	$effect(() => {
 		// re-runs when a token arrives, which is what turns a 404 on a private
@@ -51,27 +100,50 @@
 		if (!id) return;
 
 		let live = true;
-		getPlaylist(id, token)
-			.then((found) => {
-				if (!live) return;
-				playlist = found;
-				missing = false;
-			})
-			.catch(() => {
-				if (live) missing = true;
-			});
+		load(token, () => live);
 
 		return () => {
 			live = false;
 		};
 	});
 
+	// the friends the Share panel lists, read when it first opens
+	$effect(() => {
+		if (sharing && !friends.loaded) friends.load();
+	});
+
+	/**
+	 * Saves go one at a time, each from the revision the one before it left, so two quick
+	 * edits never race each other into a conflict. `pending` counts the edits not yet saved:
+	 * while there are some, an answer takes only the revision, not the list, or it would put
+	 * back a row the next edit has already moved.
+	 */
+	let saving: Promise<void> = Promise.resolve();
+	let pending = 0;
+
 	/** Every edit is the same shape: change the list here, then send the list. */
-	async function commit(next: SearchResult[]) {
+	function commit(next: PlaylistTrack[]) {
 		if (!playlist) return;
+		const id = playlist.id;
 		playlist = { ...playlist, tracks: next, trackCount: next.length };
-		const saved = await playlists.update(playlist.id, { tracks: next });
-		if (saved) playlist = saved;
+		stale = false;
+		pending++;
+
+		saving = saving.then(async () => {
+			pending--;
+			// somebody else's list replaced this edit, or this is another playlist now
+			if (stale || playlist?.id !== id) return;
+
+			const saved = await playlists.update(id, { tracks: playlist.tracks, revision: playlist.revision });
+
+			if (saved === 'stale') {
+				// somebody else changed it first: show theirs, and drop what is still queued
+				stale = true;
+				await load(account.token);
+			} else if (saved && playlist) {
+				playlist = pending === 0 ? saved : { ...playlist, revision: saved.revision };
+			}
+		});
 	}
 
 	function remove(index: number) {
@@ -110,15 +182,34 @@
 		if (!playlist || !draftName.trim()) return;
 
 		const saved = await playlists.update(playlist.id, { name: draftName.trim() });
-		if (saved) playlist = saved;
+		if (saved && saved !== 'stale' && playlist) playlist = { ...playlist, name: saved.name };
 		renaming = false;
 	}
 
-	async function toggleVisibility() {
+	async function setVisibility(visibility: Visibility) {
 		if (!playlist) return;
 
-		const saved = await playlists.update(playlist.id, { isPublic: !playlist.isPublic });
-		if (saved) playlist = saved;
+		playlist = { ...playlist, visibility };
+		const saved = await playlists.update(playlist.id, { visibility });
+		if (saved && saved !== 'stale' && playlist) playlist = { ...playlist, visibility: saved.visibility };
+	}
+
+	function isEditor(name: string) {
+		return !!playlist?.collaborators.some((editor) => same(editor, name));
+	}
+
+	/** The whole list goes each time: Dom replaces it, and checks every name is a friend. */
+	async function setEditor(name: string, on: boolean) {
+		if (!playlist) return;
+
+		const collaborators = on
+			? [...playlist.collaborators, name]
+			: playlist.collaborators.filter((editor) => !same(editor, name));
+		playlist = { ...playlist, collaborators };
+
+		const saved = await playlists.update(playlist.id, { collaborators });
+		if (saved && saved !== 'stale' && playlist)
+			playlist = { ...playlist, collaborators: saved.collaborators };
 	}
 
 	/** The cover picker. The upload replaces whatever was there, so there is no remove. */
@@ -167,7 +258,10 @@
 			<span class="absolute inset-0 -z-10 bg-dark-0/[0.74] sm:backdrop-blur-[2px]"></span>
 
 			<div class="flex flex-col gap-2 p-4 sm:p-8">
-				<p class="eyebrow">{mine ? 'Your playlist' : `${playlist.owner}’s playlist`}</p>
+				<p class="eyebrow">
+					{mine ? 'Your playlist' : `${playlist.owner}’s playlist`}{#if canEdit && !mine}&nbsp;·
+						<span class="text-primary-500">you can edit</span>{/if}
+				</p>
 
 				{#if renaming}
 					<form class="flex max-w-md gap-2" onsubmit={rename}>
@@ -193,9 +287,8 @@
 
 				<p class="font-mono text-[0.68rem] uppercase tracking-[0.13em] text-fog">
 					{playlist.trackCount}
-					{playlist.trackCount === 1 ? 'track' : 'tracks'} · {length} · {playlist.isPublic
-						? 'public'
-						: 'private'}
+					{playlist.trackCount === 1 ? 'track' : 'tracks'} · {length} · {playlist.visibility}{#if shared}&nbsp;·
+						{playlist.collaborators.length} can edit{/if}
 				</p>
 
 				<div class="mt-2 flex flex-wrap items-center gap-2">
@@ -229,10 +322,14 @@
 						</button>
 						<button
 							type="button"
+							aria-expanded={sharing}
+							aria-controls="share"
 							class="min-h-9 rounded-row border border-haze px-3 py-1.5 text-sm font-semibold hover:bg-surface-200"
-							onclick={toggleVisibility}
+							class:border-primary-0={sharing}
+							class:bg-surface-200={sharing}
+							onclick={() => (sharing = !sharing)}
 						>
-							{playlist.isPublic ? 'Make private' : 'Make public'}
+							Share
 						</button>
 
 						<!-- a file input styled as a button: the native picker is the whole feature -->
@@ -280,6 +377,70 @@
 			</div>
 		</header>
 
+		{#if mine && sharing}
+			<!-- Both of the playlist's sharing controls in one place: who can open it, and
+			     which friends can change its tracks. -->
+			<section
+				id="share"
+				aria-label={`Share ${playlist.name}`}
+				class="mx-3 flex flex-col gap-2.5 rounded-panel border border-haze bg-surface-100 p-4 sm:mx-8 sm:max-w-md"
+			>
+				<label for="visibility" class="eyebrow flex items-center gap-3">
+					Who can see it
+					<span class="h-px flex-1 bg-haze"></span>
+				</label>
+				<!-- native: a phone gets its own picker -->
+				<select
+					id="visibility"
+					value={playlist.visibility}
+					onchange={(event) => setVisibility(event.currentTarget.value as Visibility)}
+					class="min-h-11 w-full rounded-row border border-haze bg-dark-0 text-chalk ring-primary-0 focus:border-primary-0 focus-visible:ring-2"
+				>
+					<option value="private">Private</option>
+					<option value="friends">Friends</option>
+					<option value="public">Public</option>
+				</select>
+				<p class="text-sm text-fog">{visibilityHelp[playlist.visibility]}</p>
+
+				<h2 class="eyebrow mt-2.5 flex items-center gap-3">
+					Who can edit
+					<span class="h-px flex-1 bg-haze"></span>
+				</h2>
+				{#if friends.loaded && friends.list.length === 0}
+					<p class="text-sm text-fog">
+						Add friends first, then share this playlist with them. <a
+							href={resolve('/settings/friends')}
+							class="text-primary-500 underline-offset-4 hover:underline">Add friends</a
+						>
+					</p>
+				{:else}
+					<div class="flex flex-col">
+						{#each friends.list as name (name)}
+							<label class="flex min-h-12 cursor-pointer items-center gap-3 border-b border-haze">
+								<span
+									aria-hidden="true"
+									class="grid size-8 shrink-0 place-items-center rounded-full bg-surface-200 text-[0.8rem] font-semibold text-primary-500"
+									>{name[0]}</span
+								>
+								<span class="min-w-0 flex-1 truncate">{name}</span>
+								<Switch bind:checked={() => isEditor(name), (on) => setEditor(name, on)} />
+							</label>
+						{/each}
+					</div>
+					<p class="text-sm text-fog">
+						They can add, remove and reorder tracks. Only you can rename, share or delete this
+						playlist.
+					</p>
+				{/if}
+			</section>
+		{/if}
+
+		{#if stale}
+			<p role="status" class="px-4 text-sm text-primary-500 sm:px-8">
+				Someone else changed this playlist while you were editing. This is the latest.
+			</p>
+		{/if}
+
 		{#if playlists.error}
 			<p class="px-4 text-sm text-ember sm:px-8">{playlists.error}</p>
 		{/if}
@@ -290,11 +451,11 @@
 					Nothing in this playlist yet. Add tracks from search or the library.
 				</p>
 			{:else}
-				<div class="flex flex-col" {@attach mine && reorder(move)}>
+				<div class="flex flex-col" {@attach canEdit && reorder(move)}>
 					{#each tracks as track, index (track.id + index)}
-						<!-- your own list: the grip is the reorder's, so a swipe starts anywhere else -->
+						<!-- a list you can edit: the grip is the reorder's, so a swipe starts anywhere else -->
 						<SwipeRow
-							ignore={mine ? '[data-grip]' : undefined}
+							ignore={canEdit ? '[data-grip]' : undefined}
 							right={[
 								{
 									icon: Plus,
@@ -322,16 +483,16 @@
 								role="button"
 								tabindex="0"
 								class="group flex cursor-pointer items-center gap-3 rounded-row px-2 py-2 not-has-open:hover:bg-surface-100 not-has-open:active:bg-surface-200 focus-visible:bg-surface-100 focus-visible:outline-none"
-								class:select-none={mine}
+								class:select-none={canEdit}
 								onclick={(event) => playUnlessLink(track, event)}
 								onkeydown={pressKeys(() => queue.playNow(track))}
 							>
-								<!-- your own list: the number and the sleeve pick a row up, as in the queue -->
+								<!-- a list you can edit: the number and the sleeve pick a row up, as in the queue -->
 								<span
 									data-grip
 									class="flex shrink-0 items-center gap-3 self-stretch"
-									class:touch-none={mine}
-									class:cursor-grab={mine}
+									class:touch-none={canEdit}
+									class:cursor-grab={canEdit}
 								>
 									<span class="w-6 text-right font-mono text-[0.68rem] text-fog">{index + 1}</span>
 									<img
@@ -344,7 +505,12 @@
 								</span>
 								<div class="min-w-0 flex-1">
 									<p class="truncate text-sm">{track.name}</p>
-									<p class="truncate text-xs text-fog"><ArtistLink artist={track.artist} /></p>
+									<p class="truncate text-xs text-fog">
+										<ArtistLink artist={track.artist} />{#if shared}&nbsp;·
+											<!-- a friend's name in the app's violet; your own additions say "you" -->
+											<span class:text-primary-500={addedBy(track) !== 'you'}>{addedBy(track)}</span
+											>{/if}
+									</p>
 								</div>
 								<span class="shrink-0 font-mono text-[0.68rem] text-fog">
 									{getTimeString(convertTimeSpanStringToSeconds(track.duration))}
@@ -353,10 +519,10 @@
 								<TrackMenu
 									result={track}
 									bind:open={() => menuAt === index, (open) => setMenu(index, open)}
-									replace={mine ? (result) => replaceAt(index, result) : undefined}
+									replace={canEdit ? (result) => replaceAt(index, result) : undefined}
 									class="max-sm:[&>summary]:hidden pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100 pointer-fine:open:opacity-100"
 								/>
-								{#if mine}
+								{#if canEdit}
 									<button
 										type="button"
 										aria-label={`Remove ${track.name} from ${playlist.name}`}

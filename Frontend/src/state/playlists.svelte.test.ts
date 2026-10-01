@@ -77,3 +77,15 @@ it('keeps your own playlists out of the everybody-else list', () => {
 	account.username = null;
 	expect(playlists.others).toHaveLength(3);
 });
+
+// a friend's public playlist you can edit is already on the page, under Shared with you
+it('keeps the playlists you edit out of the everybody-else list', () => {
+	const card = (id: string, owner: string) => ({ id, owner }) as never;
+	playlists.shared = [card('p_1', 'ana'), card('p_2', 'boyan')];
+	playlists.mine = [card('p_1', 'ana')];
+
+	account.username = 'kris';
+	expect(playlists.others.map(p => p.id)).toEqual(['p_2']);
+
+	playlists.mine = [];
+});

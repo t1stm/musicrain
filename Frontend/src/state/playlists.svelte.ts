@@ -3,6 +3,7 @@ import {
 	appendTrack,
 	createPlaylist,
 	deletePlaylist,
+	getFriendsPlaylists,
 	getMyPlaylists,
 	getPublicPlaylists,
 	patchPlaylist,
@@ -11,6 +12,7 @@ import {
 	type PlaylistEdit,
 	type PlaylistSummary,
 } from '$requests/playlists';
+import { AudioApiError } from '$requests/songs';
 import account from './account.svelte';
 import type { SearchResult } from './search.svelte';
 
@@ -59,21 +61,26 @@ export function toSnapshot(item: SearchResult): SearchResult {
 }
 
 class Playlists {
-	/** Yours, newest change first. Empty until `loadMine` runs. */
+	/** Everything you can edit — yours and friends' you collaborate on — newest change first. Empty until `loadMine` runs. */
 	mine: PlaylistSummary[] = $state([]);
 	/** Everybody's public ones. Named `shared` because `public` is a keyword in a class body. */
 	shared: PlaylistSummary[] = $state([]);
+	/** Your friends' friends-only ones. */
+	friends: PlaylistSummary[] = $state([]);
 	loading = $state(false);
 
 	error = $state('');
 
 	/**
-	 * The public list minus your own. Yours are already on the page under `Yours`,
-	 * where the rail says which of them are public — listing them again below is the
-	 * same playlist twice.
+	 * The public list minus your own and the ones you edit. Those are already on the
+	 * page above, where the rail says which of them are public — listing them again
+	 * below is the same playlist twice.
 	 */
 	get others() {
-		return this.shared.filter(playlist => playlist.owner !== account.username);
+		const editable = new Set(this.mine.map(playlist => playlist.id));
+		return this.shared.filter(
+			playlist => playlist.owner !== account.username && !editable.has(playlist.id),
+		);
 	}
 
 	async loadMine() {
@@ -81,6 +88,14 @@ class Playlists {
 
 		await this.attempt(async token => {
 			this.mine = await getMyPlaylists(token);
+		});
+	}
+
+	async loadFriends() {
+		if (!account.token) return (this.friends = []);
+
+		await this.attempt(async token => {
+			this.friends = await getFriendsPlaylists(token);
 		});
 	}
 
@@ -100,12 +115,22 @@ class Playlists {
 		return made;
 	}
 
-	async update(id: string, edit: PlaylistEdit): Promise<Playlist | null> {
-		let changed: Playlist | null = null;
+	/**
+	 * `stale` when somebody else changed the tracks after `edit.revision` was read: nothing
+	 * was saved, and the caller reloads the playlist rather than overwriting their change.
+	 */
+	async update(id: string, edit: PlaylistEdit): Promise<Playlist | 'stale' | null> {
+		let changed: Playlist | 'stale' | null = null;
 		await this.attempt(async token => {
-			changed = await patchPlaylist(token, id, edit);
-			this.mine = this.mine.map(p => (p.id === id ? changed! : p));
-			this.reflect(changed);
+			try {
+				const saved = await patchPlaylist(token, id, edit);
+				changed = saved;
+				this.mine = this.mine.map(p => (p.id === id ? saved : p));
+				this.reflect(saved);
+			} catch (error) {
+				if (!(error instanceof AudioApiError) || error.status !== 409) throw error;
+				changed = 'stale';
+			}
 		});
 
 		return changed;
@@ -150,7 +175,7 @@ class Playlists {
 	/** Keeps the public list honest about a playlist that just changed visibility. */
 	private reflect(playlist: PlaylistSummary) {
 		const without = this.shared.filter(p => p.id !== playlist.id);
-		this.shared = playlist.isPublic ? [playlist, ...without] : without;
+		this.shared = playlist.visibility === 'public' ? [playlist, ...without] : without;
 	}
 
 	private async attempt(work: (token: string) => Promise<void>) {

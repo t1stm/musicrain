@@ -93,3 +93,42 @@ export function rename(token: string, username: string, password: string) {
 export function deleteAccount(token: string, password: string) {
 	return send<null>('/Delete', authed(token, { password }));
 }
+
+// ── Friends ──────────────────────────────────────────────────────────────────────────────
+
+/** A live friend code, and who has become a friend through it so far, in order. */
+export type Invite = { code: string; expiresUtc: string; joined: string[] };
+
+export function getFriends(token: string) {
+	return send<string[]>('/Friends', { headers: bearer(token) });
+}
+
+export function unfriend(token: string, username: string) {
+	return send<null>(`/Friends/${encodeURIComponent(username)}`, {
+		method: 'DELETE',
+		headers: bearer(token),
+	});
+}
+
+/** The account's live code, or a new one if it has none — pressing it twice shows the same code. */
+export function openInvite(token: string) {
+	return send<Invite>('/Invite', { method: 'POST', headers: bearer(token) });
+}
+
+/** The live code without ever making one: what the inviter's screen polls. A 404 means none is live. */
+export function currentInvite(token: string) {
+	return send<Invite>('/Invite', { headers: bearer(token) });
+}
+
+export function endInvite(token: string) {
+	return send<null>('/Invite', { method: 'DELETE', headers: bearer(token) });
+}
+
+/** Whose code it is. No token: whoever scanned it may not have an account yet. */
+export function peekInvite(code: string) {
+	return send<{ username: string; expiresUtc: string }>(`/Invite/${encodeURIComponent(code)}`, {});
+}
+
+export function acceptInvite(token: string, code: string) {
+	return send<{ username: string; alreadyFriends: boolean }>('/Invite/Accept', authed(token, { code }));
+}

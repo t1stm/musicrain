@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import account from '$states/account.svelte';
+	import friends from '$states/friends.svelte';
 	import quality from '$states/quality.svelte';
 	import user from '$states/user.svelte';
 
@@ -17,6 +18,16 @@
 			href: resolve('/settings/account'),
 			label: 'Account',
 			summary: () => account.username ?? 'Signed out'
+		},
+		{
+			href: resolve('/settings/friends'),
+			label: 'Friends',
+			summary: () =>
+				!account.signedIn
+					? 'Signed out'
+					: friends.loaded
+						? `${friends.list.length} ${friends.list.length === 1 ? 'friend' : 'friends'}`
+						: ''
 		},
 		{
 			href: resolve('/settings/playback'),
@@ -33,6 +44,11 @@
 	];
 
 	let index = $derived(page.route.id === '/(app)/settings');
+
+	// the Friends row's count
+	$effect(() => {
+		if (account.token && !friends.loaded) friends.load();
+	});
 
 	// Back to the list is a step back when the list is where we came from. A link would push
 	// the list on top instead, and the back gesture would then land on the category again.

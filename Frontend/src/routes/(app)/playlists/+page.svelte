@@ -23,16 +23,22 @@
 	// renaming, and this is only about the first read of your own list.
 	let mineLoading = $state(false);
 
+	// Signed out, both lists empty themselves: otherwise a sign-out leaves the last
+	// account's friends' playlists on the page.
 	$effect(() => {
-		if (!account.token) return;
+		playlists.loadFriends();
+		if (!account.token) return void playlists.loadMine();
 		mineLoading = true;
 		playlists.loadMine().finally(() => (mineLoading = false));
 	});
 
-	let mine = $derived(playlists.mine);
+	// `mine` is everything you can edit; the ones a friend owns get their own section
+	let mine = $derived(playlists.mine.filter((p) => p.owner === account.username));
+	let sharedWithYou = $derived(playlists.mine.filter((p) => p.owner !== account.username));
 	let groups = $derived([
-		{ label: 'Public', list: mine.filter((p) => p.isPublic) },
-		{ label: 'Private', list: mine.filter((p) => !p.isPublic) }
+		{ label: 'Public', list: mine.filter((p) => p.visibility === 'public') },
+		{ label: 'Friends', list: mine.filter((p) => p.visibility === 'friends') },
+		{ label: 'Private', list: mine.filter((p) => p.visibility === 'private') }
 	]);
 </script>
 
@@ -97,6 +103,35 @@
 			{/each}
 		{/if}
 	</section>
+
+	{#if sharedWithYou.length > 0}
+		<section class="flex flex-col gap-2">
+			<h2 class="eyebrow flex items-center gap-3">
+				Shared with you · {sharedWithYou.length}
+				<span class="h-px flex-1 bg-haze"></span>
+			</h2>
+			<p class="max-w-lg text-sm text-fog">Friends let you change the tracks in these.</p>
+			<div class="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))]">
+				{#each sharedWithYou as playlist (playlist.id)}
+					<PlaylistCard {playlist} />
+				{/each}
+			</div>
+		</section>
+	{/if}
+
+	{#if playlists.friends.length > 0}
+		<section class="flex flex-col gap-2">
+			<h2 class="eyebrow flex items-center gap-3">
+				From friends · {playlists.friends.length}
+				<span class="h-px flex-1 bg-haze"></span>
+			</h2>
+			<div class="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))]">
+				{#each playlists.friends as playlist (playlist.id)}
+					<PlaylistCard {playlist} />
+				{/each}
+			</div>
+		</section>
+	{/if}
 
 	<section class="flex flex-col gap-2">
 		<h2 class="eyebrow flex items-center gap-3">

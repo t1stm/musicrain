@@ -6,12 +6,17 @@ import type { SearchResult } from '$states/search.svelte';
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
+/** Who can open it: the owner and its editors, the owner's friends as well, or anybody. */
+export type Visibility = 'private' | 'friends' | 'public';
+
 /** What a card needs. `coverUrl` is a path on the API, not an absolute URL — see `coverFor`. */
 export type PlaylistSummary = {
 	id: string;
 	name: string;
 	owner: string;
-	isPublic: boolean;
+	visibility: Visibility;
+	/** Friends of the owner who can change the tracks. */
+	collaborators: string[];
 	trackCount: number;
 	/** `hh:mm:ss`, the shape the rest of the API speaks. */
 	duration: string;
@@ -22,8 +27,14 @@ export type PlaylistSummary = {
 	updatedUtc: string;
 };
 
-/** A track as it was when it was saved — a field-for-field subset of `SearchResult`. */
-export type Playlist = PlaylistSummary & { tracks: SearchResult[] };
+/**
+ * A track as it was when it was saved — a field-for-field subset of `SearchResult` — and
+ * who put it there: a collaborator's name, or `null` for the owner.
+ */
+export type PlaylistTrack = SearchResult & { addedBy?: string | null };
+
+/** `revision` goes back with an edited `tracks`, so a list somebody else changed meanwhile is refused. */
+export type Playlist = PlaylistSummary & { revision: number; tracks: PlaylistTrack[] };
 
 async function send<T>(path: string, init: RequestInit = {}, fetcher: Fetcher = fetch): Promise<T> {
 	const response = await fetcher(`${audioApi}/Playlists${path}`, init);
@@ -61,6 +72,12 @@ export function getPublicPlaylists(fetcher: Fetcher = fetch) {
 	return send<PlaylistSummary[]>('/Public', {}, fetcher);
 }
 
+/** Friends-only playlists of your friends; their public ones are in `getPublicPlaylists`. */
+export function getFriendsPlaylists(token: string, fetcher: Fetcher = fetch) {
+	return send<PlaylistSummary[]>('/Friends', { headers: bearer(token) }, fetcher);
+}
+
+/** Everything you can edit: yours, and the ones friends let you change. */
 export function getMyPlaylists(token: string, fetcher: Fetcher = fetch) {
 	return send<PlaylistSummary[]>('/Mine', { headers: bearer(token) }, fetcher);
 }
@@ -74,15 +91,18 @@ export async function getPlaylist(id: string, token: string | null, fetcher: Fet
 
 export type PlaylistEdit = {
 	name?: string;
-	isPublic?: boolean;
+	visibility?: Visibility;
+	collaborators?: string[];
 	tracks?: SearchResult[];
+	/** The revision `tracks` was read at. Required with `tracks`; a 409 says it moved on. */
+	revision?: number;
 };
 
 export async function createPlaylist(token: string, edit: PlaylistEdit) {
 	return withProxiedTracks(await send<Playlist>('', json(token, 'POST', edit)));
 }
 
-/** A field left out is a field left alone; `tracks`, when sent, replaces the list. */
+/** A field left out is a field left alone; `tracks`, when sent, replaces the list and needs `revision`. */
 export async function patchPlaylist(token: string, id: string, edit: PlaylistEdit) {
 	return withProxiedTracks(
 		await send<Playlist>(`/${encodeURIComponent(id)}`, json(token, 'PATCH', edit)),

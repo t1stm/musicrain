@@ -1470,3 +1470,41 @@ body {
 		height: 8px;
 	}
 }
+
+/* The friend code's water clock (WaterClock.svelte): one drop for each of the code's fifteen
+   minutes. A minute that has passed has fallen through the line and left it wet, so the time
+   spent collects from the left and what still hangs is what is left. A code that is done lets
+   the rest fall at once — the gate's own release — and the line dries to grey. Unlike a gate's
+   release, a fallen drop stays fallen, so it is an attribute and not the dialog's state. */
+.gate-drop[data-fallen] {
+	transform: translateY(2px);
+	opacity: 0;
+}
+
+.gate-wet {
+	position: absolute;
+	bottom: -1px;
+	width: 9px;
+	height: 1px;
+	translate: -50% 0;
+	background: var(--color-primary-0);
+	opacity: 0;
+	transition:
+		opacity 0.3s ease 0.3s,
+		background-color 0.3s ease;
+}
+
+.gate-wet[data-wet] {
+	opacity: 1;
+}
+
+[data-spent] .gate-wet {
+	background: var(--color-surface-300);
+}
+
+/* the drop is simply gone and the mark simply there */
+@media (prefers-reduced-motion: reduce) {
+	.gate-wet {
+		transition: none;
+	}
+}

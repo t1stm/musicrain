@@ -14,11 +14,13 @@
 	class="group flex flex-col overflow-hidden rounded-panel border border-haze bg-surface-100 outline-none hover:border-surface-300 focus-visible:ring-2 focus-visible:ring-primary-500"
 >
 	<!-- One pixel carries the state, the way the room rail does: violet is public,
-	     haze is private. The word itself is said once, in the group heading above. -->
+	     pale violet is friends, haze is private. The word itself is said once, in the
+	     group heading above. -->
 	<span
 		class="h-px w-full shrink-0"
-		class:bg-primary-0={playlist.isPublic}
-		class:bg-haze={!playlist.isPublic}
+		class:bg-primary-0={playlist.visibility === 'public'}
+		class:bg-primary-500={playlist.visibility === 'friends'}
+		class:bg-haze={playlist.visibility === 'private'}
 	></span>
 	<div class="p-2">
 		<PlaylistCover

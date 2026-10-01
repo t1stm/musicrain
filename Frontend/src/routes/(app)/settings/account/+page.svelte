@@ -1,6 +1,16 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import account from '$states/account.svelte';
+
+	// Sent here to sign in on the way to something else — a friend link, mostly — goes back
+	// to it once signed in. Watching `signedIn` rather than the form covers making an account
+	// too. Only a path on this site: `//host` and `/\host` are other sites to a browser.
+	$effect(() => {
+		const next = page.url.searchParams.get('next');
+		if (account.signedIn && next && /^\/(?![/\\])/.test(next)) goto(next, { replaceState: true });
+	});
 
 	let accountName = $state('');
 	let accountPassword = $state('');
