@@ -189,10 +189,17 @@
 	async function setVisibility(visibility: Visibility) {
 		if (!playlist) return;
 
+		const was = playlist.visibility;
 		playlist = { ...playlist, visibility };
 		const saved = await playlists.update(playlist.id, { visibility });
-		if (saved && saved !== 'stale' && playlist) playlist = { ...playlist, visibility: saved.visibility };
+		if (!playlist) return;
+		if (saved && saved !== 'stale') playlist = { ...playlist, visibility: saved.visibility };
+		// refused or unreachable: the picker goes back, unless it has been moved again since
+		else if (playlist.visibility === visibility) playlist = { ...playlist, visibility: was };
 	}
+
+	const toggled = (list: string[], name: string, on: boolean) =>
+		on ? [...list, name] : list.filter((editor) => !same(editor, name));
 
 	function isEditor(name: string) {
 		return !!playlist?.collaborators.some((editor) => same(editor, name));
@@ -202,14 +209,15 @@
 	async function setEditor(name: string, on: boolean) {
 		if (!playlist) return;
 
-		const collaborators = on
-			? [...playlist.collaborators, name]
-			: playlist.collaborators.filter((editor) => !same(editor, name));
+		const collaborators = toggled(playlist.collaborators, name, on);
 		playlist = { ...playlist, collaborators };
 
 		const saved = await playlists.update(playlist.id, { collaborators });
-		if (saved && saved !== 'stale' && playlist)
-			playlist = { ...playlist, collaborators: saved.collaborators };
+		if (!playlist) return;
+		if (saved && saved !== 'stale') playlist = { ...playlist, collaborators: saved.collaborators };
+		// refused or unreachable: this switch goes back, and only this one
+		else if (isEditor(name) === on)
+			playlist = { ...playlist, collaborators: toggled(playlist.collaborators, name, !on) };
 	}
 
 	/** The cover picker. The upload replaces whatever was there, so there is no remove. */

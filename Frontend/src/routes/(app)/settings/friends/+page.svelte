@@ -12,6 +12,20 @@
 	// Read from the URL every time it changes, not once: a second link can arrive while this
 	// page is already open (the installed app routes it here in place), and only the query moves.
 	let code = $derived(page.url.searchParams.get('code'));
+	/**
+	 * The code being asked about. It comes off the URL as soon as it arrives, so a refresh
+	 * or a back press never asks twice, and the prompt opens only after that: its own back
+	 * entry has to sit on the clean URL, not be replaced by it.
+	 */
+	let asking = $state<string | null>(null);
+
+	$effect(() => {
+		const arrived = code;
+		if (!arrived) return;
+		goto(resolve('/settings/friends'), { replaceState: true, noScroll: true, keepFocus: true }).then(
+			() => (asking = arrived)
+		);
+	});
 
 	let inviting = $state(false);
 	let typed = $state('');
@@ -81,14 +95,9 @@
 		if (await friends.openInvite()) inviting = true;
 	}
 
-	/** Drops `?code` without a new history entry, so a refresh or a back press does not ask again. */
-	function settle() {
-		if (code) goto(resolve('/settings/friends'), { replaceState: true, noScroll: true, keepFocus: true });
-	}
-
 	function accepted({ username, alreadyFriends }: { username: string; alreadyFriends: boolean }) {
 		note = alreadyFriends ? `You and ${username} are already friends.` : `You and ${username} are friends now.`;
-		settle();
+		asking = null;
 	}
 
 	async function addTyped(event: SubmitEvent) {
@@ -172,7 +181,7 @@
 		{#if note}
 			<p class="text-sm text-primary-500" aria-live="polite">{note}</p>
 		{/if}
-		{#if friends.error && !inviting && !code}
+		{#if friends.error && !inviting && !asking}
 			<p class="text-sm text-ember" role="alert">{friends.error}</p>
 		{/if}
 	</section>
@@ -249,14 +258,14 @@
 	<InviteGate bind:open={inviting} />
 {/if}
 
-{#if code}
-	{#key code}
+{#if asking}
+	{#key asking}
 		<AcceptGate
-			{code}
-			onclose={settle}
+			code={asking}
+			onclose={() => (asking = null)}
 			onaccepted={accepted}
 			onownCode={() => {
-				settle();
+				asking = null;
 				showCode();
 			}}
 		/>

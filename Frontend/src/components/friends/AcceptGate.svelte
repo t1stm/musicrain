@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
 	import WaterClock from './WaterClock.svelte';
+	import { closeOnBack } from '$lib/backWatcher.svelte';
 	import { peekInvite } from '$requests/accounts';
 	import account from '$states/account.svelte';
 	import friends, { secondsLeft, spaced } from '$states/friends.svelte';
@@ -47,6 +47,12 @@
 		if (peek && dialog && !dialog.open) dialog.showModal();
 	});
 
+	// back, the back gesture and Escape say "Not now", as in every other gate
+	closeOnBack(
+		() => !!peek,
+		() => dialog?.close()
+	);
+
 	$effect(() => {
 		const clock = setInterval(() => (now = Date.now()), 1000);
 		return () => clearInterval(clock);
@@ -57,8 +63,8 @@
 	let invalid = $derived(peek === 'invalid' || (!!found && left <= 0));
 	let own = $derived(!!found && found.username === account.username);
 	let minutes = $derived(Math.max(1, Math.ceil(left / 60)));
-	/** Back here once signed in — the account page follows `next`. */
-	let back = $derived(encodeURIComponent(page.url.pathname + page.url.search));
+	/** Back here once signed in — the account page follows `next`. The page has already taken the code off its URL. */
+	let back = $derived(encodeURIComponent(`${resolve('/settings/friends')}?code=${code}`));
 
 	async function accept() {
 		busy = true;
