@@ -258,28 +258,68 @@ the token is fine, and a client treats `401` as "you are signed out".
 - `Delete` removes the account, its playlists and their covers, and answers `204`. It is a `POST`
   because it carries a body.
 
+### Friends
+
+Two accounts become friends through a code. The code is for a group, not a person: anybody who uses
+it within 15 minutes of it being made becomes a friend of whoever made it, and using it does not use
+it up. Friendship goes both ways and needs no approval — showing the code is the inviter's consent,
+accepting it is each friend's.
+
+```
+GET    /Audio/Accounts/Friends                   Bearer              200 ["ana","boyan"]
+DELETE /Audio/Accounts/Friends/{username}        Bearer              204 | 404
+POST   /Audio/Accounts/Invite                    Bearer              200 {"code":"K7QM3XRD","expiresUtc":"…","joined":[]}
+GET    /Audio/Accounts/Invite                    Bearer              200 {…the same} | 404
+DELETE /Audio/Accounts/Invite                    Bearer              204
+GET    /Audio/Accounts/Invite/{code}                                 200 {"username":"kris","expiresUtc":"…"} | 404
+POST   /Audio/Accounts/Invite/Accept             Bearer {"code":"…"} 200 {"username":"kris","alreadyFriends":false}
+```
+
+- `POST /Invite` answers with the account's live code if it has one, and makes a new one only if it
+  does not, so pressing "show my code" twice shows the same code. `GET /Invite` never makes one: it
+  is what the inviter's screen polls, and `joined` lists who has become a friend through the code so
+  far, in order. `DELETE /Invite` stops the code early; friends it already made stay friends.
+- `GET /Invite/{code}` needs no token, so somebody who scanned a code before having an account can
+  see whose it is.
+- A code is eight characters of Crockford's base32 — no `I`, `L`, `O` or `U`. It is read however it
+  was typed: case, dashes and spaces are ignored, `O` reads as `0`, and `I` and `L` read as `1`.
+- Codes are held in memory, so a restart ends every live one.
+- Ending a friendship removes each account from the collaborators of the other's playlists. Tracks
+  either of them added stay, with their names on them.
+
+| Status | `code` | When |
+| --- | --- | --- |
+| 404 | `invalid_code` | the code does not exist, ran out, or was ended |
+| 400 | `own_code` | the caller made the code |
+
 ## Playlists
 
 `/Audio/Playlists/*` is served by Dom as well. A playlist is a named, ordered list of tracks that
-belongs to one account and is either public or not. The tracks are **snapshots** taken when they
+belongs to one account. Its `visibility` is `private` (the owner and its collaborators),
+`friends` (the owner's friends as well) or `public` (anybody). The tracks are **snapshots** taken when they
 were saved, not references — a playlist renders without a single call to the rest of the stack, and
 a track retagged in the library keeps the name it was saved under.
 
 ```
 GET    /Audio/Playlists/Public                                        200
+GET    /Audio/Playlists/Friends    Authorization: Bearer …            200
 GET    /Audio/Playlists/Mine       Authorization: Bearer …            200
 GET    /Audio/Playlists/{id}       Authorization: Bearer … (optional) 200
-POST   /Audio/Playlists            Bearer  {"name":"…","isPublic":false,"tracks":[…]}  201
-PATCH  /Audio/Playlists/{id}       Bearer  {"name":"…"} / {"isPublic":true} / {"tracks":[…]}  200
+POST   /Audio/Playlists            Bearer  {"name":"…","visibility":"private","tracks":[…]}  201
+PATCH  /Audio/Playlists/{id}       Bearer  {"name":"…"} / {"visibility":"friends"} / {"collaborators":["ana"]} / {"tracks":[…],"revision":7}  200
 POST   /Audio/Playlists/{id}/Tracks Bearer {"id":"…","name":"…","artist":"…",…}      200
 DELETE /Audio/Playlists/{id}       Bearer                             204
 ```
 
-`Public` and `Mine` return summaries, newest change first:
+`Public`, `Friends` and `Mine` return summaries, newest change first. `Friends` is the
+friends-only playlists of the caller's friends (their public ones are under `Public`, and the
+ones the caller edits under `Mine`). `Mine` is
+everything the caller can edit: what they own, and what friends made them a collaborator on.
 
 ```json
 {
-  "id": "p_9f31a04c7b2e5d18", "name": "Late shift", "owner": "kris", "isPublic": true,
+  "id": "p_9f31a04c7b2e5d18", "name": "Late shift", "owner": "kris", "visibility": "friends",
+  "collaborators": ["ana"],
   "trackCount": 14, "duration": "00:51:07",
   "coverUrl": "/Audio/Playlists/p_9f31a04c7b2e5d18/Cover",
   "firstTrackId": "local://…", "firstTrackThumbnailUrl": "https://…",
@@ -292,19 +332,32 @@ Discord activity the API is reachable only under the frame's own `/.proxy` prefi
 the one that knows its own base. `firstTrackThumbnailUrl` is `null` on an empty playlist. Artwork
 falls back first to the first track's thumbnail and then to the client's own "no artwork" image.
 
-`GET /Audio/Playlists/{id}` returns the same fields plus `tracks`:
+`GET /Audio/Playlists/{id}` returns the same fields plus `revision` and `tracks`:
 
 ```json
-{"id":"…","tracks":[{"id":"local://…","name":"…","artist":"…","album":null,"duration":"00:03:41","thumbnailUrl":"https://…"}]}
+{"id":"…","revision":7,"tracks":[{"id":"local://…","name":"…","artist":"…","album":null,"duration":"00:03:41","thumbnailUrl":"https://…","addedBy":null}]}
 ```
 
-The bearer token is optional on that one: a public playlist is a link that works for anybody. A
-playlist you may not see answers `404`, never `403` — a 403 would confirm it exists. The same is
-true of one you do not own on `PATCH` and `DELETE`.
+`addedBy` is the collaborator who put the track there, or `null` when the owner did. The server
+decides it from who saved the list; an `addedBy` sent by a client is ignored.
 
-On `PATCH`, a field that is absent is a field left alone; `{"isPublic":true}` changes visibility and
-nothing else. `tracks`, when sent, replaces the list — reordering and removing are both a `PATCH`
-with the list you want.
+The bearer token is optional on that one: a public playlist is a link that works for anybody. A
+playlist you may not see answers `404`, never `403` — a 403 would confirm it exists. One you can see
+but may not change answers `403 forbidden` on `PATCH` and `POST …/Tracks`; `DELETE` answers `404`
+to anybody but the owner.
+
+On `PATCH`, a field that is absent is a field left alone; `{"visibility":"public"}` changes
+visibility and nothing else. The owner may change everything. A collaborator may change `tracks`
+only; `name`, `visibility` or `collaborators` from a collaborator is `403 forbidden`.
+
+`collaborators`, when sent, replaces the list. Every name must be one of the owner's friends
+(`400 not_a_friend` otherwise); the stored spelling is the friend's own.
+
+`tracks`, when sent, replaces the list — reordering and removing are both a `PATCH` with the list
+you want. It must come with the `revision` the list was read at. Every change to the tracks bumps
+`revision`, and a `PATCH` naming an older one answers `409 stale` and changes nothing: with more than
+one person editing, replacing the list from a stale copy would delete what somebody else added.
+Read the playlist again and redo the edit.
 
 `POST /Audio/Playlists/{id}/Tracks` puts one track on the end without the client reading the list
 first. The body is one track, in the same shape as an entry in `tracks`. A track whose `id` is
@@ -315,7 +368,8 @@ the summary as it now stands:
 {"added":true,"playlist":{"id":"p_9f31a04c7b2e5d18","name":"Late shift","trackCount":15,…}}
 ```
 
-It answers `404` for a playlist you do not own, like `PATCH`.
+It answers `404` for a playlist you cannot see and `403` for one you can see but not edit, like
+`PATCH`. A collaborator's track carries their name in `addedBy`.
 
 ### Covers
 

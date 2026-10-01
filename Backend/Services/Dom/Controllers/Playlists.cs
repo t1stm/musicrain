@@ -4,10 +4,11 @@ using Microsoft.AspNetCore.Mvc;
 namespace Dom.Controllers;
 
 /// <summary>
-///     Playlists: everybody's public ones, your own, and the CRUD behind them.
+///     Playlists: everybody's public ones, your friends', your own, and the CRUD behind them.
 /// </summary>
 /// <remarks>
 ///     A playlist you may not see answers <c>404</c>, never <c>403</c> — a 403 confirms it exists.
+///     One you can see but may not change answers <c>403</c>: it is no secret that it exists.
 /// </remarks>
 public class Playlists(DomStore store, IConfiguration config) : ControllerBase
 {
@@ -27,6 +28,18 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
     [HttpGet("/Audio/Playlists/Public")]
     public IActionResult PublicPlaylists() => new JsonResult(store.Public().Select(Summary));
 
+    /// <summary>Friends-only playlists of the caller's friends. Their public ones are under <c>/Public</c>.</summary>
+    [HttpGet("/Audio/Playlists/Friends")]
+    public IActionResult FriendsPlaylists()
+    {
+        var user = store.Resolve(Api.Bearer(Request));
+
+        return user is null
+            ? Api.Error(401, "unauthorized", "Sign in first.")
+            : new JsonResult(store.FriendsPlaylists(user).Select(Summary));
+    }
+
+    /// <summary>Everything the caller can edit: what they own, and what friends let them change.</summary>
     [HttpGet("/Audio/Playlists/Mine")]
     public IActionResult Mine()
     {
@@ -53,7 +66,7 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
         if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
         if (body is null) return Api.Error(400, "invalid_request", "Send a name.");
 
-        var (playlist, error, message) = store.Create(user, body.Name, body.IsPublic ?? false, body.Tracks);
+        var (playlist, error, message) = store.Create(user, body.Name, body.Visibility ?? Visibility.Private, body.Tracks);
 
         return error is not null
             ? Api.Error(400, error, message!)
@@ -67,12 +80,15 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
         if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
         if (body is null) return Api.Error(400, "invalid_request", "Send something to change.");
 
-        var (playlist, error, message) = store.Update(user, id, body.Name, body.IsPublic, body.Tracks);
+        var (playlist, error, message) = store.Update(user, id, body.Name, body.Visibility, body.Tracks,
+            body.Collaborators, body.Revision);
 
         return error switch
         {
             null => new JsonResult(Full(playlist!)),
             "not_found" => NotFound(),
+            "forbidden" => Api.Error(403, error, message!),
+            "stale" => Api.Error(409, error, message!),
             _ => Api.Error(400, error, message!)
         };
     }
@@ -93,6 +109,7 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
         {
             null => new JsonResult(new { added, playlist = Summary(playlist!) }),
             "not_found" => NotFound(),
+            "forbidden" => Api.Error(403, error, message!),
             _ => Api.Error(400, error, message!)
         };
     }
@@ -189,7 +206,8 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
         id = playlist.Id,
         name = playlist.Name,
         owner = playlist.Owner,
-        isPublic = playlist.IsPublic,
+        visibility = playlist.Visibility,
+        collaborators = playlist.Collaborators,
         trackCount = playlist.Tracks.Count,
         duration = playlist.Duration.ToString("c"),
         // A path, not an absolute URL: inside the Discord activity the API is reachable only under
@@ -207,7 +225,9 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
         id = playlist.Id,
         name = playlist.Name,
         owner = playlist.Owner,
-        isPublic = playlist.IsPublic,
+        visibility = playlist.Visibility,
+        collaborators = playlist.Collaborators,
+        revision = playlist.Revision,
         trackCount = playlist.Tracks.Count,
         duration = playlist.Duration.ToString("c"),
         coverUrl = playlist.CoverFile is null ? null : $"/Audio/Playlists/{playlist.Id}/Cover",
@@ -220,7 +240,9 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
 
     /// <summary>
     ///     Create and patch share a body. On a patch a missing field means "leave it alone", which is
-    ///     why every field is nullable rather than defaulted.
+    ///     why every field is nullable rather than defaulted. <c>Revision</c> goes with <c>Tracks</c>:
+    ///     it is the list the caller started from.
     /// </summary>
-    public sealed record PlaylistBody(string? Name, bool? IsPublic, List<TrackSnapshot>? Tracks);
+    public sealed record PlaylistBody(
+        string? Name, Visibility? Visibility, List<TrackSnapshot>? Tracks, List<string>? Collaborators, int? Revision);
 }

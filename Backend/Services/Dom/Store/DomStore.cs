@@ -34,6 +34,13 @@ public sealed class DomStore
     private readonly Dictionary<string, User> _byToken = new(StringComparer.Ordinal);
     private readonly string _dataFile;
     private readonly Lock _gate = new();
+
+    /// <summary>
+    ///     Live friend codes, by code. Memory only: a code lasts fifteen minutes, so a restart voiding
+    ///     the live ones costs less than a file write per code.
+    /// </summary>
+    private readonly Dictionary<string, Invite> _invites = new(StringComparer.Ordinal);
+
     private readonly ILogger _log;
     private readonly Dictionary<string, Playlist> _playlists = new(StringComparer.Ordinal);
     private readonly Dictionary<string, User> _users = new(StringComparer.Ordinal);
@@ -55,6 +62,12 @@ public sealed class DomStore
     ///     at most a day of the thirty.
     /// </summary>
     private static TimeSpan SlideGranularity => TimeSpan.FromDays(1);
+
+    /// <summary>How long a friend code works, for everybody who uses it.</summary>
+    private static TimeSpan InviteLifetime => TimeSpan.FromMinutes(15);
+
+    /// <summary>Crockford's base32: no I, L, O or U, so a code read out loud cannot be misheard as another.</summary>
+    private const string CodeAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
     public int UserCount
     {
@@ -189,12 +202,12 @@ public sealed class DomStore
         }
     }
 
-    /// <summary>Everything the account owns, newest first.</summary>
+    /// <summary>Everything the account can edit — what it owns and what it collaborates on — newest first.</summary>
     public List<Playlist> Mine(User owner)
     {
         lock (_gate)
             return _playlists.Values
-                .Where(p => p.OwnerKey == owner.Key)
+                .Where(p => p.OwnerKey == owner.Key || Collaborates(p, owner))
                 .OrderByDescending(p => p.UpdatedUtc)
                 .ToList();
     }
@@ -204,28 +217,39 @@ public sealed class DomStore
     {
         lock (_gate)
             return _playlists.Values
-                .Where(p => p.IsPublic)
+                .Where(p => p.Visibility == Visibility.Public)
                 .OrderByDescending(p => p.UpdatedUtc)
                 .ToList();
     }
 
     /// <summary>
-    ///     One playlist, if <paramref name="viewer" /> may see it. A private playlist is
+    ///     Friends-only playlists of the account's friends, newest first. Their public ones are
+    ///     already in <see cref="Public" />, and the ones the account edits in <see cref="Mine" />,
+    ///     so neither is repeated here.
+    /// </summary>
+    public List<Playlist> FriendsPlaylists(User user)
+    {
+        lock (_gate)
+            return _playlists.Values
+                .Where(p => p.Visibility == Visibility.Friends && p.OwnerKey != user.Key
+                            && IsFriend(user, p.Owner) && !Collaborates(p, user))
+                .OrderByDescending(p => p.UpdatedUtc)
+                .ToList();
+    }
+
+    /// <summary>
+    ///     One playlist, if <paramref name="viewer" /> may see it. A playlist you may not see is
     ///     indistinguishable from one that never existed — a 403 would confirm it does.
     /// </summary>
     public Playlist? Visible(string id, User? viewer)
     {
         lock (_gate)
-        {
-            if (!_playlists.TryGetValue(id, out var playlist)) return null;
-
-            return playlist.IsPublic || playlist.OwnerKey == viewer?.Key ? playlist : null;
-        }
+            return _playlists.TryGetValue(id, out var playlist) && CanSeeLocked(playlist, viewer) ? playlist : null;
     }
 
     /// <summary>Creates a playlist for <paramref name="owner" />, or says what is wrong with it.</summary>
     public (Playlist? playlist, string? error, string? message) Create(
-        User owner, string? name, bool isPublic, List<TrackSnapshot>? tracks)
+        User owner, string? name, Visibility visibility, List<TrackSnapshot>? tracks)
     {
         var (error, message) = ValidatePlaylist(name, tracks);
         if (error is not null) return (null, error, message);
@@ -236,7 +260,7 @@ public sealed class DomStore
             Id = "p_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant(),
             Owner = owner.Username,
             Name = name!.Trim(),
-            IsPublic = isPublic,
+            Visibility = visibility,
             Tracks = Clean(tracks),
             CreatedUtc = now,
             UpdatedUtc = now
@@ -255,23 +279,55 @@ public sealed class DomStore
     }
 
     /// <summary>
-    ///     Changes whichever of name, visibility and tracks were sent. A field left <c>null</c> is a
-    ///     field the caller did not mention, not a field being cleared.
+    ///     Changes whichever of name, visibility, collaborators and tracks were sent. A field left
+    ///     <c>null</c> is a field the caller did not mention, not a field being cleared.
     /// </summary>
+    /// <remarks>
+    ///     The owner may change all of it; a collaborator only the tracks. Tracks replace the whole
+    ///     list, so they come with the <paramref name="revision" /> the caller last saw, and a list
+    ///     that has moved on since is refused rather than overwritten — with collaborators, the
+    ///     overwrite would silently delete somebody else's additions.
+    /// </remarks>
     public (Playlist? playlist, string? error, string? message) Update(
-        User owner, string id, string? name, bool? isPublic, List<TrackSnapshot>? tracks)
+        User caller, string id, string? name, Visibility? visibility, List<TrackSnapshot>? tracks,
+        List<string>? collaborators = null, int? revision = null)
     {
         var (error, message) = ValidatePlaylist(name ?? "unchanged", tracks);
         if (error is not null) return (null, error, message);
 
         lock (_gate)
         {
-            if (!_playlists.TryGetValue(id, out var playlist) || playlist.OwnerKey != owner.Key)
-                return (null, "not_found", "No such playlist.");
+            var (playlist, owns, refusal) = EditableLocked(id, caller);
+            if (playlist is null) return (null, refusal, refusal == "forbidden" ? CannotEdit : "No such playlist.");
+
+            if (!owns && (name is not null || visibility is not null || collaborators is not null))
+                return (null, "forbidden", "Only the owner can change that.");
+
+            List<string>? team = null;
+            if (collaborators is not null)
+            {
+                team = [];
+                foreach (var wanted in collaborators.Where(c => !string.IsNullOrWhiteSpace(c)))
+                {
+                    // the stored spelling is the friend's own, whatever case the client sent
+                    var friend = caller.Friends.FirstOrDefault(f => Same(f, wanted));
+                    if (friend is null) return (null, "not_a_friend", $"{wanted.Trim()} isn’t your friend.");
+                    if (!team.Any(t => Same(t, friend))) team.Add(friend);
+                }
+            }
+
+            if (tracks is not null && revision != playlist.Revision)
+                return (null, "stale", "Someone else changed this playlist. This is the latest.");
 
             if (name is not null) playlist.Name = name.Trim();
-            if (isPublic is not null) playlist.IsPublic = isPublic.Value;
-            if (tracks is not null) playlist.Tracks = Clean(tracks);
+            if (visibility is not null) playlist.Visibility = visibility.Value;
+            if (team is not null) playlist.Collaborators = team;
+            if (tracks is not null)
+            {
+                playlist.Tracks = Attribute(playlist.Tracks, Clean(tracks), owns ? null : caller.Username);
+                playlist.Revision++;
+            }
+
             playlist.UpdatedUtc = DateTimeOffset.UtcNow;
 
             SaveLocked();
@@ -281,7 +337,7 @@ public sealed class DomStore
     }
 
     /// <summary>
-    ///     Puts one track at the end of a playlist the caller owns, unless it is already in it —
+    ///     Puts one track at the end of a playlist the caller can edit, unless it is already in it —
     ///     <c>added</c> says which. Read and written under one lock, so an add from a track's menu
     ///     cannot undo an edit made somewhere else between a read and a <see cref="Update" />.
     /// </summary>
@@ -295,12 +351,15 @@ public sealed class DomStore
 
         lock (_gate)
         {
-            if (!_playlists.TryGetValue(id, out var playlist) || playlist.OwnerKey != owner.Key)
-                return (null, false, "not_found", "No such playlist.");
+            var (playlist, owns, refusal) = EditableLocked(id, owner);
+            if (playlist is null) return (null, false, refusal, refusal == "forbidden" ? CannotEdit : "No such playlist.");
             if (playlist.Tracks.Any(t => t.Id == clean.Id)) return (playlist, false, null, null);
+
+            clean.AddedBy = owns ? null : owner.Username;
 
             // a new list, not an Add: a response being written outside the lock may be walking the old one
             playlist.Tracks = [.. playlist.Tracks, clean];
+            playlist.Revision++;
             playlist.UpdatedUtc = DateTimeOffset.UtcNow;
 
             SaveLocked();
@@ -321,6 +380,116 @@ public sealed class DomStore
             SaveLocked();
 
             return (true, playlist.CoverFile);
+        }
+    }
+
+    // ── Friends ────────────────────────────────────────────────────────────────────────────────
+    // A friendship comes from a code the inviter shows. The code is for a group, not a person: it
+    // works for everybody who uses it in its fifteen minutes, and using it does not use it up.
+
+    /// <summary>The account's friends, alphabetically.</summary>
+    public List<string> Friends(User user)
+    {
+        lock (_gate) return [.. user.Friends.Order(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>
+    ///     The account's live code, or a new one if it has none. Returning the live one is the point:
+    ///     pressing "Show my code" again, or on a second device, must not void the code a group is
+    ///     already scanning. <c>null</c> if the account was deleted meanwhile.
+    /// </summary>
+    public Invite? OpenInvite(User user)
+    {
+        lock (_gate)
+        {
+            if (!LiveLocked(user)) return null;
+            if (LiveInviteLocked(user) is { } live) return live;
+
+            // 40 bits: even with a thousand codes live, finding one takes about 10⁹ guesses
+            string code;
+            do code = new string(RandomNumberGenerator.GetItems<char>(CodeAlphabet, 8));
+            while (_invites.ContainsKey(code));
+
+            var invite = new Invite { Code = code, Owner = user, ExpiresUtc = DateTimeOffset.UtcNow + InviteLifetime };
+            _invites[code] = invite;
+
+            return invite;
+        }
+    }
+
+    /// <summary>The account's live code, or <c>null</c>. What the inviter's screen polls; it never makes one.</summary>
+    public Invite? CurrentInvite(User user)
+    {
+        lock (_gate) return LiveInviteLocked(user);
+    }
+
+    /// <summary>Stops the account's code before its time. Friends it already made stay friends.</summary>
+    public bool EndInvite(User user)
+    {
+        lock (_gate)
+        {
+            var live = LiveInviteLocked(user);
+            return live is not null && _invites.Remove(live.Code);
+        }
+    }
+
+    /// <summary>Who made a code and when it stops, for a visitor deciding whether to accept — signed in or not.</summary>
+    public (string username, DateTimeOffset expiresUtc)? PeekInvite(string? code)
+    {
+        lock (_gate)
+            return FindInviteLocked(code) is { } invite ? (invite.Owner.Username, invite.ExpiresUtc) : null;
+    }
+
+    /// <summary>
+    ///     Makes the caller and the code's owner friends, both sides under one lock. The code stays
+    ///     live for the next person in the group.
+    /// </summary>
+    public (string? friend, bool alreadyFriends, string? error, string? message) AcceptInvite(User caller, string? code)
+    {
+        lock (_gate)
+        {
+            if (!LiveLocked(caller)) return (null, false, "unauthorized", SignInFirst);
+            if (FindInviteLocked(code) is not { } invite)
+                return (null, false, "invalid_code", "That code ran out or was ended. Ask for a new one.");
+
+            var inviter = invite.Owner;
+            if (ReferenceEquals(inviter, caller))
+                return (null, false, "own_code", "That’s your own code. Show it to the people you want to add.");
+            if (IsFriend(caller, inviter.Username)) return (inviter.Username, true, null, null);
+
+            caller.Friends = [.. caller.Friends, inviter.Username];
+            inviter.Friends = [.. inviter.Friends, caller.Username];
+            invite.Joined = [.. invite.Joined, caller.Username];
+
+            SaveLocked();
+            _log.Information("{Caller} and {Inviter} are friends", caller.Username, inviter.Username);
+
+            return (inviter.Username, false, null, null);
+        }
+    }
+
+    /// <summary>
+    ///     Ends a friendship on both sides, and with it each one's place on the other's playlists.
+    ///     The tracks either of them added stay, with their names on them.
+    /// </summary>
+    public bool Unfriend(User user, string? username)
+    {
+        lock (_gate)
+        {
+            var friend = user.Friends.FirstOrDefault(f => Same(f, username ?? ""));
+            if (friend is null) return false;
+
+            user.Friends = [.. user.Friends.Where(f => !Same(f, friend))];
+            DropCollaboratorLocked(user, friend);
+
+            if (_users.TryGetValue(User.Normalize(friend), out var other))
+            {
+                other.Friends = [.. other.Friends.Where(f => !Same(f, user.Username))];
+                DropCollaboratorLocked(other, user.Username);
+            }
+
+            SaveLocked();
+            return true;
         }
     }
 
@@ -516,12 +685,14 @@ public sealed class DomStore
                 playlist.Name = name.Trim();
             }
 
-            if (isPublic is not null) playlist.IsPublic = isPublic.Value;
+            // the operator's switch is still public or not; "not" is private, not friends
+            if (isPublic is not null) playlist.Visibility = isPublic.Value ? Visibility.Public : Visibility.Private;
 
             if (removeTrack is { } index)
             {
                 if (index < 0 || index >= playlist.Tracks.Count) return (false, "No track at that position.");
-                playlist.Tracks.RemoveAt(index);
+                playlist.Tracks = [.. playlist.Tracks.Where((_, at) => at != index)];
+                playlist.Revision++;
             }
 
             playlist.UpdatedUtc = DateTimeOffset.UtcNow;
@@ -543,13 +714,91 @@ public sealed class DomStore
         }
     }
 
-    /// <summary>Drops every token an account holds, from the account and from the lookup.</summary>
     /// <summary>
     ///     Whether <paramref name="user" /> is still an account. A controller resolves the caller before
     ///     it calls in, so a delete can land in between — and renaming or re-issuing a token for the
     ///     object left behind would bring the deleted account back. Caller holds <see cref="_gate" />.
     /// </summary>
     private bool LiveLocked(User user) => _users.TryGetValue(user.Key, out var live) && ReferenceEquals(live, user);
+
+    private const string CannotEdit = "Only its owner and the friends they share it with can change this playlist.";
+
+    private static bool Same(string a, string b) => User.Normalize(a) == User.Normalize(b);
+
+    private static bool IsFriend(User user, string username) => user.Friends.Any(f => Same(f, username));
+
+    private static bool Collaborates(Playlist playlist, User user) =>
+        playlist.Collaborators.Any(c => User.Normalize(c) == user.Key);
+
+    /// <summary>
+    ///     Public for everybody; otherwise the owner and the collaborators, and for a friends-only
+    ///     playlist the owner's friends too. Caller holds <see cref="_gate" />.
+    /// </summary>
+    private bool CanSeeLocked(Playlist playlist, User? viewer)
+    {
+        if (playlist.Visibility == Visibility.Public) return true;
+        if (viewer is null) return false;
+        if (playlist.OwnerKey == viewer.Key || Collaborates(playlist, viewer)) return true;
+
+        return playlist.Visibility == Visibility.Friends && IsFriend(viewer, playlist.Owner);
+    }
+
+    /// <summary>
+    ///     The playlist, if the caller may change its tracks. <c>not_found</c> when they cannot see it,
+    ///     <c>forbidden</c> when they can but it is not theirs to edit. Caller holds <see cref="_gate" />.
+    /// </summary>
+    private (Playlist? playlist, bool owns, string? error) EditableLocked(string id, User caller)
+    {
+        if (!_playlists.TryGetValue(id, out var playlist) || !CanSeeLocked(playlist, caller))
+            return (null, false, "not_found");
+
+        var owns = playlist.OwnerKey == caller.Key;
+        return owns || Collaborates(playlist, caller) ? (playlist, owns, null) : (null, false, "forbidden");
+    }
+
+    /// <summary>
+    ///     Carries each track's <see cref="TrackSnapshot.AddedBy" /> across a save that replaces the
+    ///     list: a track that was already there keeps whoever added it, and one that was not belongs
+    ///     to <paramref name="adder" />. A reorder therefore changes nobody's name.
+    /// </summary>
+    private static List<TrackSnapshot> Attribute(List<TrackSnapshot> old, List<TrackSnapshot> next, string? adder)
+    {
+        // ponytail: matched by id, first unused match wins; a duplicated id inherits in order
+        var pool = old.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => new Queue<string?>(g.Select(t => t.AddedBy)));
+        foreach (var track in next)
+            track.AddedBy = pool.TryGetValue(track.Id, out var added) && added.Count > 0 ? added.Dequeue() : adder;
+
+        return next;
+    }
+
+    /// <summary>Takes <paramref name="collaborator" /> off every playlist <paramref name="owner" /> owns. Caller holds <see cref="_gate" />.</summary>
+    private void DropCollaboratorLocked(User owner, string collaborator)
+    {
+        foreach (var playlist in _playlists.Values.Where(p => p.OwnerKey == owner.Key && p.Collaborators.Any(c => Same(c, collaborator))))
+            playlist.Collaborators = [.. playlist.Collaborators.Where(c => !Same(c, collaborator))];
+    }
+
+    /// <summary>A code as somebody typed or read it: case, dashes and the look-alikes Crockford folds together.</summary>
+    internal static string NormalizeCode(string? code) =>
+        new((code ?? "").ToUpperInvariant()
+            .Where(char.IsAsciiLetterOrDigit)
+            .Select(c => c switch { 'O' => '0', 'I' or 'L' => '1', _ => c })
+            .ToArray());
+
+    /// <summary>A live invite by its code, however it was typed. Caller holds <see cref="_gate" />.</summary>
+    private Invite? FindInviteLocked(string? code) =>
+        _invites.TryGetValue(NormalizeCode(code), out var invite) && invite.ExpiresUtc > DateTimeOffset.UtcNow
+            ? invite
+            : null;
+
+    /// <summary>The account's unexpired invite, sweeping the dead ones while it looks. Caller holds <see cref="_gate" />.</summary>
+    private Invite? LiveInviteLocked(User user)
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var dead in _invites.Values.Where(i => i.ExpiresUtc <= now).ToList()) _invites.Remove(dead.Code);
+
+        return _invites.Values.FirstOrDefault(i => ReferenceEquals(i.Owner, user));
+    }
 
     /// <summary>Whether <paramref name="password" /> is this account's. Caller holds <see cref="_gate" />.</summary>
     private static bool Verify(User user, string? password)
@@ -585,6 +834,20 @@ public sealed class DomStore
         foreach (var playlist in _playlists.Values.Where(playlist => playlist.OwnerKey == oldKey))
             playlist.Owner = name;
 
+        // Friends, collaborators and who added what hold the display name too.
+        // ponytail: every track of every playlist; a rename is rare and this is the global lock anyway
+        foreach (var other in _users.Values.Where(other => other.Friends.Any(f => User.Normalize(f) == oldKey)))
+            other.Friends = [.. other.Friends.Select(f => User.Normalize(f) == oldKey ? name : f)];
+
+        foreach (var playlist in _playlists.Values)
+        {
+            if (playlist.Collaborators.Any(c => User.Normalize(c) == oldKey))
+                playlist.Collaborators = [.. playlist.Collaborators.Select(c => User.Normalize(c) == oldKey ? name : c)];
+
+            foreach (var track in playlist.Tracks.Where(t => t.AddedBy is { } by && User.Normalize(by) == oldKey))
+                track.AddedBy = name;
+        }
+
         _users.Remove(oldKey);
         user.Username = name;
         _users[user.Key] = user;
@@ -598,6 +861,14 @@ public sealed class DomStore
     {
         var owned = _playlists.Values.Where(playlist => playlist.OwnerKey == user.Key).ToList();
         foreach (var playlist in owned) _playlists.Remove(playlist.Id);
+
+        // gone from every friend list and every playlist it could edit; the tracks it added keep its name
+        foreach (var other in _users.Values.Where(other => IsFriend(other, user.Username)))
+            other.Friends = [.. other.Friends.Where(f => !Same(f, user.Username))];
+        foreach (var playlist in _playlists.Values.Where(playlist => Collaborates(playlist, user)))
+            playlist.Collaborators = [.. playlist.Collaborators.Where(c => User.Normalize(c) != user.Key)];
+        foreach (var invite in _invites.Values.Where(invite => ReferenceEquals(invite.Owner, user)).ToList())
+            _invites.Remove(invite.Code);
 
         RevokeLocked(user);
         _users.Remove(user.Key);
@@ -628,19 +899,21 @@ public sealed class DomStore
 
             return new
             {
-                _users = _users.Values.Select(user => new
+                users = _users.Values.Select(user => new
                 {
                     username = user.Username,
                     createdUtc = user.CreatedUtc,
                     activeTokens = user.Tokens.Count(token => token.ExpiresUtc > now),
-                    _playlists = counts.GetValueOrDefault(user.Key, 0)
+                    friends = user.Friends.Count,
+                    playlists = counts.GetValueOrDefault(user.Key, 0)
                 }).OrderBy(user => user.username).ToList(),
-                _playlists = _playlists.Values.Select(playlist => new
+                playlists = _playlists.Values.Select(playlist => new
                 {
                     id = playlist.Id,
                     name = playlist.Name,
                     owner = playlist.Owner,
-                    isPublic = playlist.IsPublic,
+                    visibility = playlist.Visibility,
+                    collaborators = playlist.Collaborators.Count,
                     tracks = playlist.Tracks.Count,
                     duration = playlist.Duration.ToString(),
                     hasCover = playlist.CoverFile is not null,
@@ -778,7 +1051,17 @@ public sealed class DomStore
                 foreach (var token in user.Tokens) _byToken[token.Value] = user;
             }
 
-            foreach (var playlist in state.Playlists) _playlists[playlist.Id] = playlist;
+            foreach (var playlist in state.Playlists)
+            {
+                // version 1 kept a bool; see Playlist.IsPublic
+                if (playlist.IsPublic is { } legacy)
+                {
+                    playlist.Visibility = legacy ? Visibility.Public : Visibility.Private;
+                    playlist.IsPublic = null;
+                }
+
+                _playlists[playlist.Id] = playlist;
+            }
         }
 
         _log.Information("Loaded {Users} account(s) and {Playlists} playlist(s) from {Path}",
@@ -798,4 +1081,17 @@ public sealed class DomStore
         File.WriteAllText(temporary, JsonSerializer.Serialize(state, FileJson));
         File.Move(temporary, _dataFile, true);
     }
+}
+
+/// <summary>
+///     A live friend code. Never written to the file: see <c>DomStore._invites</c>.
+/// </summary>
+public sealed class Invite
+{
+    public required string Code { get; init; }
+    public required User Owner { get; init; }
+    public DateTimeOffset ExpiresUtc { get; set; }
+
+    /// <summary>Who became a friend through it, in order. Replaced, never mutated.</summary>
+    public List<string> Joined { get; set; } = [];
 }

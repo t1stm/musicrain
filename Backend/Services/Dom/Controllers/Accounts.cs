@@ -156,6 +156,92 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, IConfiguration c
         return NoContent();
     }
 
+    // ── Friends ────────────────────────────────────────────────────────────────────────────────
+    // The code lives under /Invite rather than /Friends/Invite: a friend may be called "Invite",
+    // and DELETE /Friends/{username} must be able to reach them.
+
+    [HttpGet("/Audio/Accounts/Friends")]
+    public IActionResult Friends()
+    {
+        var user = store.Resolve(Api.Bearer(Request));
+
+        return user is null ? Api.Error(401, "unauthorized", "Sign in first.") : new JsonResult(store.Friends(user));
+    }
+
+    /// <summary>Ends a friendship on both sides.</summary>
+    [HttpDelete("/Audio/Accounts/Friends/{username}")]
+    public IActionResult Unfriend(string username)
+    {
+        var user = store.Resolve(Api.Bearer(Request));
+        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+
+        return store.Unfriend(user, username) ? NoContent() : NotFound();
+    }
+
+    /// <summary>The caller's live code, or a new one. Pressing it twice shows the same code.</summary>
+    [HttpPost("/Audio/Accounts/Invite")]
+    public IActionResult OpenInvite()
+    {
+        var user = store.Resolve(Api.Bearer(Request));
+        var invite = user is null ? null : store.OpenInvite(user);
+
+        return invite is null ? Api.Error(401, "unauthorized", "Sign in first.") : new JsonResult(Invitation(invite));
+    }
+
+    /// <summary>The caller's live code and who has joined through it — what the inviter's screen polls. Never makes one.</summary>
+    [HttpGet("/Audio/Accounts/Invite")]
+    public IActionResult CurrentInvite()
+    {
+        var user = store.Resolve(Api.Bearer(Request));
+        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+
+        return store.CurrentInvite(user) is { } invite ? new JsonResult(Invitation(invite)) : NotFound();
+    }
+
+    /// <summary>Stops the caller's code early.</summary>
+    [HttpDelete("/Audio/Accounts/Invite")]
+    public IActionResult EndInvite()
+    {
+        var user = store.Resolve(Api.Bearer(Request));
+        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+
+        store.EndInvite(user);
+        return NoContent();
+    }
+
+    /// <summary>
+    ///     Who a code belongs to. No token needed: the visitor who scanned it may not have an account
+    ///     yet, and should see whose code it is before making one.
+    /// </summary>
+    [HttpGet("/Audio/Accounts/Invite/{code}")]
+    public IActionResult PeekInvite(string code) =>
+        store.PeekInvite(code) is { } peek
+            ? new JsonResult(new { username = peek.username, expiresUtc = peek.expiresUtc })
+            : Api.Error(404, "invalid_code", "That code ran out or was ended. Ask for a new one.");
+
+    [HttpPost("/Audio/Accounts/Invite/Accept")]
+    public IActionResult AcceptInvite([FromBody] CodeBody? body)
+    {
+        var user = store.Resolve(Api.Bearer(Request));
+        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+
+        var (friend, alreadyFriends, error, message) = store.AcceptInvite(user, body?.Code);
+
+        return error switch
+        {
+            null => new JsonResult(new { username = friend, alreadyFriends }),
+            "invalid_code" => Api.Error(404, error, message!),
+            _ => Refusal(error, message!)
+        };
+    }
+
+    private static object Invitation(Invite invite) => new
+    {
+        code = invite.Code,
+        expiresUtc = invite.ExpiresUtc,
+        joined = invite.Joined
+    };
+
     /// <summary>
     ///     A wrong password on a change is <c>403</c>, not the <c>401</c> <see cref="Login" /> uses: the
     ///     token is fine, and a client reads <c>401</c> as "you are signed out".
@@ -184,4 +270,6 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, IConfiguration c
     public sealed record PasswordChange(string? Current, string? Password);
 
     public sealed record Confirmation(string? Password);
+
+    public sealed record CodeBody(string? Code);
 }

@@ -33,6 +33,12 @@ public sealed class User
 
     public DateTimeOffset? SettingsUpdatedUtc { get; set; }
 
+    /// <summary>
+    ///     Display names, both sides always written together. Replaced, never mutated, for the same
+    ///     reason as <see cref="Playlist.Collaborators" />.
+    /// </summary>
+    public List<string> Friends { get; set; } = [];
+
     /// <summary>Two accounts may not differ only by case. Derived, so it is not written to the file.</summary>
     [JsonIgnore]
     public string Key => Normalize(Username);
@@ -49,10 +55,13 @@ public sealed class Token
     public DateTimeOffset ExpiresUtc { get; set; }
 }
 
-/// <summary>The whole file. Versioned so a later shape can be migrated rather than guessed at.</summary>
+/// <summary>
+///     The whole file. Versioned so a later shape can be migrated rather than guessed at. Version 2
+///     replaced <see cref="Playlist.IsPublic" /> with <see cref="Playlist.Visibility" />.
+/// </summary>
 public sealed class DomState
 {
-    public int Version { get; init; } = 1;
+    public int Version { get; init; } = 2;
     public List<User> Users { get; init; } = [];
     public List<Playlist> Playlists { get; init; } = [];
 }

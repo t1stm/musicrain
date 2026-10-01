@@ -607,9 +607,9 @@
           <div class="card"><b>${s.playlists.length}</b><span>playlists</span></div>
         </div>
         <h3 class="section">Accounts</h3>` +
-        table(["Username", "Created", "Sessions", "Playlists", ""], s.users.map((u) => [
+        table(["Username", "Created", "Sessions", "Friends", "Playlists", ""], s.users.map((u) => [
           cell(u.username), cell(new Date(u.createdUtc).toLocaleDateString()),
-          cell(u.activeTokens, "mono"), cell(u.playlists, "mono"),
+          cell(u.activeTokens, "mono"), cell(u.friends, "mono"), cell(u.playlists, "mono"),
           `<td>` +
             act("Rename", name, "rename-user", { username: u.username, name: u.username },
                 { ask: "name", askmsg: `New username for ${u.username}:` }) +
@@ -624,14 +624,14 @@
           `</td>`
         ])) +
         `<h3 class="section">Playlists</h3>` +
-        table(["Name", "Owner", "Tracks", "Duration", "Visibility", "Updated", ""], s.playlists.map((p) => [
+        table(["Name", "Owner", "Tracks", "Duration", "Visibility", "Editors", "Updated", ""], s.playlists.map((p) => [
           cell(p.name, "wrap"), cell(p.owner), cell(p.tracks, "mono"), cell(p.duration, "mono"),
-          cell(p.isPublic ? "public" : "private"), cell(ago(p.updatedUtc) + " ago"),
+          cell(p.visibility), cell(p.collaborators, "mono"), cell(ago(p.updatedUtc) + " ago"),
           `<td>` +
             act("Rename", name, "rename-playlist", { id: p.id, name: p.name },
                 { ask: "name", askmsg: `New name for "${p.name}":` }) +
-            act(p.isPublic ? "Make private" : "Make public", name, "set-playlist-public",
-                { id: p.id, isPublic: !p.isPublic }) +
+            act(p.visibility !== "private" ? "Make private" : "Make public", name, "set-playlist-public",
+                { id: p.id, isPublic: p.visibility === "private" }) +
             act("Delete", name, "delete-playlist", { id: p.id },
                 { confirm: `Delete the playlist "${p.name}" (${p.owner})?\n\nThis cannot be undone.`, danger: true }) +
           `</td>`

@@ -125,7 +125,7 @@ public class DomSettingsTests : IDisposable
     {
         var store = Store();
         var (_, user, _, _) = store.Register("radost", Password);
-        store.Create(user!, "Late shift", false, []);
+        store.Create(user!, "Late shift", Visibility.Private, []);
 
         Assert.Equal("invalid_credentials", store.Rename(user!, "not it at all", "boyan").error);
         Assert.Equal((null, null), store.Rename(user!, Password, "boyan"));
@@ -140,7 +140,7 @@ public class DomSettingsTests : IDisposable
     {
         var store = Store();
         var (token, user, _, _) = store.Register("radost", Password);
-        var (playlist, _, _) = store.Create(user!, "Late shift", true, []);
+        var (playlist, _, _) = store.Create(user!, "Late shift", Visibility.Public, []);
         store.SetCover(user!, playlist!.Id, "cover.png");
 
         Assert.Equal("invalid_credentials", store.DeleteAccount(user!, "not it at all").error);

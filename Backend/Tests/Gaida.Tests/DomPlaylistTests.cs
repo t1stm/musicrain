@@ -3,7 +3,7 @@ using Serilog.Core;
 
 namespace Gaida.Tests;
 
-/// <summary>Adding one track from a menu: at the end, once, and only to your own playlist.</summary>
+/// <summary>Adding one track from a menu: at the end, once, and only to a playlist you can edit.</summary>
 public class DomPlaylistTests : IDisposable
 {
     private readonly string _directory = Directory.CreateTempSubdirectory("dom-playlists").FullName;
@@ -15,7 +15,7 @@ public class DomPlaylistTests : IDisposable
     {
         var store = Store();
         var owner = User(store, "radost");
-        var (playlist, _, _) = store.Create(owner, "Late shift", false, [Track("audio://a")]);
+        var (playlist, _, _) = store.Create(owner, "Late shift", Visibility.Private, [Track("audio://a")]);
 
         var (_, added, error, _) = store.Append(owner, playlist!.Id, Track("yt://b"));
         var (again, addedAgain, _, _) = store.Append(owner, playlist.Id, Track("yt://b"));
@@ -27,16 +27,27 @@ public class DomPlaylistTests : IDisposable
     }
 
     [Fact]
-    public void AppendToSomebodyElsesPlaylistIsNotFound()
+    public void AppendToSomebodyElsesPublicPlaylistIsForbidden()
     {
         var store = Store();
-        var (playlist, _, _) = store.Create(User(store, "radost"), "Late shift", true, []);
+        var (playlist, _, _) = store.Create(User(store, "radost"), "Late shift", Visibility.Public, []);
 
         var (_, added, error, _) = store.Append(User(store, "boyan"), playlist!.Id, Track("yt://b"));
 
         Assert.False(added);
-        Assert.Equal("not_found", error);
+        Assert.Equal("forbidden", error);
         Assert.Empty(playlist.Tracks);
+    }
+
+    [Fact]
+    public void AppendToSomebodyElsesPrivatePlaylistIsNotFound()
+    {
+        var store = Store();
+        var (playlist, _, _) = store.Create(User(store, "radost"), "Late shift", Visibility.Private, []);
+
+        var (_, _, error, _) = store.Append(User(store, "boyan"), playlist!.Id, Track("yt://b"));
+
+        Assert.Equal("not_found", error);
     }
 
     private static User User(DomStore store, string username)

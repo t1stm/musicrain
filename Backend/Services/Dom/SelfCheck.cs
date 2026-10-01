@@ -159,16 +159,16 @@ internal static class SelfCheck
             new() { Id = "yt://abc", Name = "Another", Artist = "Someone else", Duration = "00:04:02" }
         ];
 
-        var (made, error, _) = store.Create(kris, "Late shift", false, tracks);
-        var unnamed = store.Create(kris, "   ", false, null);
+        var (made, error, _) = store.Create(kris, "Late shift", Visibility.Private, tracks);
+        var unnamed = store.Create(kris, "   ", Visibility.Private, null);
 
         var mineOnly = store.Mine(kris).Count == 1 && store.Public().Count == 0;
         var hidden = store.Visible(made!.Id, stranger) is null && store.Visible(made.Id, kris) is not null;
 
-        store.Update(kris, made.Id, null, true, null);
+        store.Update(kris, made.Id, null, Visibility.Public, null);
         var shared = store.Public().Count == 1 && store.Visible(made.Id, stranger) is not null;
 
-        // a playlist is only ever changed or removed by whoever owns it
+        // a playlist is only ever changed or removed by whoever owns it — seeing it is not enough
         var strangerPatch = store.Update(stranger, made.Id, "Mine now", null, null).error;
         var strangerDelete = store.Delete(stranger, made.Id).deleted;
 
@@ -182,7 +182,7 @@ internal static class SelfCheck
         var ok = error is null
                  && unnamed.error == "invalid_request"
                  && mineOnly && hidden && shared && duration && survived && gone
-                 && strangerPatch == "not_found"
+                 && strangerPatch == "forbidden"
                  && !strangerDelete;
 
         Report(ok, "a playlist is private until it is not, and only its owner can change it",
