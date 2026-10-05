@@ -1,0 +1,7 @@
+# Every page fills itself from the API once it runs, and /artist, /album and /search take any
+# term in the query, so a crawler that renders them fans out to Deezer and YouTube without end.
+# Only the landing page is offered. `$` anchors the match: a crawler that does not know it reads
+# "/$" as a literal path, matches nothing, and falls back to Disallow for everything.
+User-agent: *
+Allow: /$
+Disallow: /
