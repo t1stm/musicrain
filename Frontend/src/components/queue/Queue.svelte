@@ -12,13 +12,17 @@
 	import SwipeRow from '$components/SwipeRow.svelte';
 	import { sourceOf } from '$lib/source';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
+	import { keysOf, nearEnd, STEP } from '$lib/paging';
 	import { reorder } from '$lib/reorder';
 
 
 	let items = $derived(queue.items);
+	let keys = $derived(keysOf(items));
 	let currentIndex = $derived(queue.currentIndex);
 	let currentItem = $derived(items[currentIndex]);
 	let nextItems = $derived(items.slice(currentIndex + 1));
+	/** Next up, drawn from the top and more as it scrolls; the sheet remounts this on every open. */
+	let shown = $state(STEP);
 	let playedItems = $derived(items.slice(0, currentIndex));
 	let showPlayed = $state(false);
 	let progress = $derived(
@@ -132,7 +136,8 @@
 			<!-- The row lands where it was dropped — that is the whole point of dragging it — and
 			     past the last row is the end of the queue. -->
 			<div class="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1" {@attach reorder((from, to) => queue.move(from, to))}>
-				{#each nextItems as item, offset (item.id + offset)}
+				<!-- keyed in the whole queue, not by offset: every offset moves when a track ends -->
+				{#each nextItems.slice(0, shown) as item, offset (keys[currentIndex + offset + 1])}
 					{@const index = currentIndex + offset + 1}
 					<!-- the number and the sleeve are the reorder's grip, so a swipe starts on the words -->
 					<SwipeRow
@@ -181,6 +186,17 @@
 						</div>
 					</SwipeRow>
 				{/each}
+				<!-- inside the list, which is what scrolls; not a row, so the reorder leaves it be -->
+				{#if shown < nextItems.length}
+					<button
+						type="button"
+						class="min-h-9 w-full rounded-[5px] border border-haze px-2 py-1 font-mono text-[0.68rem] uppercase tracking-[0.13em] text-fog hover:bg-surface-200 hover:text-chalk"
+						onclick={() => (shown += STEP)}
+						{@attach nearEnd(() => (shown += STEP))}
+					>
+						Show more · {nextItems.length - shown} left
+					</button>
+				{/if}
 			</div>
 		{:else}
 			<p class="text-sm text-fog">Nothing queued after this track.</p>

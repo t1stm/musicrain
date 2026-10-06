@@ -16,6 +16,7 @@
 		type Visibility
 	} from '$requests/playlists';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
+	import { keysOf, nearEnd, STEP } from '$lib/paging';
 	import { reorder } from '$lib/reorder';
 	import account from '$states/account.svelte';
 	import friends from '$states/friends.svelte';
@@ -58,6 +59,9 @@
 		!!a && !!b && a.toLowerCase() === b.toLowerCase();
 
 	let tracks = $derived(playlist?.tracks ?? []);
+	let keys = $derived(keysOf(tracks));
+	/** Drawn from the top, more as the reader nears the end; everything else reads `tracks`. */
+	let shown = $state(STEP);
 	/** The owner: everything on the page is theirs to change. */
 	let mine = $derived(!!playlist && playlist.owner === account.username);
 	/** The owner or a friend they share it with: the tracks, and nothing else. */
@@ -86,6 +90,8 @@
 		try {
 			const found = await getPlaylist(id, token);
 			if (!live()) return;
+			// another playlist starts at the top; a reload of this one keeps the reader's place
+			if (found.id !== playlist?.id) shown = STEP;
 			playlist = found;
 			missing = false;
 		} catch {
@@ -460,7 +466,8 @@
 				</p>
 			{:else}
 				<div class="flex flex-col" {@attach canEdit && reorder(move)}>
-					{#each tracks as track, index (track.id + index)}
+					<!-- sliced from the top, so `index` is still the track's place in the playlist -->
+					{#each tracks.slice(0, shown) as track, index (keys[index])}
 						<!-- a list you can edit: the grip is the reorder's, so a swipe starts anywhere else -->
 						<SwipeRow
 							ignore={canEdit ? '[data-grip]' : undefined}
@@ -547,6 +554,18 @@
 						</SwipeRow>
 					{/each}
 				</div>
+				<!-- Outside the list, so the reorder never takes it for a row. A drag drops among
+				     the rows already drawn: the ones it scrolls in are drawn after it began. -->
+				{#if shown < tracks.length}
+					<button
+						type="button"
+						class="mx-2 mt-2 min-h-11 rounded-row border border-haze px-3 py-2 font-mono text-[0.68rem] uppercase tracking-[0.13em] text-fog hover:bg-surface-200 hover:text-chalk"
+						onclick={() => (shown += STEP)}
+						{@attach nearEnd(() => (shown += STEP))}
+					>
+						Show more · {tracks.length - shown} left
+					</button>
+				{/if}
 			{/if}
 		</section>
 	{/if}

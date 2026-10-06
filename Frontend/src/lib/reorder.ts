@@ -23,6 +23,13 @@ export function edgeSpeed(y: number, top: number, bottom: number, edge = 56, max
 	return Math.max(-1, Math.min(1, depth / zone)) * max;
 }
 
+/** Whatever scrolls `node`: itself, or the nearest ancestor that does. `null` is the page. */
+export function scrollerOf(node: HTMLElement): HTMLElement | null {
+	let scroller: HTMLElement | null = node;
+	while (scroller && !/auto|scroll/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
+	return scroller;
+}
+
 /**
  * Drag to reorder with any pointer. HTML drag and drop never starts from a touch on most
  * phones, so the queue could not be reordered on one at all.
@@ -63,8 +70,7 @@ export const reorder =
 
 			// The limit is taken now: the carried row's own translate adds to what the list can
 			// scroll, and a row chasing that grows it without end.
-			let scroller: HTMLElement | null = list;
-			while (scroller && !/auto|scroll/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
+			const scroller = scrollerOf(list);
 			const scrolledFrom = scroller?.scrollTop ?? 0;
 			const limit = scroller ? scroller.scrollHeight - scroller.clientHeight : 0;
 			let frame = 0;
