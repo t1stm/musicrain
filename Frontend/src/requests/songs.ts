@@ -144,6 +144,15 @@ export async function getBrowse(path: string, fetcher: Fetcher) {
 	return level;
 }
 
+/**
+ * Every track beneath a folder, in the order the explorer lists them with every folder opened —
+ * a folder's Play All. Whole rather than streamed: it becomes the queue in one write, and the
+ * library answers from memory, so there is no wait worth filling in piece by piece.
+ */
+export function getBrowseTracks(path: string, fetcher: Fetcher) {
+	return getResults(fetcher, `/Browse/Tracks?path=${encodeURIComponent(path)}`);
+}
+
 export type LocalVariant = {
 	/** `same` recording, a `variant` take, or a `weak` guess that says so. */
 	match: 'same' | 'variant' | 'weak';
