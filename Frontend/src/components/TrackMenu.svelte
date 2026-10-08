@@ -19,7 +19,6 @@
 	import { resolve } from '$app/paths';
 	import { heroArtist } from '$lib';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
-	import { dismiss } from '$lib/dismiss';
 	import PlaylistCover from '$components/playlist/PlaylistCover.svelte';
 	import ReplacePicker from '$components/playlist/ReplacePicker.svelte';
 	import type { PlaylistSummary } from '$requests/playlists';
@@ -35,8 +34,7 @@
 	// pick handed to the caller. `next`, when given, is what Play Next does instead of
 	// queueing a copy: a track already in the queue moves up.
 	//
-	// Wider than a phone it drops from the "…". On a phone, and anywhere without a "…" to
-	// drop from, it lifts the track out instead: a copy of the `data-preview` around the menu
+	// It lifts the track out, on every screen: a copy of the `data-preview` around the menu
 	// — the row or the card, exactly as drawn — carried from its place to the middle of the
 	// screen, the actions under it, and carried back into the gap it left when it closes.
 	let {
@@ -55,13 +53,8 @@
 		class?: string;
 	} = $props();
 
-	const phone = new MediaQuery('width < 40rem');
 	const still = new MediaQuery('prefers-reduced-motion: reduce');
-	// Where the menu drops from the "…" rather than lifting the track. Replacing lifts on any
-	// screen: a search and its answers need more room than a dropdown.
-	let dropdown = $derived(trigger && !phone.current);
 	let replacing = $state(false);
-	let lifted = $derived(open && (!dropdown || replacing));
 
 	// The menu has room for one artist, so it takes the first of a joined credit — the rest are
 	// each their own link on the row itself.
@@ -77,7 +70,7 @@
 	const close = () => (open = false);
 
 	// An open menu over an action that happened somewhere else reads as nothing
-	// happening — on a phone the menu covers the screen.
+	// happening — the menu covers the screen.
 	function playNext() {
 		if (next) next();
 		else queue.playNext(result);
@@ -100,8 +93,7 @@
 		}, 900);
 	}
 
-	// "Add to playlist" swaps the actions for your playlists in the same box. The dropdown and
-	// the lift both draw `actions`, so neither grows a second menu of its own.
+	// "Add to playlist" swaps the actions for your playlists in the same box.
 	let picking = $state(false);
 	let naming = $state(false);
 	let draftName = $state('');
@@ -140,9 +132,7 @@
 			.finished.finally(() => delete root.dataset.menuStep);
 	}
 
-	// From a dropdown, replacing is a lift, which has its own motion; in a lift it is a step.
-	const replaceStep = (forward: boolean) =>
-		dropdown ? (replacing = forward) : step(forward, () => (replacing = forward));
+	const replaceStep = (forward: boolean) => step(forward, () => (replacing = forward));
 
 	async function pick() {
 		// fresh counts; and a first load still on its way is waited for, for the reason above
@@ -259,31 +249,13 @@
 </script>
 
 {#if trigger}
-	<details
-		class="relative {className}"
-		bind:open
-		{@attach open && !lifted && dismiss(close)}
-	>
+	<details class="relative {className}" bind:open>
 		<summary
 			aria-label="More actions for {result.name}"
 			class="flex size-11 list-none items-center justify-center rounded-[5px] border border-haze text-fog hover:bg-surface-200 hover:text-chalk focus-visible:outline-2 focus-visible:outline-primary-200 sm:size-7 [&::-webkit-details-marker]:hidden"
 		>
 			<Icon src={EllipsisHorizontal} mini size="16" />
 		</summary>
-		{#if !lifted}
-			<div
-				class="absolute right-0 z-20 mt-1 grid rounded-panel border border-haze bg-surface-100 p-1 text-left text-xs {picking
-					? 'w-60'
-					: 'w-44'}"
-				style:view-transition-name={open ? 'track-menu' : undefined}
-			>
-				{@render actions(
-					'flex min-h-10 w-full items-center gap-2 rounded-art px-2 text-left hover:bg-surface-200',
-					'14',
-					'gap-0.5'
-				)}
-			</div>
-		{/if}
 	</details>
 {/if}
 
@@ -291,7 +263,7 @@
      the dialog says yes through `open` rather than closing itself under the lift's motion.
      A long press that opened it may still be down; it selects nothing and opens no menu —
      except in a field, which needs its menu to paste. -->
-{#if lifted}
+{#if open}
 	<dialog
 		{@attach lift}
 		aria-label={result.name}
@@ -319,10 +291,11 @@
 		<div class="pointer-events-none relative flex min-h-full items-center justify-center p-2">
 			<div class="grid w-fit max-w-full justify-items-center gap-2.5">
 				<!-- named, so a step that re-centres the lift carries the track rather than
-				     fading it from one place to the other -->
+				     fading it from one place to the other. No wider than a big phone's row: a
+				     desktop row is the page's width, and the actions take the copy's. -->
 				<div
 					data-lift
-					class="max-w-full rounded-panel border border-haze bg-surface-100 p-1.5 [&>*]:max-w-full"
+					class="max-w-lg rounded-panel border border-haze bg-surface-100 p-1.5 [&>*]:max-w-full"
 					style:view-transition-name={open ? 'track-menu-lift' : undefined}
 					out:home
 				></div>
@@ -344,8 +317,8 @@
 	</dialog>
 {/if}
 
-<!-- One list, two sizes. Play next wears the primary colour of its own swipe key. The rows
-     are a box of their own, apart from the frame, so a step can slide them inside it. -->
+<!-- Play next wears the primary colour of its own swipe key. The rows are a box of their
+     own, apart from the frame, so a step can slide them inside it. -->
 {#snippet actions(item: string, size: string, list: string)}
 	<div class="grid {list}" style:view-transition-name={open ? 'track-menu-rows' : undefined}>
 		{@render view(item, size, list)}

@@ -92,15 +92,15 @@
 
 	// A mouse never swipes, so a right-click asks for the menu the swipe opens, no drop. A
 	// held finger's `contextmenu` is left be: under it the row scrolls and swipes. A link
-	// and the open menu keep the browser's own.
+	// and the "…" keep the browser's own.
 	function menu(event: MouseEvent) {
 		const opens = [...stepsOf('left'), ...stepsOf('right')].find((step) => step.label);
 		if (!opens || (event as PointerEvent).pointerType === 'touch') return;
 		if ((event.target as Element).closest('a, details')) return;
 		event.preventDefault();
 		// Linux and macOS ask on the press, Windows on the release. Opened on the release
-		// either way, as a click on the "…" is: the press closed any other row's menu, and
-		// the back that spends its history entry (closeOnBack) would close this one with it.
+		// either way, as a click on the "…" is: the press closed any popover that was open,
+		// and the back that spends its history entry (closeOnBack) would close this with it.
 		if (event.buttons) addEventListener('pointerup', () => opens.run(), { once: true });
 		else opens.run();
 	}
@@ -115,8 +115,7 @@
 	style:--pull={Math.min(pull, 1)}
 	oncontextmenu={menu}
 	{@attach swipe({
-		// A row's menu (TrackMenu's <details>) drops over the rows below it, but in the DOM
-		// it is still inside the row: without this every press on it drags the row.
+		// a press on a row's "…" (TrackMenu's <details>) is the menu's, not a drag
 		ignore: ignore ? `${ignore}, details` : 'details',
 		// the steps tick for themselves, at their own widths
 		haptic: false,
@@ -152,7 +151,7 @@
 <style>
 	.swipe-row {
 		--reveal: 0px;
-		/* x only: the desktop menu drops below the row and must not be cut off */
+		/* x only: the keys hang off the row's sides until a swipe carries them in */
 		overflow-x: clip;
 		/* the list keeps its vertical scroll; the sideways drag is the row's */
 		touch-action: pan-y;

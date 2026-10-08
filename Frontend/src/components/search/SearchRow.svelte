@@ -29,7 +29,7 @@
 	// its own click. Stopping propagation there instead would hide the click from
 	// SvelteKit's router, which listens on document.documentElement — the link
 	// would fall back to a full page load and wipe the queue. The menu is the same:
-	// a press on its "…" or anywhere in its dropdown is the menu's and never a play.
+	// a press on its "…" is the menu's and never a play.
 	function playUnlessLink(event: MouseEvent) {
 		if ((event.target as HTMLElement).closest('a, details')) return;
 		playNow();
