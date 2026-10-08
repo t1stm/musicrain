@@ -32,7 +32,8 @@
 	// A track's menu. Bindable so a swipe on a row or a held press on a card can open it
 	// without the "…". `trigger={false}` leaves the "…" out for a caller that opens it itself.
 	// `replace`, when given, is one more action: a search under the lifted track, and the
-	// pick handed to the caller.
+	// pick handed to the caller. `next`, when given, is what Play Next does instead of
+	// queueing a copy: a track already in the queue moves up.
 	//
 	// Wider than a phone it drops from the "…". On a phone, and anywhere without a "…" to
 	// drop from, it lifts the track out instead: a copy of the `data-preview` around the menu
@@ -43,12 +44,14 @@
 		open = $bindable(false),
 		trigger = true,
 		replace,
+		next,
 		class: className = ''
 	}: {
 		result: SearchResult;
 		open?: boolean;
 		trigger?: boolean;
 		replace?: (result: SearchResult) => void;
+		next?: () => void;
 		class?: string;
 	} = $props();
 
@@ -76,7 +79,8 @@
 	// An open menu over an action that happened somewhere else reads as nothing
 	// happening — on a phone the menu covers the screen.
 	function playNext() {
-		queue.playNext(result);
+		if (next) next();
+		else queue.playNext(result);
 		open = false;
 	}
 

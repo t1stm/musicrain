@@ -17,8 +17,9 @@ const HOLD = 450;
 /**
  * A press held still: how a phone asks for a menu. Android and a right-click ask with a
  * `contextmenu` and get the same answer; iOS never sends one for a touch, so a timer asks
- * there. The click that ends a hold is swallowed, so a hold is never also a tap. Moving past
- * a wobble — the row scrolling under the finger — lets the press go.
+ * there. Not for a mouse: it has the right button, and a held left one is the start of a drag
+ * (the queue's reorder). The click that ends a hold is swallowed, so a hold is never also a
+ * tap. Moving past a wobble — the row scrolling under the finger — lets the press go.
  */
 export const hold =
 	(then: () => void): Attachment<HTMLElement> =>
@@ -38,7 +39,7 @@ export const hold =
 		};
 		const down = (event: PointerEvent) => {
 			held = false;
-			if (event.button !== 0) return;
+			if (event.button !== 0 || event.pointerType === 'mouse') return;
 			x = event.clientX;
 			y = event.clientY;
 			timer = setTimeout(fire, HOLD);

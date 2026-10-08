@@ -10,10 +10,12 @@
 	import type { SearchResult } from '$states/search.svelte';
 	import ArtistLink from '$components/ArtistLink.svelte';
 	import SwipeRow from '$components/SwipeRow.svelte';
+	import TrackMenu from '$components/TrackMenu.svelte';
 	import { sourceOf } from '$lib/source';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
 	import { keysOf, nearEnd, STEP } from '$lib/paging';
 	import { reorder } from '$lib/reorder';
+	import { hold } from '$lib/press';
 
 
 	let items = $derived(queue.items);
@@ -40,12 +42,23 @@
 	}
 
 	// By the track, not the index: a swipe's action runs after its answer has shown, and
-	// the queue can move in that time. ponytail: a room's rebroadcast in those 600ms
-	// hands out new objects and the swipe does nothing — match by id if that bites.
-	function playNextSwiped(item: SearchResult) {
+	// the queue can move in that time, as it can under an open menu. ponytail: a room's
+	// rebroadcast in those 600ms hands out new objects and the swipe does nothing — match by
+	// id if that bites.
+	function moveNext(item: SearchResult) {
 		const at = queue.items.indexOf(item);
 		if (at !== -1) queue.setNext(at);
 	}
+
+	// The track whose menu is open, by its key in the queue: a held press or a right-click
+	// on what is playing, or on a row's words (the grip is the reorder's). None again once
+	// the track changes — every row moves, and what is playing is another track. A close
+	// clears it whichever row says so: the menu is modal, so the one closing is the one open,
+	// and a row its own Play Next has just moved still reads its old place's key.
+	let menuAt = $derived.by<string | null>(() => {
+		void currentIndex;
+		return null;
+	});
 
 	function play(index: number) {
 		queue.playIndex(index);
@@ -113,7 +126,12 @@
 	<section data-sheet-handle class="py-3 max-sm:touch-none">
 		<h3 class="eyebrow mb-2">Now playing</h3>
 		{#if currentItem}
-			<div class="flex items-center gap-3">
+			{@const key = keys[currentIndex]}
+			<div
+				data-preview
+				class="flex select-none items-center gap-3 [-webkit-touch-callout:none]"
+				{@attach hold(() => (menuAt = key))}
+			>
 				<img src={currentItem.thumbnailUrl ?? '/empty.png'} alt="" class="size-14 rounded-art object-cover" onerror={imageFallback} />
 				<div class="min-w-0 flex-1">
 					<p class="truncate text-sm font-semibold">{currentItem.name}</p>
@@ -124,6 +142,7 @@
 						<div class="h-full bg-primary-500" style:width={progress + '%'}></div>
 					</div>
 				</div>
+				<TrackMenu result={currentItem} trigger={false} bind:open={() => menuAt === key, (open) => (menuAt = open ? key : null)} />
 			</div>
 		{:else}
 			<p class="text-sm text-fog">Pick a track to start listening.</p>
@@ -139,6 +158,7 @@
 				<!-- keyed in the whole queue, not by offset: every offset moves when a track ends -->
 				{#each nextItems.slice(0, shown) as item, offset (keys[currentIndex + offset + 1])}
 					{@const index = currentIndex + offset + 1}
+					{@const key = keys[index]}
 					<!-- the number and the sleeve are the reorder's grip, so a swipe starts on the words -->
 					<SwipeRow
 						ignore="[data-grip]"
@@ -146,7 +166,7 @@
 							icon: QueueList,
 							color: 'var(--color-primary-600)',
 							done: 'Next Up',
-							run: () => playNextSwiped(item)
+							run: () => moveNext(item)
 						}}
 						left={{
 							icon: XMark,
@@ -157,9 +177,10 @@
 					>
 						<div
 							data-index={index}
+							data-preview
 							role="button"
 							tabindex="0"
-							class="group flex cursor-pointer select-none items-center gap-2 rounded-[5px] px-1 py-1.5 transition-colors hover:bg-surface-0 active:bg-surface-200 focus-visible:bg-surface-0 focus-visible:outline-none"
+							class="group flex cursor-pointer select-none items-center gap-2 rounded-[5px] px-1 py-1.5 [-webkit-touch-callout:none] transition-colors hover:bg-surface-0 active:bg-surface-200 focus-visible:bg-surface-0 focus-visible:outline-none"
 							onclick={(event) => playUnlessLink(index, event)}
 							onkeydown={pressKeys(() => play(index))}
 						>
@@ -169,7 +190,7 @@
 								<span class="w-4 text-right font-mono text-[0.68rem] text-fog">{offset + 1}</span>
 								<img src={item.thumbnailUrl ?? '/empty.png'} alt="" draggable="false" class="size-9 rounded-art object-cover" onerror={imageFallback} />
 							</span>
-							<div class="min-w-0 flex-1">
+							<div class="min-w-0 flex-1" {@attach hold(() => (menuAt = key))}>
 								<p class="truncate text-sm">{item.name}</p>
 								<p class="truncate text-xs text-fog">
 									<ArtistLink artist={item.artist} /> · {sourceOf(item.id).name}
@@ -183,6 +204,12 @@
 							>
 								×
 							</button>
+							<TrackMenu
+								result={item}
+								trigger={false}
+								bind:open={() => menuAt === key, (open) => (menuAt = open ? key : null)}
+								next={() => moveNext(item)}
+							/>
 						</div>
 					</SwipeRow>
 				{/each}
