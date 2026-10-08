@@ -199,18 +199,23 @@
 				slot.append(copy);
 				source.style.visibility = 'hidden';
 
-				// drawn where it ends up, then carried there from where it was: the frame
-				// fills in on the way, so the row becomes a card as it leaves the list
+				// Drawn where it ends up, then carried there from where it was: the frame
+				// fills in on the way, so the row becomes a card as it leaves the list. A row
+				// wider than the card narrows on the way, what is in it moving with it. The
+				// lift stays centred while it does, so the start is put back by half of that.
 				const to = copy.getBoundingClientRect();
+				const pad = slot.getBoundingClientRect().width - to.width;
 				if (!still.current)
 					slot.animate(
 						[
 							{
-								translate: `${from.left - to.left}px ${from.top - to.top}px`,
+								translate: `${from.left - to.left + (from.width - to.width) / 2}px ${from.top - to.top}px`,
+								width: `${from.width + pad}px`,
+								maxWidth: 'none',
 								backgroundColor: 'transparent',
 								borderColor: 'transparent'
 							},
-							{ translate: '0 0' }
+							{ translate: '0 0', width: `${to.width + pad}px`, maxWidth: 'none' }
 						],
 						{ duration: 380, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' }
 					);
@@ -227,21 +232,28 @@
 			};
 		});
 
-	/** The way back: from the middle of the screen into the gap it left, the frame going as it lands. */
+	/**
+	 * The way back: from the middle of the screen into the gap it left, the frame going as it
+	 * lands, and widening back to the row's width if the card narrowed it (see `lift`).
+	 */
 	function home(slot: HTMLElement) {
-		const copy = slot.firstElementChild;
+		const copy = slot.firstElementChild as HTMLElement | null;
 		if (still.current || !copy || !source?.isConnected)
 			return { duration: 150, css: (t: number) => `opacity: ${t}` };
 
 		const from = copy.getBoundingClientRect();
 		const to = source.getBoundingClientRect();
-		const x = to.left - from.left;
+		const pad = slot.getBoundingClientRect().width - from.width;
+		copy.style.width = `${to.width}px`;
+		const x = to.left - from.left + (to.width - from.width) / 2;
 		const y = to.top - from.top;
 		return {
 			duration: 300,
 			easing: cubicOut,
 			css: (t: number, u: number) => `
 				translate: ${u * x}px ${u * y}px;
+				width: ${from.width + pad + u * (to.width - from.width)}px;
+				max-width: none;
 				background-color: color-mix(in srgb, var(--color-surface-100) ${t * 100}%, transparent);
 				border-color: color-mix(in srgb, var(--color-haze) ${t * 100}%, transparent);`
 		};
