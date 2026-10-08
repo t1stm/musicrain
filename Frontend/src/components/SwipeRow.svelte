@@ -11,7 +11,7 @@
 		done?: string;
 		/** Said in the drop, beside the icon, for an action that is not done by landing (a
 		 *  menu opening): the drop stretches to it, then `run` fires. With neither, `run`
-		 *  fires at once. */
+		 *  fires at once. A right-click runs the one with a label, too. */
 		label?: string;
 	};
 
@@ -89,13 +89,31 @@
 		fired = null;
 		action?.run();
 	}
+
+	// A mouse never swipes, so a right-click asks for the menu the swipe opens, no drop. A
+	// held finger's `contextmenu` is left be: under it the row scrolls and swipes. A link
+	// and the open menu keep the browser's own.
+	function menu(event: MouseEvent) {
+		const opens = [...stepsOf('left'), ...stepsOf('right')].find((step) => step.label);
+		if (!opens || (event as PointerEvent).pointerType === 'touch') return;
+		if ((event.target as Element).closest('a, details')) return;
+		event.preventDefault();
+		// Linux and macOS ask on the press, Windows on the release. Opened on the release
+		// either way, as a click on the "…" is: the press closed any other row's menu, and
+		// the back that spends its history entry (closeOnBack) would close this one with it.
+		if (event.buttons) addEventListener('pointerup', () => opens.run(), { once: true });
+		else opens.run();
+	}
 </script>
 
+<!-- the row inside is the button; a right-click is only a mouse's way to the "…" it holds -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	bind:this={row}
 	class="swipe-row"
 	data-done={done}
 	style:--pull={Math.min(pull, 1)}
+	oncontextmenu={menu}
 	{@attach swipe({
 		// A row's menu (TrackMenu's <details>) drops over the rows below it, but in the DOM
 		// it is still inside the row: without this every press on it drags the row.
