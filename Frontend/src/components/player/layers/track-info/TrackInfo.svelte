@@ -32,6 +32,7 @@
 		alt=""
 		class="size-10 shrink-0 rounded-art object-cover"
 		class:opacity-40={!current.name}
+		class:cursor-pointer={current.name}
 		onerror={(event: Event) => {
 			const image = event.currentTarget as HTMLImageElement;
 			if (!image.src.endsWith(empty)) image.src = empty;

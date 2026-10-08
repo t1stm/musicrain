@@ -361,6 +361,8 @@ body {
 
 #player[data-shape='full'] #track-info img {
 	display: block;
+	/* the pointer is the bar's: there a press on the sleeve opens this (`tap` in Player.svelte) */
+	cursor: auto;
 	grid-area: cover;
 	width: var(--cover);
 	height: var(--cover);
