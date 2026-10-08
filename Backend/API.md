@@ -151,6 +151,12 @@ answer never touches the filesystem — the path is matched against the in-memor
 locations — so a path nobody has, `..` included, is an empty folder rather than an error. There is
 no failure response.
 
+`GET /Audio/Browse/Tracks?path={folder}` returns every track anywhere beneath `path`, as a plain array
+of discovery results, for a folder's Play All. The order is the tree's, read top to bottom with every
+folder opened: at each level the subfolders come first, then the files, each sorted as `Browse` sorts
+them. It streams element by element like `/Audio/Album`, and the path rules are the same: an unknown
+path answers `[]`.
+
 ## Accounts
 
 `/Audio/Accounts/*` is served by Dom, which owns accounts and playlists. It calls no

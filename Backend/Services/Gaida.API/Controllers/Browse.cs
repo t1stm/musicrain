@@ -40,4 +40,24 @@ public class Browse(IConfiguration configuration, IHostEnvironment environment) 
             ],
             mapped));
     }
+
+    /// <summary>
+    ///     Every track beneath a folder, for its Play All: subfolders first and then files at each level, the
+    ///     order the explorer lists them with every folder opened. Streamed like an album, and the same
+    ///     empty answer as above for a path nobody has.
+    /// </summary>
+    [HttpGet]
+    [Route("/Audio/Browse/Tracks")]
+    [Produces("application/json")]
+    [ProducesResponseType<IReadOnlyList<SearchResultDto>>(StatusCodes.Status200OK)]
+    public IActionResult GetTracks(string? path, [FromServices] ManagerService managerService)
+    {
+        var folder = (path ?? string.Empty).Replace('\\', '/').Trim('/');
+
+        if (managerService.Manager.PlatformFor("audio://") is not HttpPlatform local)
+            return Ok(Array.Empty<SearchResultDto>());
+
+        return Ok(this.Mapped(local.BrowseTracksAsync(folder, HttpContext.RequestAborted), configuration,
+            environment));
+    }
 }

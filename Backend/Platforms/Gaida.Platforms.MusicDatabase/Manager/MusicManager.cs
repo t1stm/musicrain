@@ -405,6 +405,27 @@ public partial class MusicManager(ILogger logger)
     }
 
     /// <summary>
+    ///     Every song beneath <paramref name="path" />, in the order the explorer lists them with every folder
+    ///     opened: each level's subfolders first, then its files. Walked through <see cref="Browse" />, so the
+    ///     order and the path handling are the page's by construction rather than by a second copy of them.
+    /// </summary>
+    /// <remarks>
+    ///     ponytail: one <see cref="Browse" /> scan per folder, so songs × folders — a few milliseconds for a
+    ///     library of thousands. One prefix filter and a segment-wise comparer if it ever shows in a trace.
+    /// </remarks>
+    public IEnumerable<MusicInfo> BrowseTracks(string? path)
+    {
+        var folder = (path ?? string.Empty).Replace('\\', '/').Trim('/');
+        var (folders, files) = Browse(folder);
+
+        foreach (var child in folders)
+        foreach (var song in BrowseTracks(folder.Length == 0 ? child.Name : $"{folder}/{child.Name}"))
+            yield return song;
+
+        foreach (var song in files) yield return song;
+    }
+
+    /// <summary>
     ///     Plain substring matching over every variant, the album and the path, for the admin editor.
     /// </summary>
     /// <remarks>

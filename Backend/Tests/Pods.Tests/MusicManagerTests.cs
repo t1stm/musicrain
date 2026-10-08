@@ -90,6 +90,29 @@ public class MusicManagerTests
     }
 
     [Fact]
+    public void BrowseTracksWalksTheTreeInTheExplorersOrder()
+    {
+        var manager = new TestMusicManager(
+            At("Bulgarian/zeta.wv"),
+            At("Bulgarian/narodna/c.wv"),
+            At("Bulgarian/Estrada/Argirovi/b.wv"),
+            At("Bulgarian/Estrada/loose.wv"),
+            At("Bulgarian/Estrada/Argirovi/a.wv"),
+            At("Bulgarian/alpha.wv"),
+            At("Bulgarians/not-this-one.wv"));
+
+        // Subfolders before files at every level, each sorted case-insensitively — what the page shows
+        // with every folder opened, read top to bottom.
+        Assert.Equal(
+        [
+            "Bulgarian/Estrada/Argirovi/a.wv", "Bulgarian/Estrada/Argirovi/b.wv", "Bulgarian/Estrada/loose.wv",
+            "Bulgarian/narodna/c.wv", "Bulgarian/alpha.wv", "Bulgarian/zeta.wv"
+        ], manager.BrowseTracks("/Bulgarian/").Select(song => song.RelativeLocation));
+        Assert.Equal(7, manager.BrowseTracks(null).Count());
+        Assert.Empty(manager.BrowseTracks("Bulgarian/Nope"));
+    }
+
+    [Fact]
     public void AlbumTracksComeBackInThePlaylistsOrder()
     {
         // Folder order is not album order, and the folder holds more than the album does.

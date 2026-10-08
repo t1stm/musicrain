@@ -250,6 +250,10 @@ app.MapGet("/browse", IResult (string? path, MusicDatabase db) =>
     return Results.Ok(new BrowseDto(folder, mappedFolders, mappedFiles));
 });
 
+// A folder's Play All: everything beneath it, already in the explorer's order, streamed straight through.
+app.MapGet("/browse/tracks", IResult (string? path, MusicDatabase db, CancellationToken ct) =>
+    Results.Ok(Mapped(db.BrowseTracks(path), ct)));
+
 app.MapGet("/artist", async Task<IResult> (string? term, MusicDatabase db, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(term)) return Results.Ok(Array.Empty<ResultDto>());

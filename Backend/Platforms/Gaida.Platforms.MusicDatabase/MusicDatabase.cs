@@ -53,6 +53,12 @@ public sealed class MusicDatabase : Platform, ISupportsSearch, ISupportsRandomRe
         return _provider.Browse(path);
     }
 
+    /// <returns>Every track beneath a folder — see <see cref="Manager.MusicManager.BrowseTracks" />.</returns>
+    public IAsyncEnumerable<PlatformResult> BrowseTracks(string? path)
+    {
+        return _provider.BrowseTracks(path);
+    }
+
     /// <summary>The library scan, awaitable. <see cref="Platform.Initialize" /> starts it and returns.</summary>
     public Task InitializeAsync() => _provider.InitializeAsync();
 

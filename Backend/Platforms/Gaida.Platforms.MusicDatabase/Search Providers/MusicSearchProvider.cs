@@ -48,6 +48,11 @@ public class MusicSearchProvider(ILogger logger) : SearchProvider(logger),
         return (folders, [.. files.Select(PlatformResult (song) => song.ToMusicResult(ContentDownloaders))]);
     }
 
+    public IAsyncEnumerable<PlatformResult> BrowseTracks(string? path)
+    {
+        return ToResults(_musicManager.BrowseTracks(path));
+    }
+
     /// <summary>The library scan, awaitable — <see cref="Initialize" /> starts it and does not wait.</summary>
     public Task InitializeAsync() => _musicManager.Initialize();
 
