@@ -68,6 +68,14 @@ public class MusicInfo : IJsonOnDeserialized
     public string? Album { get; set; }
 
     /// <summary>
+    ///     Set by the tag reader when the title tag was cp1251 read as Latin-1 and decoded again. Those are old
+    ///     ID3v1 tags more often than not — 30 characters, the artist in front ("Хебър - Дайчово хоро") — so
+    ///     <see cref="AddNames" /> lets one lead only over a path with no Cyrillic name of its own ("No Title").
+    /// </summary>
+    [JsonIgnore]
+    public bool TitleRecovered { get; init; }
+
+    /// <summary>
     ///     Which tag-reading pass produced this entry. Entries below <see cref="MusicManager.ScanVersion" />
     ///     are re-read once and then stamped, so a tag the scanner learns to read later reaches the songs
     ///     that were indexed before it. Absent from an older file, which deserializes as 0.
@@ -244,7 +252,7 @@ public class MusicInfo : IJsonOnDeserialized
     /// </remarks>
     public void AddNames(string? title, string? artist, string? folder)
     {
-        Titles = TitleAgrees(Titles.FirstOrDefault(), title)
+        Titles = TitleAgrees(Titles.FirstOrDefault(), title) && !(TitleRecovered && !IsLatin(title ?? ""))
             ? Merge(Titles, title)
             : Merge(Variants(title), [.. Titles]);
 

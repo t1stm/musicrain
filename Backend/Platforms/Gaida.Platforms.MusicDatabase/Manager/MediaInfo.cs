@@ -1,3 +1,4 @@
+using System.Text;
 using ATL;
 using Gaida.Core.Utils;
 
@@ -21,6 +22,9 @@ public static class MediaInfo
 
         // ATL catches what it cannot parse and returns what it did read. Its stack trace on stdout is noise.
         Settings.OutputStacktracesToConsole = false;
+
+        // Windows-1251, for Recovered. .NET ships only the Unicode encodings and Latin-1 without it.
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
     }
 
     /// <summary>One file, with the settings above applied. Pictures are read only when asked for.</summary>
@@ -32,6 +36,7 @@ public static class MediaInfo
     public static MusicInfo GetInformation(string location)
     {
         var track = Read(location);
+        var title = Tag(track.Title);
         var artists = track.AdditionalFields
             .FirstOrDefault(field => field.Key.Equals("ARTISTS", StringComparison.OrdinalIgnoreCase)).Value;
 
@@ -39,7 +44,8 @@ public static class MediaInfo
         {
             Id = string.Empty,
             Length = track.DurationMs,
-            Titles = MusicInfo.Variants(Tag(track.Title)),
+            Titles = MusicInfo.Variants(title),
+            TitleRecovered = title is not null && title != track.Title,
             // ARTIST first: it is the credit as released. ARTISTS is a tagger's list, and in this library as often
             // the romanized names (Kondio for Кондьо) or only the featured act as the whole of it.
             Artists = MusicInfo.Variants(Merge(Tag(track.Artist)), Merge(Tag(artists))),
@@ -60,16 +66,36 @@ public static class MediaInfo
                 value.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
     }
 
-    /// <summary>A tag worth reading, or <c>null</c> for an absent or garbled one.</summary>
+    /// <summary>A tag worth reading, cp1251 recovered, or <c>null</c> for an absent or unrecoverable one.</summary>
     private static string? Tag(string? value)
     {
-        return string.IsNullOrEmpty(value) || Garbled(value) ? null : value;
+        if (string.IsNullOrEmpty(value)) return null;
+        if (!Garbled(value)) return value;
+
+        return Recovered(value) is { } recovered && !Garbled(recovered) ? recovered : null;
+    }
+
+    /// <summary>
+    ///     A cp1251 tag that was read as Latin-1, decoded as what it was: "Îðê. Öàðèìèð" is "Орк. Царимир".
+    ///     Latin-1 maps every byte to one character and back, so nothing was lost on the way in.
+    /// </summary>
+    /// <remarks>
+    ///     ponytail: whatever <see cref="Garbled" /> flags is taken to be cp1251, since every one in this library
+    ///     is. A Latin-1 tag that is more than half accented letters would come out as Cyrillic nonsense instead
+    ///     of being dropped; a check against a Bulgarian letter frequency is the upgrade if one ever turns up.
+    /// </remarks>
+    /// <returns>The Cyrillic, or <c>null</c> when the value holds a character Latin-1 cannot: a U+FFFD.</returns>
+    internal static string? Recovered(string value)
+    {
+        return value.All(character => character <= 'ÿ')
+            ? Encoding.GetEncoding(1251).GetString(Encoding.Latin1.GetBytes(value))
+            : null;
     }
 
     /// <summary>
     ///     A tag written in cp1251 and read back as Latin-1 ("Îðê. Öàðèìèð" for "Орк. Царимир"), or with a
-    ///     U+FFFD where it could not be decoded at all. Either one says nothing the filename does not say better,
-    ///     and the first is not Latin so it would lead.
+    ///     U+FFFD where it could not be decoded at all. The first is what <see cref="Recovered" /> undoes.
+    ///     The second says nothing the filename does not say better, and is not Latin so it would lead.
     /// </summary>
     /// <remarks>ponytail: half the letters in À–ÿ is the cut. Real Latin-1 text rarely gets near it.</remarks>
     internal static bool Garbled(string value)

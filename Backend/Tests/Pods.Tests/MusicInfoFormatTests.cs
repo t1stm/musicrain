@@ -91,6 +91,20 @@ public class MusicInfoFormatTests
         Assert.Contains("\"Album\": \"Duran Duran\"", json);
     }
 
+    [Theory]
+    // An old ID3v1 title, artist in front and cut at 30 characters: the curated filename keeps the lead.
+    [InlineData("Хебър - Дайчово хоро", "Дайчово хоро", "Дайчово хоро")]
+    // A filename with no name of its own: the recovered tag is the only real title there is.
+    [InlineData("Нежна и красива", "No Title", "Нежна и красива")]
+    public void LetsARecoveredTitleLeadOnlyOverAPlaceholder(string recovered, string path, string lead)
+    {
+        var song = new MusicInfo { Titles = MusicInfo.Variants(recovered), TitleRecovered = true };
+        song.AddNames(path, "Оркестър Хебър", "Оркестър Хебър");
+
+        Assert.Equal(lead, song.Title);
+        Assert.Contains(recovered, song.Titles);
+    }
+
     [Fact]
     public void KeepsTheTagSpellingAheadOfThePathSpelling()
     {
@@ -182,6 +196,17 @@ public class MusicInfoFormatTests
     public void RecognisesACp1251TagReadAsSomethingElse(string tag, bool garbled)
     {
         Assert.Equal(garbled, MediaInfo.Garbled(tag));
+    }
+
+    [Theory]
+    [InlineData("Îðê. Öàðèìèð", "Орк. Царимир")]
+    [InlineData("Íåæíà è êðàñèâà", "Нежна и красива")]
+    [InlineData("Õåáúð' 2003", "Хебър' 2003")]
+    [InlineData("����� - ��������", null)]
+    public void RecoversACp1251TagReadAsLatin1(string tag, string? expected)
+    {
+        // Latin-1 is a byte per character both ways, so the original bytes are still there. A U+FFFD is not.
+        Assert.Equal(expected, MediaInfo.Recovered(tag));
     }
 
     [Fact]

@@ -47,9 +47,9 @@ public partial class MusicManager(ILogger logger)
     ///     album, which <see cref="MediaInfo" /> never asked ffprobe for. Pass 2 is which name leads, and
     ///     pass 3 writes a shared credit with commas — see <see cref="MusicInfo.AddNames" />. Pass 4 is ATL
     ///     in place of ffprobe, which reads what ffprobe missed: an Ogg's Vorbis comments, and a VBR MP3's
-    ///     real length.
+    ///     real length. Pass 5 decodes the cp1251 tags ATL reads as Latin-1 — see <see cref="MediaInfo.Recovered" />.
     /// </summary>
-    public const int ScanVersion = 4;
+    public const int ScanVersion = 5;
 
     public async Task Initialize()
     {
@@ -290,8 +290,8 @@ public partial class MusicManager(ILogger logger)
     ///     recently-played lists hold it, and <see cref="MusicInfo.UpdateRandomId" /> ends in a random suffix.
     /// </summary>
     /// <remarks>
-    ///     Every pass, whatever the entry is stamped with: pass 4 changed the reader under the first three, so
-    ///     they all run again over what it reads.
+    ///     Every pass, whatever the entry is stamped with: passes 4 and 5 changed what the first three read, so
+    ///     they all run again over it.
     /// </remarks>
     private static void Backfill(MusicInfo entry)
     {
@@ -300,8 +300,9 @@ public partial class MusicManager(ILogger logger)
 
         var fresh = MediaInfo.GetInformation(path);
 
-        // Pass 1. An album an admin typed outranks the file, so this only fills a missing one.
-        entry.Album ??= fresh.Album;
+        // Pass 1. An album an admin typed outranks the file, so this only fills a missing one -- or, since
+        // pass 5, replaces one the old reader stored garbled, which nobody types.
+        if (entry.Album is null || MediaInfo.Garbled(entry.Album)) entry.Album = fresh.Album;
 
         // Passes 2 and 3, both nothing but AddNames run again.
         var (title, author, folder) = PathNames(path);
