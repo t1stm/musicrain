@@ -73,14 +73,14 @@ services:
       # changes — this is the library pod's only outbound call.
       DEEZER_URL: http://gaida-deezer:8080
     # The only service that writes into a directory the host also owns, so the only one whose
-    # container user matters: imports and Info.json rewrites land as this uid:gid instead of root.
+    # container user matters: imports and library.db land as this uid:gid instead of root.
     # A Dockerfile cannot do this -- the host's uid is not known at build time -- so it lives here
     # with the rest of the host-specific values, in .env.
     user: "${LIBRARY_UID:-1000}:${LIBRARY_GID:-1000}"
     volumes:
-      # Read-write, not :ro — MusicManager.cs:77 opens Info.json OpenOrCreate/ReadWrite,
-      # CoverExtractor.cs:25,50 rewrites it and writes extracted covers, and the tag
-      # re-read migration in MUSICDB_FORMAT_PLAN.md rewrites every Info.json in the tree.
+      # Read-write, not :ro — the index is library.db at the root of the library, and imports
+      # write into its Deezer/ folder. The per-folder Info.json files older versions kept are
+      # imported by the first scan and never written again.
       - ${MUSIC_LIBRARY_PATH:-./data/music}:/music
       # The web root nginx serves as $PUBLIC_DOMAIN/Album_Covers — which is exactly what
       # DOMAIN builds the public thumbnailUrl from, so covers written here are immediately
@@ -94,7 +94,9 @@ services:
       dockerfile: Platforms/Gaida.Pods.YouTube/Dockerfile
     environment:
       <<: *env
-      YOUTUBE_CACHE_DB: /cache/YouTube.json   # YouTubeCacher — the search cache
+      # YouTubeCacher — the search cache. A YouTube.json beside it is imported on the first start and
+      # then left alone, so an older image pointed at this volume still finds its cache.
+      YOUTUBE_CACHE_DB: /cache/YouTube.db
       YOUTUBE_CACHE: /webm                    # GetterLocalCache / YouTubeCacheProvider
     volumes:
       - ${YOUTUBE_CACHE_DB_PATH:-./data/youtube-cache}:/cache
@@ -245,7 +247,9 @@ services:
       dockerfile: Services/Dom/Dockerfile
     environment:
       <<: *env
-      Dom__DataFile: /data/dom.json
+      # The dom.json older versions wrote stays beside it: imported on the first start, never written
+      # again, and still there for an older image pointed at this volume.
+      Dom__DataFile: /data/dom.db
       Dom__CoverDir: /covers
     ports:
       - "127.0.0.1:${DOM_PORT:-5343}:8080"
@@ -404,7 +408,7 @@ volumes:
   thumbnails:
   dom-data:
   dom-covers:
-  # Lyrics for tracks with no library folder, plus Lyrics.json. The library's own words are in
+  # Lyrics for tracks with no library folder, plus Lyrics.db. The library's own words are in
   # MUSIC_LIBRARY_PATH beside the audio, so losing this costs re-fetches and nothing else.
   lyrics-data:
   # The bot's per-account Discord statuses. Only created under the bot profile.

@@ -6,7 +6,7 @@ It is the one pod that is not replicable — it is pinned to the library volume 
 
 | Variable | What it does |
 | --- | --- |
-| `STORAGE` | The music library root, mounted read-write: the scanner rewrites `Info.json` in place. |
+| `STORAGE` | The music library root, mounted read-write: the scanner keeps its index, `library.db`, here. Each folder's `Info.json` from an older version is imported by the first scan that finds the folder missing from it, and never written again. |
 | `ALBUM_COVERS` | Where extracted art is written, and what nginx serves as `/Album_Covers`. |
 | `DOMAIN` | Public prefix substituted into each cover URL. Needs a scheme — a bare host is not a URL the API can fetch. |
 | `DEEZER_URL` | The Deezer pod, for `/Admin/import-deezer` only. Unset, that one route answers 400 and nothing else changes. |
@@ -30,15 +30,15 @@ The scan runs in the background, so the pod answers before it has finished readi
 
 This pod does not fetch lyrics and has never heard of LRCLIB. **`stih`** does both, and it writes the files it finds straight into this pod's volume, beside the audio — `Rock/Rammstein/Rammstein - Sonne.lrc` next to `Rock/Rammstein/Rammstein - Sonne.flac`, `.txt` when the words are not timed. That is why a `.lrc` can appear in the library with nothing here having written it, and why both containers run as the same `LIBRARY_UID:LIBRARY_GID`.
 
-What this pod owns is the record of it. Each `Info.json` entry carries three fields, all `null` by default:
+What this pod owns is the record of it. Each song's row in `library.db` carries three fields, all `null` by default:
 
 | Field | Values | Meaning |
 | --- | --- | --- |
 | `LyricsType` | `null`, `"Unsynchronized"`, `"Synchronized"` | Which file sits beside the audio. |
-| `LyricsSource` | `null`, `"Deezer"`, `"LRCLIB"` | Where it came from. `null` beside a non-null type means it was already in the folder. |
+| `LyricsSource` | `null`, `"Deezer"`, `"Lrclib"` | Where it came from. `null` beside a non-null type means it was already in the folder. |
 | `LyricsChecked` | `null` or a date | The day `stih` last reported finding nothing. |
 
-The file on disk settles any disagreement: every scan reconciles both of the first two fields from `File.Exists`, so a `.lrc` deleted by hand disappears from `Info.json` at the next boot whatever `stih`'s own index says.
+The file on disk settles any disagreement: every scan reconciles both of the first two fields from `File.Exists`, so a `.lrc` deleted by hand disappears from `library.db` at the next boot whatever `stih`'s own index says.
 
 Two routes serve `stih`, plus one field on an existing one:
 
@@ -53,7 +53,7 @@ Both are ordinary routes rather than `/Admin` ones: this is service-to-service t
 ## Interesting techniques
 
 - **A scan that does not block the boot.** `Initialize()` starts the library scan and returns, so the pod is listening while it reads thousands of folders. Folders are parsed with `Parallel.ForEachAsync` into a `ConcurrentBag`; folder order stops being stable, and nothing downstream depends on it.
-- **A rescan without a restart.** `POST /Admin/rescan` (Oko's *Rescan library* button) runs the boot scan again in the background and answers 202 straight away; the snapshot's `scanning` flag says when it is done. It holds the same gate as edits and imports, so neither can be written over by a scan that read `Info.json` before them.
+- **A rescan without a restart.** `POST /Admin/rescan` (Oko's *Rescan library* button) runs the boot scan again in the background and answers 202 straight away; the snapshot's `scanning` flag says when it is done. It holds the same gate as edits and imports, so neither can be written over by a scan that read `library.db` before them.
 - **Environment variables copied out of configuration.** The platform layer reads `STORAGE`, `ALBUM_COVERS` and `DOMAIN` as process environment variables, so `Program.cs` copies them out of `IConfiguration` at startup. That keeps the library usable from a CLI or a bot with no host builder, while a container still configures it the normal way.
 - **Admin routes split by HTTP verb on purpose.** Reads are `GET` so they pass through Oko's plain read proxy; anything that changes the library is a `POST` through its audited action proxy.
 - **Repeated query parameters as an ordered list.** `/variant` takes repeated `title=` and `artist=` parameters — the variant list, in preference order, without inventing a body format for a GET.

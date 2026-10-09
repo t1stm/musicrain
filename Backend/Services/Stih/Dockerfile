@@ -8,6 +8,7 @@ WORKDIR /src
 COPY Services/Stih/Stih.csproj Services/Stih/
 COPY ["Gaida Library/Gaida.Core/Gaida.Core.csproj", "Gaida Library/Gaida.Core/"]
 COPY ["Gaida Library/Gaida.Admin/Gaida.Admin.csproj", "Gaida Library/Gaida.Admin/"]
+COPY ["Gaida Library/Gaida.Sqlite/Gaida.Sqlite.csproj", "Gaida Library/Gaida.Sqlite/"]
 # Every project's PackageReference to JetBrains.Annotations lives here, so the props file has to
 # be in the context before the restore or [UsedImplicitly] stops compiling.
 COPY Directory.Build.props .
@@ -16,6 +17,7 @@ RUN dotnet restore Services/Stih/Stih.csproj
 COPY Services/Stih/ Services/Stih/
 COPY ["Gaida Library/Gaida.Core/", "Gaida Library/Gaida.Core/"]
 COPY ["Gaida Library/Gaida.Admin/", "Gaida Library/Gaida.Admin/"]
+COPY ["Gaida Library/Gaida.Sqlite/", "Gaida Library/Gaida.Sqlite/"]
 RUN dotnet publish Services/Stih/Stih.csproj -c Release -o /app
 
 # The pure halves run with no volumes and no network, so a broken parser fails the build.
@@ -27,7 +29,7 @@ COPY --from=build /app .
 
 # lyrics-data is a named volume, and Docker seeds a fresh one's ownership from the image's directory.
 # Without this the volume is root-owned, and the container -- which compose runs as LIBRARY_UID -- cannot
-# write Lyrics.json into it. /music needs no equivalent: it is a bind mount the host user already owns.
+# write Lyrics.db into it. /music needs no equivalent: it is a bind mount the host user already owns.
 ARG LIBRARY_UID=1000
 ARG LIBRARY_GID=1000
 RUN mkdir -p /lyrics && chown ${LIBRARY_UID}:${LIBRARY_GID} /lyrics

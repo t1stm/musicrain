@@ -32,7 +32,7 @@ builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => poli
 
 builder.Services.AddSingleton(Log.Logger);
 builder.Services.AddSingleton(services => new DomStore(
-    services.GetRequiredService<IConfiguration>()["Dom:DataFile"] ?? "dom.json",
+    services.GetRequiredService<IConfiguration>()["Dom:DataFile"] ?? "dom.db",
     Log.Logger));
 
 var app = builder.Build();

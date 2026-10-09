@@ -1,7 +1,11 @@
 using System.Collections.Concurrent;
+using System.Data;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Dapper;
 using Gaida.Core.Utils;
+using Gaida.Sqlite;
+using Microsoft.Data.Sqlite;
 using Serilog;
 
 namespace Gaida.Platforms.MusicDatabase.Manager;
@@ -15,8 +19,8 @@ public partial class MusicManager(ILogger logger)
     /// </summary>
     /// <remarks>
     ///     ponytail: one gate for the whole library rather than one per folder. Edits arrive at the rate
-    ///     a person clicks Save, and the work under it is a dictionary lookup plus one small file write.
-    ///     Split it per folder if a bulk re-tagging tool ever shows up.
+    ///     a person clicks Save, and the work under it is a lookup plus one row written. Split it per
+    ///     folder if a bulk re-tagging tool ever shows up.
     /// </remarks>
     private readonly SemaphoreSlim _editGate = new(1, 1);
 
@@ -94,9 +98,9 @@ public partial class MusicManager(ILogger logger)
     }
 
     /// <summary>
-    ///     The whole library off disk. Under the edit gate, because both halves rewrite Info.json from what
+    ///     The whole library off disk. Under the edit gate, because both halves write rows built from what
     ///     they read a moment earlier: an edit, import or lyrics stamp landing in between would be written
-    ///     over with the file as it was before it.
+    ///     over with the row as it was before it.
     /// </summary>
     private async Task Scan()
     {
@@ -106,12 +110,7 @@ public partial class MusicManager(ILogger logger)
         {
             await Load();
             Logger.Debug("Extracting covers from {StorageDirectory}", StorageDirectory);
-            _coverExtractor.Extract(StorageDirectory);
-
-            // Extract writes covers into Info.json, not onto the entries in memory, and only for entries Load
-            // has already written there. Without this second read a new file's cover shows up at the next
-            // boot instead of now. Nothing is new by then, so it reads every Info.json and writes none.
-            await Load();
+            ExtractCovers();
         }
         finally
         {
@@ -126,14 +125,29 @@ public partial class MusicManager(ILogger logger)
         var folders = Directory.EnumerateDirectories(StorageDirectory, "*", SearchOption.AllDirectories).ToList();
         Logger.Debug("Found {Count} folders in storage", folders.Count);
 
-        var parsed = new ConcurrentBag<List<MusicInfo>>();
-        await Parallel.ForEachAsync(folders, async (folder, _) => parsed.Add(await ParseArtistFolder(folder)));
+        var stored = ReadLibrary();
+        var parsed = new ConcurrentBag<(string Folder, List<MusicInfo> Entries, bool Changed)>();
+        await Parallel.ForEachAsync(folders, async (folder, _) =>
+        {
+            var relative = Path.GetRelativePath(StorageDirectory, folder).Replace('\\', '/');
+            var (entries, changed) = await ParseArtistFolder(folder, stored.GetValueOrDefault(relative) ?? []);
+            parsed.Add((relative, entries, changed));
+        });
+
+        // After the parallel pass rather than inside it, so the scan is one writer and one transaction. Before
+        // the $[DOMAIN] substitution below, so the rows keep the placeholder.
+        var changed = parsed.Where(folder => folder.Changed).ToList();
+        if (changed.Count > 0)
+        {
+            Write(changed.SelectMany(folder => folder.Entries), changed.Select(folder => folder.Folder));
+            Logger.Information("Wrote {Count} folder(s) to {Library}", changed.Count, LibraryDatabase);
+        }
 
         // ponytail: folder order is no longer stable; nothing downstream depends on it (search scores, random shuffles).
-        var songs = parsed.SelectMany(f => f).ToList();
+        var songs = parsed.SelectMany(f => f.Entries).ToList();
 
         // An entry whose file is gone -- converted to another format beside it, moved, deleted by hand -- is
-        // a search hit that answers every play with a 404. It stays in its Info.json, ID and all, and comes
+        // a search hit that answers every play with a 404. It stays in library.db, ID and all, and comes
         // back at the next boot if the file does.
         var missing = songs.RemoveAll(song => !File.Exists(StorageDirectory + "/" + song.RelativeLocation));
         if (missing > 0) Logger.Warning("Left out {Count} entries whose file is gone", missing);
@@ -146,30 +160,31 @@ public partial class MusicManager(ILogger logger)
         }
     }
 
-    private async Task<List<MusicInfo>> ParseArtistFolder(string artist)
+    /// <param name="artist">The folder, as an absolute path.</param>
+    /// <param name="stored">Its rows in <c>library.db</c>; empty for a folder the database has never seen.</param>
+    /// <returns>The folder's entries, and whether they differ from the rows.</returns>
+    private async Task<(List<MusicInfo> Entries, bool Changed)> ParseArtistFolder(string artist,
+        List<MusicInfo> stored)
     {
         Logger.Information("Loading artist: '{Artist}'", artist);
-        var jsonFile = Path.Combine(artist, "Info.json");
 
         var songs = Directory.GetFiles(artist, "*", SearchOption.TopDirectoryOnly)
             .Where(song => IsAudioBasedOnFileExtension(song)).ToList();
 
-        // Folders that only hold subfolders get no Info.json.
-        if (songs.Count == 0 && !File.Exists(jsonFile)) return [];
+        // A folder the database has never seen starts from the Info.json older versions kept beside its
+        // audio, through every pass below exactly as that version would have read it. Its rows are written
+        // at the end of the scan, and from then on the file is never read again — nor written, so an older
+        // image pointed at this library still finds the folder as it was.
+        var existing = stored;
+        var imported = false;
+        if (existing.Count == 0 && await ReadInfoJson(artist) is { Count: > 0 } fromFile)
+        {
+            existing = fromFile;
+            imported = true;
+        }
 
-        await using var fileStream = File.Open(jsonFile, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-
-        var existing = new List<MusicInfo>();
-        if (fileStream.Length > 0)
-            try
-            {
-                existing = await JsonSerializer.DeserializeAsync<List<MusicInfo>>(fileStream,
-                    MusicInfo.SerializerOptions) ?? [];
-            }
-            catch (JsonException e)
-            {
-                Logger.Fatal(e, "Malformed Info.json for '{Artist}', rebuilding it", artist);
-            }
+        // Folders that only hold subfolders have nothing to index.
+        if (songs.Count == 0 && existing.Count == 0) return ([], false);
 
         // Stale entries (e.g. .wvc WavPack correction files indexed by an older scanner) are never playable.
         var stale = existing.RemoveAll(m => m.RelativeLocation is null ||
@@ -199,23 +214,59 @@ public partial class MusicManager(ILogger logger)
 
         // The lyrics sidecars, every scan rather than once behind a ScanVersion bump: it is two
         // File.Exists per song against a version bump that would re-run ffprobe over the whole library,
-        // and it is what lets a .lrc deleted by hand disappear from Info.json at the next boot.
+        // and it is what lets a .lrc deleted by hand disappear from the index at the next boot.
         var reconciled = existing.Count(ReconcileLyrics);
         if (reconciled > 0)
             Logger.Information("Reconciled lyrics on {Count} entries of '{Artist}'", reconciled, artist);
 
         var newFiles = NewFiles(existing, songs).ToList();
-        if (stale == 0 && newFiles.Count == 0 && legacy.Count == 0 && behind.Count == 0 && reconciled == 0)
-            return existing;
-
         foreach (var file in newFiles)
             existing.Add(await ParseFile(file));
 
-        fileStream.SetLength(0);
-        fileStream.Position = 0;
-        await JsonSerializer.SerializeAsync(fileStream, existing, MusicInfo.SerializerOptions);
+        return (existing, imported || stale > 0 || newFiles.Count > 0 || legacy.Count > 0 || behind.Count > 0 ||
+                          reconciled > 0);
+    }
 
-        return existing;
+    /// <summary>The Info.json an older version kept in <paramref name="folder" />, or empty without one.</summary>
+    private async Task<List<MusicInfo>> ReadInfoJson(string folder)
+    {
+        var file = Path.Combine(folder, "Info.json");
+        if (!File.Exists(file)) return [];
+
+        try
+        {
+            await using var stream = File.OpenRead(file);
+            return await JsonSerializer.DeserializeAsync<List<MusicInfo>>(stream, MusicInfo.SerializerOptions) ?? [];
+        }
+        catch (JsonException e)
+        {
+            Logger.Fatal(e, "Malformed Info.json for '{Artist}', rebuilding it", folder);
+            return [];
+        }
+    }
+
+    /// <summary>
+    ///     Embedded artwork for every song that has none yet: written to the covers directory, recorded on
+    ///     the entry in memory, and its row rewritten. Content-addressed, so a song whose file carries no
+    ///     picture costs one read per scan and nothing else.
+    /// </summary>
+    private void ExtractCovers()
+    {
+        var covered = new ConcurrentBag<MusicInfo>();
+        Parallel.ForEach(Songs.Where(song => string.IsNullOrWhiteSpace(song.CoverUrl)), song =>
+        {
+            if (_coverExtractor.ExportCover(StorageDirectory + "/" + song.RelativeLocation) is not { } cover) return;
+
+            // The substituted form, as Load leaves every other entry; MusicInfo.StoredCoverUrl puts the
+            // placeholder back on the way into the row.
+            song.CoverUrl = $"{AlbumCoverLocation}/{cover}";
+            covered.Add(song);
+        });
+
+        if (covered.IsEmpty) return;
+
+        Write(covered);
+        Logger.Information("Extracted {Count} cover(s)", covered.Count);
     }
 
     private static async Task RereadTags(MusicInfo entry)
@@ -527,7 +578,7 @@ public partial class MusicManager(ILogger logger)
             if (artists is not null) entry.Artists = Distinct(artists);
             if (album is not null) entry.Album = album.Trim() is { Length: > 0 } name ? name : null;
 
-            await SaveFolderAsync(entry.RelativeLocation);
+            Write([entry]);
             Logger.Information("Admin edited {ID}: {Title} — {Artist}", id, entry.Title, entry.Artist);
 
             return (entry, null);
@@ -604,8 +655,8 @@ public partial class MusicManager(ILogger logger)
             if (File.Exists(location))
                 return (null, $"'{filename}' is already in the {ImportFolder} folder.");
 
-            // Temp then move, like SaveFolderAsync: a download that dies halfway must not leave a truncated
-            // file behind, because the next scan would index it as a whole song.
+            // Temp then move: a download that dies halfway must not leave a truncated file behind, because
+            // the next scan would index it as a whole song.
             var temporary = location + ".part";
             await using (var file = File.Create(temporary))
             {
@@ -627,7 +678,7 @@ public partial class MusicManager(ILogger logger)
             // Copy-on-write rather than Add: SearchById and Browse read this list from other threads and
             // from AsParallel, and growing it underneath them is the classic torn-enumeration crash.
             Songs = [.. Songs, entry];
-            await SaveFolderAsync(entry.RelativeLocation!);
+            Write([entry]);
 
             Logger.Information("Imported {Title} - {Artist} as {Location}", entry.Title, entry.Artist, location);
             return (entry, null);
@@ -665,28 +716,131 @@ public partial class MusicManager(ILogger logger)
         return result;
     }
 
+    /// <summary><c>library.db</c>, at the root of the library it indexes.</summary>
+    private static string LibraryDatabase => Path.Combine(StorageDirectory, "library.db");
+
     /// <summary>
-    ///     Writes the <c>Info.json</c> for the folder holding <paramref name="relativeLocation" />, from
-    ///     the entries already in memory — they are the authority, the file is their projection.
+    ///     A connection to <see cref="LibraryDatabase" />, with its tables made if this is the first. Every
+    ///     time rather than once, because <c>STORAGE</c> is read every time too, and the check is one pragma.
     /// </summary>
-    private async Task SaveFolderAsync(string relativeLocation)
+    private static SqliteConnection Open()
     {
-        var folder = FolderOf(relativeLocation);
-        var entries = Songs.Where(song => song.RelativeLocation is { } location && FolderOf(location) == folder)
-            .ToList();
-
-        var directory = Path.Combine(StorageDirectory, folder);
-        var target = Path.Combine(directory, "Info.json");
-
-        // Temp then move, like DomStore: the loader's answer to a torn Info.json is to rebuild the folder
-        // from its files, which would silently throw away exactly the hand edits this endpoint exists for.
-        var temporary = target + ".tmp";
-        await File.WriteAllBytesAsync(temporary,
-            JsonSerializer.SerializeToUtf8Bytes(entries, MusicInfo.SerializerOptions));
-        File.Move(temporary, target, true);
-
-        Logger.Debug("Wrote {Count} entries to {File}", entries.Count, target);
+        var db = Database.Open(Database.At(LibraryDatabase));
+        Database.Upgrade(db, SchemaVersion, transaction => db.Execute(Schema, transaction: transaction));
+        return db;
     }
+
+    /// <summary>Every row, by the folder it sits in.</summary>
+    private static Dictionary<string, List<MusicInfo>> ReadLibrary()
+    {
+        using var db = Open();
+
+        // CoverUrl straight into CoverUrl, placeholder and all: Load substitutes it, as it did reading Info.json.
+        var songs = db.Query<MusicInfo>("""
+                SELECT RelativeLocation, Id, Album, Scan, CoverUrl, LyricsType, LyricsSource, LyricsChecked, Length
+                FROM songs
+                """)
+            .ToDictionary(song => song.RelativeLocation!, StringComparer.Ordinal);
+        foreach (var titles in db.Query<NameRow>(
+                         "SELECT RelativeLocation, Title AS Name FROM song_titles ORDER BY RelativeLocation, Position")
+                     .GroupBy(row => row.RelativeLocation))
+            songs[titles.Key].Titles = [.. titles.Select(row => row.Name)];
+        foreach (var artists in db.Query<NameRow>(
+                         "SELECT RelativeLocation, Artist AS Name FROM song_artists ORDER BY RelativeLocation, Position")
+                     .GroupBy(row => row.RelativeLocation))
+            songs[artists.Key].Artists = [.. artists.Select(row => row.Name)];
+
+        return songs.Values.GroupBy(song => FolderOf(song.RelativeLocation!), StringComparer.Ordinal)
+            .ToDictionary(folder => folder.Key, folder => folder.ToList(), StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    ///     Writes <paramref name="entries" /> as they now are, after dropping every row in
+    ///     <paramref name="folders" />, in one transaction. Each entry is deleted and inserted again rather
+    ///     than diffed: the delete cascades to its titles and artists, so the rows always match the entry.
+    /// </summary>
+    /// <param name="entries">Entries with a <see cref="MusicInfo.RelativeLocation" />, which is the key.</param>
+    /// <param name="folders">Folders whose rows are replaced wholesale, so an entry the scan dropped goes too.</param>
+    private static void Write(IEnumerable<MusicInfo> entries, IEnumerable<string>? folders = null)
+    {
+        using var db = Open();
+        using var transaction = db.BeginTransaction();
+
+        db.Execute("DELETE FROM songs WHERE Folder = @folder", (folders ?? []).Select(folder => new { folder }),
+            transaction);
+
+        foreach (var entry in entries)
+        {
+            db.Execute("DELETE FROM songs WHERE RelativeLocation = @RelativeLocation", new { entry.RelativeLocation },
+                transaction);
+            db.Execute("""
+                INSERT INTO songs (RelativeLocation, Folder, Id, Album, Scan, CoverUrl, LyricsType, LyricsSource,
+                                   LyricsChecked, Length)
+                VALUES (@RelativeLocation, @Folder, @Id, @Album, @Scan, @CoverUrl, @LyricsType, @LyricsSource,
+                        @LyricsChecked, @Length)
+                """, new
+            {
+                entry.RelativeLocation,
+                Folder = FolderOf(entry.RelativeLocation!),
+                entry.Id,
+                entry.Album,
+                entry.Scan,
+                CoverUrl = entry.StoredCoverUrl,
+                // by name, the way Info.json held them, so reordering an enum relabels nothing
+                LyricsType = entry.LyricsType?.ToString(),
+                LyricsSource = entry.LyricsSource?.ToString(),
+                entry.LyricsChecked,
+                entry.Length
+            }, transaction);
+            db.Execute("INSERT INTO song_titles (RelativeLocation, Position, Title) VALUES (@Location, @Position, @Name)",
+                entry.Titles.Select((name, position) => new { Location = entry.RelativeLocation, Position = position, Name = name }),
+                transaction);
+            db.Execute("INSERT INTO song_artists (RelativeLocation, Position, Artist) VALUES (@Location, @Position, @Name)",
+                entry.Artists.Select((name, position) => new { Location = entry.RelativeLocation, Position = position, Name = name }),
+                transaction);
+        }
+
+        transaction.Commit();
+    }
+
+    /// <summary><c>PRAGMA user_version</c> once the tables exist. Each folder's Info.json is imported by the scan.</summary>
+    private const int SchemaVersion = 1;
+
+    /// <summary>
+    ///     One row per indexed file, keyed by where it is. Titles and artists are ordered lists — the first of
+    ///     each leads — so each is its own table with a position.
+    /// </summary>
+    private const string Schema = """
+        CREATE TABLE IF NOT EXISTS songs (
+            RelativeLocation TEXT PRIMARY KEY,
+            Folder TEXT NOT NULL,
+            Id TEXT,
+            Album TEXT,
+            Scan INTEGER NOT NULL,
+            CoverUrl TEXT,
+            LyricsType TEXT,
+            LyricsSource TEXT,
+            LyricsChecked TEXT,
+            Length REAL NOT NULL
+        ) STRICT;
+        CREATE INDEX IF NOT EXISTS songs_by_folder ON songs (Folder);
+
+        CREATE TABLE IF NOT EXISTS song_titles (
+            RelativeLocation TEXT NOT NULL REFERENCES songs (RelativeLocation) ON DELETE CASCADE,
+            Position INTEGER NOT NULL,
+            Title TEXT NOT NULL,
+            PRIMARY KEY (RelativeLocation, Position)
+        ) STRICT;
+
+        CREATE TABLE IF NOT EXISTS song_artists (
+            RelativeLocation TEXT NOT NULL REFERENCES songs (RelativeLocation) ON DELETE CASCADE,
+            Position INTEGER NOT NULL,
+            Artist TEXT NOT NULL,
+            PRIMARY KEY (RelativeLocation, Position)
+        ) STRICT;
+        """;
+
+    private sealed record NameRow(string RelativeLocation, string Name);
 
     /// <summary>The folder part of a relative location, in the '/' form the rest of this file uses.</summary>
     private static string FolderOf(string relativeLocation)

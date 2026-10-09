@@ -74,7 +74,7 @@ public sealed class Lyrics(
         if (track is null) return null;
 
         // A .lrc someone put in the folder by hand, and the path back from a lost index: gaida-local's
-        // own Info.json already knows it is there, and the file is the authority either way.
+        // own index already knows it is there, and the file is the authority either way.
         if (track is { KnownType: { } known, RelativeLocation: not null } &&
             LibraryPath(track.RelativeLocation, known) is { } beside && File.Exists(beside))
         {
@@ -173,11 +173,11 @@ public sealed class Lyrics(
     }
 
     /// <summary>
-    ///     Tells gaida-local what happened, so its own <c>Info.json</c> records it.
+    ///     Tells gaida-local what happened, so its own index records it.
     /// </summary>
     /// <remarks>
     ///     A failed stamp is logged and otherwise ignored: the file is on disk, and gaida-local's next
-    ///     scan reconciles the entry from it anyway. Only <c>audio://</c> tracks have an Info.json at all.
+    ///     scan reconciles the entry from it anyway. Only <c>audio://</c> tracks are in that index at all.
     /// </remarks>
     private async Task StampAsync(Track track, LyricsKind? kind, LyricsOrigin? source, CancellationToken ct)
     {

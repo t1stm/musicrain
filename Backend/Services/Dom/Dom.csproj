@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Gaida Library\Gaida.Admin\Gaida.Admin.csproj"/>
+    <ProjectReference Include="..\..\Gaida Library\Gaida.Sqlite\Gaida.Sqlite.csproj"/>
   </ItemGroup>
 
 </Project>

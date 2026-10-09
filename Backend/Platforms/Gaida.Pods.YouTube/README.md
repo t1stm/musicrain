@@ -2,11 +2,11 @@
 
 The YouTube pod — `gaida-youtube` in [compose.yaml](../../compose.yaml). It wraps [Gaida.Platforms.YouTube](../Gaida.Platforms.YouTube) in the pod HTTP contract: `/classify`, `/resolve`, `/search`, `/playlist`, `/random` and `/content`.
 
-It owns two caches on disk — the JSON search cache and the downloaded audio — and it does not scale horizontally. A second replica shares one egress IP and only reaches YouTube's rate limit sooner. The image needs `yt-dlp` and `ffmpeg` on `PATH`.
+It owns two caches on disk — the SQLite search cache and the downloaded audio — and it does not scale horizontally. A second replica shares one egress IP and only reaches YouTube's rate limit sooner. The image needs `yt-dlp` and `ffmpeg` on `PATH`.
 
 | Variable | What it does |
 | --- | --- |
-| `YOUTUBE_CACHE_DB` | The search cache file. |
+| `YOUTUBE_CACHE_DB` | The search cache database. A `YouTube.json` beside it is imported on the first start. |
 | `YOUTUBE_CACHE` | The directory of downloaded audio. Point it somewhere new and the pod starts empty and re-downloads everything. |
 
 ## Running it
@@ -18,7 +18,7 @@ docker compose up gaida-youtube      # from Backend/
 Or on the host, with `yt-dlp` and `ffmpeg` on `PATH`:
 
 ```bash
-YOUTUBE_CACHE_DB=./YouTube.json YOUTUBE_CACHE=./webm \
+YOUTUBE_CACHE_DB=./YouTube.db YOUTUBE_CACHE=./webm \
   dotnet run --project Platforms/Gaida.Pods.YouTube --urls http://localhost:8082
 ```
 

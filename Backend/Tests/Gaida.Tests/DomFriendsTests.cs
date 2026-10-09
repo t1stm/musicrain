@@ -294,12 +294,10 @@ public class DomFriendsTests : IDisposable
         var store = Store();
         Assert.Equal(["p_1"], store.Public().Select(p => p.Id));
 
-        // any write rewrites the file in the new shape
+        // imported once and never written back: the file stays the way an older image reads it
         User(store, "radost");
-        var written = File.ReadAllText(path);
-        Assert.DoesNotContain("IsPublic", written);
-        Assert.Contains("\"Visibility\": \"public\"", written);
-        Assert.Contains("\"Version\": 2", written);
+        Assert.Contains("IsPublic", File.ReadAllText(path));
+        Assert.Equal(["p_1"], Store().Public().Select(p => p.Id));
     }
 
     private static void Befriend(DomStore store, User inviter, User friend) =>

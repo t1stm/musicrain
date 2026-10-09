@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Gaida Library\Gaida.Core\Gaida.Core.csproj"/>
+    <ProjectReference Include="..\..\Gaida Library\Gaida.Sqlite\Gaida.Sqlite.csproj"/>
   </ItemGroup>
 
   <ItemGroup>

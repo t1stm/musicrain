@@ -55,7 +55,7 @@ public enum LyricsVolume
 }
 
 /// <summary>
-///     One row of <c>Lyrics.json</c>: one track stih has looked at, hit or miss.
+///     One row of <c>Lyrics.db</c>: one track stih has looked at, hit or miss.
 /// </summary>
 /// <param name="Type"><c>null</c> for "looked, found nothing".</param>
 /// <param name="Source"><c>null</c> for a file that was already in the folder.</param>

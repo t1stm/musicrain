@@ -1,110 +1,63 @@
-using System.Text.Encodings.Web;
+using System.Data;
 using System.Text.Json;
+using Dapper;
+using Gaida.Sqlite;
 using Serilog;
 
 namespace Gaida.Platforms.YouTube.Cache;
 
-public class YouTubeCacher(ILogger logger)
+/// <summary>
+///     <c>YouTube.db</c>: every search result this pod has ever seen, so a known ID costs no YouTube call
+///     and discovery has something to pick from.
+/// </summary>
+/// <remarks>
+///     Nothing is held in memory. The JSON file this replaced was rewritten whole on every new search
+///     and held whole on the heap, and it had reached half a million entries.
+/// </remarks>
+public class YouTubeCacher
 {
-    private const string CacheFolder = "./cache";
-    private const string FileName = "YouTube.json";
+    /// <summary><c>PRAGMA user_version</c> once the table exists and <c>YouTube.json</c> is imported.</summary>
+    private const int SchemaVersion = 1;
 
-    private static readonly string CachePath =
-        Environment.GetEnvironmentVariable("YOUTUBE_CACHE_DB", EnvironmentVariableTarget.Process) ??
-        $"{CacheFolder}/{FileName}";
+    private const string Columns = "Id, Name, Artist, Album, Duration, ThumbnailUrl, OriginalTitle, OriginalArtist";
 
-    protected readonly Dictionary<string, YouTubeResult> Cache = new();
+    private readonly string _connectionString;
+    private readonly string _path;
 
-    private readonly JsonSerializerOptions _jsonSerializerOptions = new()
+    /// <param name="logger">Where the cache reports what it did.</param>
+    /// <param name="path">
+    ///     Where the database lives, <c>YOUTUBE_CACHE_DB</c> by default. That variable named the JSON file
+    ///     before, so whatever extension it carries, the database is the <c>.db</c> beside it and the JSON
+    ///     is the legacy import.
+    /// </param>
+    public YouTubeCacher(ILogger logger, string? path = null)
     {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true
-    };
-
-    private readonly SemaphoreSlim _sync = new(1, 1);
-    private ILogger Logger { get; } = logger.ForContext<YouTubeCacher>();
-
-    // ponytail: writes a full snapshot to a temp file and renames it into place, so a crash mid-write
-    // never leaves a half-written cache. The old in-place truncate+append trick was faster but could
-    // corrupt the file if the process died between the truncate and the write (root cause of a real incident).
-    private async Task SaveAsync()
-    {
-        await _sync.WaitAsync();
-        Logger.Debug("Saving YouTube cache to: {CachePath}", CachePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(CachePath)!);
-
-        try
-        {
-            var tempPath = $"{CachePath}.tmp";
-            await using (var file = File.Create(tempPath))
-            {
-                await JsonSerializer.SerializeAsync(file, Cache.Values, _jsonSerializerOptions);
-            }
-
-            File.Move(tempPath, CachePath, true);
-        }
-        catch (Exception e)
-        {
-            Logger.Fatal(e, "Error while saving YouTube cache");
-        }
-        finally
-        {
-            _sync.Release();
-        }
-
-        Logger.Information("Saved YouTube cache successfully to: {CachePath}", CachePath);
+        Logger = logger.ForContext<YouTubeCacher>();
+        _path = Path.ChangeExtension(
+            path ?? Environment.GetEnvironmentVariable("YOUTUBE_CACHE_DB") ?? "./cache/YouTube.db", ".db");
+        _connectionString = Database.At(_path);
     }
 
-    public async Task InitializeAsync()
+    private ILogger Logger { get; }
+
+    public Task InitializeAsync()
     {
-        var alternativeLookup = Cache.GetAlternateLookup<ReadOnlySpan<char>>();
-        var duplicate = false;
+        Logger.Information("Opening YouTube cache at: {CachePath}", _path);
 
-        await _sync.WaitAsync();
-        Logger.Information("Loading YouTube cache from: {CachePath}", CachePath);
-
-        try
-        {
-            if (!File.Exists(CachePath))
-                return;
-
-            await using var file = File.Open(CachePath, FileMode.Open);
-            var deserialized = await JsonSerializer.DeserializeAsync<YouTubeResult[]>(file, _jsonSerializerOptions);
-            Cache.Clear();
-
-            if (deserialized is null)
-                return;
-
-            foreach (var result in deserialized)
-                if (!alternativeLookup.TryAdd(result.GetPureId(), result))
-                    duplicate = true;
-        }
-        catch (Exception e)
-        {
-            Logger.Fatal(e, "Error while loading YouTube cache");
-        }
-        finally
-        {
-            _sync.Release();
-        }
-
-        if (duplicate) await SaveAsync();
+        using var db = Database.Open(_connectionString);
+        Database.Upgrade(db, SchemaVersion, transaction => Create(db, transaction));
+        return Task.CompletedTask;
     }
 
+    /// <summary>Remembers results not seen before. One already cached keeps what it was first cached as.</summary>
     public async Task AddToCacheAsync(IEnumerable<YouTubeResult> results)
     {
-        var cache = Cache.GetAlternateLookup<ReadOnlySpan<char>>();
-        await _sync.WaitAsync();
-        var youTubeResults = results as YouTubeResult[] ?? results.ToArray();
-        Logger.Debug("Adding {Count} YouTube results to cache", youTubeResults.Length);
+        await using var db = Database.Open(_connectionString);
+        await using var transaction = await db.BeginTransactionAsync();
+        var added = Insert(db, results, transaction);
+        await transaction.CommitAsync();
 
-        var youtubeResults = youTubeResults.Where(r => !cache.ContainsKey(r.GetPureId())).ToArray();
-        foreach (var result in youtubeResults) cache.TryAdd(result.GetPureId(), result);
-        _sync.Release();
-
-        if (youtubeResults.Length > 0)
-            await SaveAsync();
+        Logger.Debug("Added {Count} YouTube results to cache", added);
     }
 
     /// <returns>Up to <paramref name="count" /> distinct cached results, fewer when the cache holds fewer.</returns>
@@ -112,23 +65,75 @@ public class YouTubeCacher(ILogger logger)
     {
         if (count < 1) return [];
 
-        await _sync.WaitAsync();
-        // ponytail: copies the whole cache per call; fine for a few thousand entries, reservoir sample if it grows.
-        var results = Cache.Values.ToArray();
-        _sync.Release();
-
-        Random.Shared.Shuffle(results);
-        return results.Length <= count ? results : results[..count];
+        // ponytail: ORDER BY random() visits every row, ~55 ms at half a million. Sample rowids if the
+        // discovery endpoint ever shows up in a trace.
+        await using var db = Database.Open(_connectionString);
+        return (await db.QueryAsync<YouTubeResult>(
+            $"SELECT {Columns} FROM results ORDER BY random() LIMIT @count", new { count })).ToArray();
     }
 
+    /// <param name="id">The bare video ID, without <c>yt://</c>.</param>
     /// <returns>The cached result, or <c>null</c> when the ID isn't cached.</returns>
     public async Task<YouTubeResult?> GetFromCacheAsync(string id)
     {
-        await _sync.WaitAsync();
-        var alternateLookup = Cache.GetAlternateLookup<ReadOnlySpan<char>>();
-        alternateLookup.TryGetValue(id, out var result);
-        _sync.Release();
+        await using var db = Database.Open(_connectionString);
+        return await db.QuerySingleOrDefaultAsync<YouTubeResult>(
+            $"SELECT {Columns} FROM results WHERE Id = @id", new { id = "yt://" + id });
+    }
 
-        return result;
+    /// <summary><c>Id</c> is a field, and Dapper binds parameters from properties only.</summary>
+    private static int Insert(IDbConnection db, IEnumerable<YouTubeResult> results, IDbTransaction transaction)
+    {
+        return db.Execute($"""
+            INSERT OR IGNORE INTO results ({Columns})
+            VALUES (@Id, @Name, @Artist, @Album, @Duration, @ThumbnailUrl, @OriginalTitle, @OriginalArtist)
+            """, results.Select(result => new
+        {
+            result.Id,
+            result.Name,
+            result.Artist,
+            result.Album,
+            result.Duration,
+            result.ThumbnailUrl,
+            result.OriginalTitle,
+            result.OriginalArtist
+        }), transaction);
+    }
+
+    /// <summary>
+    ///     The table, and the entries of the <c>YouTube.json</c> an older version wrote. The JSON stays
+    ///     where it is, for an older image pointed at this volume.
+    /// </summary>
+    private void Create(IDbConnection db, IDbTransaction transaction)
+    {
+        db.Execute("""
+            CREATE TABLE IF NOT EXISTS results (
+                Id TEXT PRIMARY KEY,
+                Name TEXT,
+                Artist TEXT,
+                Album TEXT,
+                Duration TEXT NOT NULL,
+                ThumbnailUrl TEXT,
+                OriginalTitle TEXT,
+                OriginalArtist TEXT
+            ) STRICT
+            """, transaction: transaction);
+
+        var legacy = Path.ChangeExtension(_path, ".json");
+        if (!File.Exists(legacy)) return;
+
+        try
+        {
+            using var file = File.OpenRead(legacy);
+            var results = JsonSerializer.Deserialize<YouTubeResult[]>(file, JsonSerializerOptions.Web) ?? [];
+            var added = Insert(db, results, transaction);
+            Logger.Information("Imported {Count} of {Total} YouTube results from {Path}", added, results.Length,
+                legacy);
+        }
+        catch (JsonException e)
+        {
+            // As before: an unreadable cache costs re-searching YouTube, nothing else.
+            Logger.Fatal(e, "Error while importing the YouTube cache from {Path}; starting empty", legacy);
+        }
     }
 }

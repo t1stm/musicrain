@@ -6,7 +6,7 @@ namespace Stih;
 ///     The backfill: what turns "usable" into a library that fills up on its own.
 /// </summary>
 /// <remarks>
-///     Progress is <c>Info.json</c> and <c>Lyrics.json</c> themselves. There is no resume marker to
+///     Progress is gaida-local's index and <c>Lyrics.db</c> themselves. There is no resume marker to
 ///     corrupt — a pod restarted mid-sweep asks for a page and gets the tracks it had not reached.
 /// </remarks>
 public sealed class Sweep(

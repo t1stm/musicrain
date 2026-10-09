@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text.Json;
 
 namespace Gaida.Platforms.MusicDatabase.Manager;
 
@@ -8,53 +7,12 @@ public class CoverExtractor
     private static readonly Lock ExportLock = new();
     private string _exportLocation = "./Album_Covers";
 
-    public void Extract(string location)
-    {
-        _exportLocation = Environment.GetEnvironmentVariable("ALBUM_COVERS", EnvironmentVariableTarget.Process) ??
-                         _exportLocation;
-
-        Directory.CreateDirectory(_exportLocation);
-        Parallel.ForEach(
-            Directory.GetDirectories(location, "*", SearchOption.AllDirectories)
-                .Where(folder => File.Exists($"{folder}/Info.json")),
-            ParseFolder);
-    }
-
-    private void ParseFolder(string folder)
-    {
-        using var fileStream = File.Open($"{folder}/Info.json", FileMode.Open, FileAccess.ReadWrite,
-            FileShare.ReadWrite);
-
-        if (fileStream.Length == 0) return;
-
-        var items = JsonSerializer.Deserialize<List<MusicInfo>>(fileStream, MusicInfo.SerializerOptions) ?? [];
-        var change = false;
-
-        foreach (var info in items.Where(m => string.IsNullOrWhiteSpace(m.CoverUrl)))
-        {
-            if (ExportCover(info.ToMusicResult([]).Path) is not { } cover) continue;
-
-            // The placeholder form, because this writes the file itself rather than going through the
-            // load that substitutes it — see MusicInfo.StoredCoverUrl.
-            info.CoverUrl = $"$[DOMAIN]/{cover}";
-            change = true;
-        }
-
-        if (!change) return;
-
-        fileStream.SetLength(0);
-        fileStream.Position = 0;
-        JsonSerializer.Serialize(fileStream, items, MusicInfo.SerializerOptions);
-    }
-
     /// <summary>
     ///     Writes the embedded cover of one audio file into the export directory, deduplicated by content.
     /// </summary>
     /// <remarks>
-    ///     Pulled out of <see cref="ParseFolder" /> so the admin import path can extract a cover for the one
-    ///     file it just wrote, instead of waiting for the next full <see cref="Extract" /> at startup. The
-    ///     caller decides what URL to record: the folder pass writes the <c>$[DOMAIN]</c> placeholder straight
-    ///     to disk, while an import is updating an entry already in memory and needs the substituted form.
+    ///     One file at a time, so the scan's cover pass and the admin import path share it. The caller
+    ///     decides what URL to record.
     /// </remarks>
     /// <returns>The cover's file name (<c>&lt;hash&gt;.jpg</c>), or <c>null</c> when the file carries none.</returns>
     public string? ExportCover(string location)

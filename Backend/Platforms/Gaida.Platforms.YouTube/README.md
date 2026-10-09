@@ -4,7 +4,7 @@ YouTube as a platform: keyword search, playlist expansion, random picks and audi
 
 This project is the platform, not a deployable. [Gaida.Pods.YouTube](../Gaida.Pods.YouTube) wraps it in HTTP; [Gaida.Bot](../../Services/Gaida.Bot) uses it in-process.
 
-`YOUTUBE_CACHE_DB` points at the search cache file, `YOUTUBE_CACHE` at the directory of downloaded audio.
+`YOUTUBE_CACHE_DB` points at the search cache database (a `.json` path still works: the database goes beside it, with the extension swapped), `YOUTUBE_CACHE` at the directory of downloaded audio.
 
 ## Using it
 
@@ -17,15 +17,15 @@ dotnet test Tests/Pods.Tests         # from Backend/ — cacher and getter tests
 ## Interesting techniques
 
 - **Priority chains rather than conditionals.** Search providers and content getters are ordered by a `Priority` property at `Initialize()`, then tried in turn until one answers. Content goes local cache (99), then [YoutubeExplode](https://github.com/Tyrrrz/YoutubeExplode) (40), then [yt-dlp](https://github.com/yt-dlp/yt-dlp) (20) — the slow, reliable one last. Adding a source is adding a class, not editing a branch.
-- **Crash-safe cache writes.** [YouTubeCacher.cs](Cache/YouTubeCacher.cs) writes a full snapshot to `<file>.tmp` and renames it into place. The earlier in-place truncate-and-append was faster and could leave a half-written cache if the process died between the two — the root cause of a real incident.
 - **A search cache that survives the API it wraps.** Results are stored keyed by query, so a repeat search costs nothing and a YouTube outage still answers for everything seen before.
-- **Relaxed JSON escaping on purpose.** The cache is written with `JavaScriptEncoder.UnsafeRelaxedJsonEscaping`, which keeps non-Latin titles readable in a file an operator will open by hand.
+- **A cache that is never in memory.** Every search result ever seen is one row in `YouTube.db`, inserted once and looked up by ID. The JSON file it replaced was rewritten whole on every new search and held whole on the heap; at half a million entries that was 173 MB per write. A `YouTube.json` beside the database is imported once, on the first start with no database, and left where it is.
 - **Span-based prefix matching.** ID identifiers are matched through `HashSet<string>.GetAlternateLookup<ReadOnlySpan<char>>()`, so classifying a query allocates nothing.
 
 ## Technologies worth a look
 
 - [YoutubeExplode](https://github.com/Tyrrrz/YoutubeExplode) — YouTube's own endpoints, no API key and no quota
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) as the fallback getter, invoked as a process and expected on `PATH`
+- [Microsoft.Data.Sqlite](https://learn.microsoft.com/dotnet/standard/data/sqlite/) and [Dapper](https://github.com/DapperLib/Dapper) for the search cache, through the shared [Gaida.Sqlite](../../Gaida%20Library/Gaida.Sqlite)
 - [Serilog](https://serilog.net/), through the shared [Gaida.Core](../../Gaida%20Library/Gaida.Core) abstractions
 
 ## Project structure
@@ -37,7 +37,7 @@ dotnet test Tests/Pods.Tests         # from Backend/ — cacher and getter tests
 └── Search Providers/
 ```
 
-[Cache](Cache) holds `YouTubeCacher`, the JSON search cache and its atomic writer.
+[Cache](Cache) holds `YouTubeCacher`, the SQLite search cache.
 
 [Search Providers](Search%20Providers) holds two: the cached one, and the YoutubeExplode one behind it.
 

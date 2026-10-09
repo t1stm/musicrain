@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Data.Sqlite;
 
 namespace Stih;
 
@@ -80,32 +81,53 @@ internal static class SelfCheck
         var row = new LyricsRow("audio://x", LyricsKind.Synchronized, LyricsOrigin.Lrclib,
             LyricsVolume.Library, "Rock/x.lrc", DateTimeOffset.UtcNow);
 
-        var index = new LyricsIndex(scratch.Path, Quiet);
-        index.Record(row);
-        index.DisposeAsync().AsTask().GetAwaiter().GetResult();
-
+        new LyricsIndex(scratch.Path, Quiet).Record(row);
         var reloaded = new LyricsIndex(scratch.Path, Quiet);
         var round = reloaded.Get("audio://x");
-        // Read before the torn-file check below overwrites it.
-        var written = File.ReadAllText(Path.Combine(scratch.Path, "Lyrics.json"));
+
+        using var raw = new SqliteConnection($"Data Source={Path.Combine(scratch.Path, "Lyrics.db")}");
+        raw.Open();
+        using var read = raw.CreateCommand();
+        read.CommandText = "SELECT Source FROM lyrics";
+        var written = read.ExecuteScalar() as string;
+
+        reloaded.Forget("audio://x");
 
         var old = new LyricsRow("audio://old", null, null, null, null, DateTimeOffset.UtcNow.AddDays(-40));
         var recent = new LyricsRow("audio://recent", null, null, null, null, DateTimeOffset.UtcNow.AddDays(-1));
         var hit = new LyricsRow("audio://hit", LyricsKind.Unsynchronized, null, LyricsVolume.Own, "deezer/1.txt",
             DateTimeOffset.UtcNow.AddYears(-3));
 
-        File.WriteAllText(Path.Combine(scratch.Path, "Lyrics.json"), "{not json");
-        var torn = new LyricsIndex(scratch.Path, Quiet);
+        // What an older version left behind: the rows come over once, and the file stays for that version.
+        using var legacy = new ScratchDirectory();
+        var legacyFile = Path.Combine(legacy.Path, "Lyrics.json");
+        File.WriteAllText(legacyFile, """
+            [{"Id":"audio://y","Type":"Synchronized","Source":"LRCLIB","Volume":"Library","Path":"Rock/y.lrc",
+              "Checked":"2026-01-02T03:04:05+00:00"},
+             {"Id":"audio://z","Type":null,"Source":null,"Volume":null,"Path":null,"Checked":"2026-01-02T03:04:05+00:00"}]
+            """);
+        var imported = new LyricsIndex(legacy.Path, Quiet);
+        File.WriteAllText(legacyFile, "[]");
+        var importedOnce = new LyricsIndex(legacy.Path, Quiet);
 
-        return Check("a row round-trips through the file",
-                   round is { Type: LyricsKind.Synchronized, Source: LyricsOrigin.Lrclib, Path: "Rock/x.lrc" })
-               & Check("the file names the values rather than numbering them",
-                   written.Contains("\"Synchronized\""))
+        using var torn = new ScratchDirectory();
+        File.WriteAllText(Path.Combine(torn.Path, "Lyrics.json"), "{not json");
+
+        return Check("a row round-trips through the table",
+                   round is { Type: LyricsKind.Synchronized, Source: LyricsOrigin.Lrclib, Path: "Rock/x.lrc" } &&
+                   Math.Abs((round.Checked - row.Checked).TotalMilliseconds) < 1)
+               & Check("the table names the values rather than numbering them", written == "Lrclib")
+               & Check("a forgotten row is gone", reloaded.Get("audio://x") is null && reloaded.Count == 0)
+               & Check("Lyrics.json is imported, LRCLIB and all",
+                   imported.Get("audio://y") is { Source: LyricsOrigin.Lrclib, Type: LyricsKind.Synchronized } &&
+                   imported.Get("audio://z") is { Type: null } && File.Exists(legacyFile))
+               & Check("and only once", importedOnce.Count == 2)
                & Check("a miss inside the retry window is believed",
                    LyricsIndex.IsFresh(recent, TimeSpan.FromDays(30)))
                & Check("a miss outside it is not", !LyricsIndex.IsFresh(old, TimeSpan.FromDays(30)))
                & Check("a hit is never re-fetched", LyricsIndex.IsFresh(hit, TimeSpan.FromDays(30)))
-               & Check("a torn index loads as empty rather than failing the boot", torn.Count == 0);
+               & Check("a torn Lyrics.json imports as empty rather than failing the boot",
+                   new LyricsIndex(torn.Path, Quiet).Count == 0);
     }
 
     private static bool Paths()

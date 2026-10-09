@@ -19,7 +19,10 @@ public enum LyricsOrigin { Deezer, [JsonStringEnumMemberName("LRCLIB")] Lrclib }
 
 public class MusicInfo : IJsonOnDeserialized
 {
-    /// <summary>Layout of the per-artist Info.json files on disk. Property names are the on-disk names.</summary>
+    /// <summary>
+    ///     Layout of the per-folder Info.json files older versions kept, read once to import each folder into
+    ///     library.db. Property names are the on-disk names.
+    /// </summary>
     public static readonly JsonSerializerOptions SerializerOptions = new()
     {
         Converters = { new JsonStringEnumConverter() },
@@ -79,15 +82,15 @@ public class MusicInfo : IJsonOnDeserialized
     public string? CoverUrl { get; set; }
 
     /// <summary>
-    ///     What <c>CoverUrl</c> looks like on disk: the host is a <c>$[DOMAIN]</c> placeholder, which
+    ///     What <c>CoverUrl</c> looks like stored: the host is a <c>$[DOMAIN]</c> placeholder, which
     ///     <see cref="MusicManager.Load" /> substitutes on the way in.
     /// </summary>
     /// <remarks>
-    ///     The substitution used to be one-way, which was harmless while only the loader wrote
-    ///     <c>Info.json</c> — it writes entries it has not substituted yet. An admin edit saves an entry
-    ///     that has been, and without this it would bake this host's domain into the library file, so
-    ///     the covers would break the next time <c>DOMAIN</c> changed. Round-tripping it here is one
-    ///     property instead of a rule every writer has to remember.
+    ///     The substitution used to be one-way, which was harmless while only the loader wrote the index —
+    ///     it writes entries it has not substituted yet. An admin edit saves an entry that has been, and
+    ///     without this it would bake this host's domain into the library's rows, so the covers would
+    ///     break the next time <c>DOMAIN</c> changed. Round-tripping it here is one property instead of a
+    ///     rule every writer has to remember.
     /// </remarks>
     [JsonPropertyName("CoverUrl")]
     public string? StoredCoverUrl

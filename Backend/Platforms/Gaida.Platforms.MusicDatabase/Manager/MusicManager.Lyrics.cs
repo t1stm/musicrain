@@ -45,7 +45,7 @@ public partial class MusicManager
     /// <remarks>
     ///     It writes no lyrics file — stih has already done that on the shared volume, and this call only
     ///     records what it did. Under the edit gate for the same reason <see cref="EditAsync" /> is: both
-    ///     rewrite one entry and then its folder's Info.json.
+    ///     rewrite one entry and then its row.
     /// </remarks>
     public async Task<(MusicInfo? entry, string? error)> StampLyricsAsync(string id, LyricsKind? kind,
         LyricsOrigin? source)
@@ -63,7 +63,7 @@ public partial class MusicManager
             entry.LyricsSource = kind is null ? null : source;
             if (kind is null) entry.LyricsChecked = DateOnly.FromDateTime(DateTime.UtcNow);
 
-            await SaveFolderAsync(entry.RelativeLocation);
+            Write([entry]);
             Logger.Information("Stamped lyrics on {ID}: {Kind} from {Source}", id, kind, source);
 
             return (entry, null);

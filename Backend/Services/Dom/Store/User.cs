@@ -39,7 +39,7 @@ public sealed class User
     /// </summary>
     public List<string> Friends { get; set; } = [];
 
-    /// <summary>Two accounts may not differ only by case. Derived, so it is not written to the file.</summary>
+    /// <summary>Two accounts may not differ only by case. Derived; the database keys accounts by it.</summary>
     [JsonIgnore]
     public string Key => Normalize(Username);
 
@@ -56,8 +56,8 @@ public sealed class Token
 }
 
 /// <summary>
-///     The whole file. Versioned so a later shape can be migrated rather than guessed at. Version 2
-///     replaced <see cref="Playlist.IsPublic" /> with <see cref="Playlist.Visibility" />.
+///     The whole <c>dom.json</c> older versions wrote, read once to import it. Version 2 replaced
+///     <see cref="Playlist.IsPublic" /> with <see cref="Playlist.Visibility" />.
 /// </summary>
 public sealed class DomState
 {

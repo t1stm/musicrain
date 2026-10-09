@@ -1,11 +1,13 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Gaida.Admin;
 using Gaida.Core.Platforms;
 using Gaida.Core.Streams;
 using Gaida.Platforms.MusicDatabase;
 using Gaida.Platforms.MusicDatabase.Manager;
 using JetBrains.Annotations;
+using Microsoft.Data.Sqlite;
 using Serilog;
 
 // `dotnet run -- selftest` runs the pure-logic check below without needing a library or a
@@ -512,7 +514,7 @@ static async Task RunSelfCheck()
 // The Deezer import, against a throwaway library. Four things would go wrong quietly: the file has
 // to land where the rest of the library lives (Deezer/<artist>/<artist> - <title>), the artist
 // folder is what keeps "Deezer" out of the entry's own artist list, the entry has to reach
-// Info.json (otherwise it is gone on the next restart), and a second import of the same track must
+// library.db (otherwise it is gone on the next restart), and a second import of the same track must
 // be refused rather than overwrite a file whose entry someone may already have renamed.
 //
 // The bytes are not real audio, which is the point: ffprobe reads no tags out of them, so what is
@@ -548,8 +550,7 @@ static async Task ImportCheck(Action<bool, string> assert)
         assert(!entry.Artists.Contains("Deezer"), "import: the source folder is not one of the artists");
         assert(entry.Artists.Contains("Daft Punk"), "import: the artist folder is the artist");
 
-        var saved = await File.ReadAllTextAsync(Path.Combine(root, "Deezer", "Daft Punk", "Info.json"));
-        assert(saved.Contains("Harder"), "import: the entry reached Info.json, so it survives a restart");
+        assert(Stored(root).Contains("Harder"), "import: the entry reached library.db, so it survives a restart");
 
         var found = database.FindForAdmin("Harder", 10);
         assert(found.Count == 1, "import: the entry is in the in-memory library straight away");
@@ -617,8 +618,8 @@ static async Task RescanCheck(Action<bool, string> assert)
         var after = database.FindForAdmin("Queen", 10);
         assert(after.Count == 2, $"rescan: the file added after boot is in the library ({after.Count})");
         assert(after.Any(song => song.Id == before[0].Id), "rescan: the existing entry kept its ID");
-        assert((await File.ReadAllTextAsync(Path.Combine(folder, "Info.json"))).Contains("Somebody"),
-            "rescan: the new entry reached Info.json");
+        assert(Stored(root).Contains("Somebody"), "rescan: the new entry reached library.db");
+        assert(!File.Exists(Path.Combine(folder, "Info.json")), "rescan: no Info.json is written any more");
 
         bool Scanning() => System.Text.Json.JsonSerializer.Serialize(database.Summary()).Contains("\"scanning\":true");
     }
@@ -633,7 +634,8 @@ static async Task RescanCheck(Action<bool, string> assert)
 // the library to fill an album would orphan every playlist, cache key and recently-played entry
 // that holds one. The media file is a stand-in with no tags, so ffprobe finds no album and only the
 // bookkeeping is under test. A second entry has no file at all: it is left out of the library and
-// kept in Info.json, where it would come back with its ID if the file did.
+// kept in library.db, where it would come back with its ID if the file did. The library starts as the
+// Info.json an older version wrote, so this is the import path too.
 static async Task BackfillCheck(Action<bool, string> assert)
 {
     var root = Path.Combine(Path.GetTempPath(), "gaida-local-backfill-" + Guid.NewGuid().ToString("n"));
@@ -661,10 +663,19 @@ static async Task BackfillCheck(Action<bool, string> assert)
         assert(songs[0].Id == "ducome-un", "backfill: the ID survives it -- playlists and cache keys hold it");
         assert(songs[0].Scan == MusicManager.ScanVersion, "backfill: the entry is stamped with the pass that read it");
 
-        var saved = await File.ReadAllTextAsync(info);
-        assert(saved.Contains($"\"Scan\": {MusicManager.ScanVersion}"), "backfill: the stamp reached the file, so it runs once");
+        var saved = Stored(root);
+        assert(saved.Contains($"Scan={MusicManager.ScanVersion}"), "backfill: the stamp reached library.db, so it runs once");
         assert(saved.Contains("ducome-un"), "backfill: the saved entry kept its ID");
-        assert(saved.Contains("duordin-ar"), "backfill: an entry whose file is gone stays in Info.json");
+        assert(saved.Contains("duordin-ar"), "backfill: an entry whose file is gone stays in library.db");
+        assert(!(await File.ReadAllTextAsync(info)).Contains("Scan"),
+            "backfill: the Info.json it was imported from is left exactly as an older version wrote it");
+
+        // Imported once: what the file says now is not read again.
+        await File.WriteAllTextAsync(info, "[]");
+        var again = new MusicDatabase(Serilog.Core.Logger.None);
+        await again.InitializeAsync();
+        assert(again.FindForAdmin("Duran Duran", 10).SingleOrDefault()?.Id == "ducome-un",
+            "backfill: a restart reads library.db, not the Info.json it was imported from");
     }
     finally
     {
@@ -672,9 +683,9 @@ static async Task BackfillCheck(Action<bool, string> assert)
     }
 }
 
-// The admin edit path, against a throwaway library built from one Info.json. Covers the two things
+// The admin edit path, against a throwaway library imported from one Info.json. Covers the two things
 // that would go wrong quietly: an edit must not re-roll the ID that playlists and cache keys hold,
-// and the saved file must keep the $[DOMAIN] placeholder rather than this host's domain.
+// and the saved row must keep the $[DOMAIN] placeholder rather than this host's domain.
 static async Task EditCheck(Action<bool, string> assert)
 {
     var root = Path.Combine(Path.GetTempPath(), "gaida-local-selfcheck-" + Guid.NewGuid().ToString("n"));
@@ -710,8 +721,8 @@ static async Task EditCheck(Action<bool, string> assert)
         assert(edited.Title == "You're My Best Friend", "edit: the first title becomes the display name");
         assert(edited.Artists.Count == 2, "edit: every artist variant is kept");
 
-        var saved = await File.ReadAllTextAsync(info);
-        assert(saved.Contains("You're My Best Friend"), "edit: the new name reached the file");
+        var saved = Stored(root);
+        assert(saved.Contains("You're My Best Friend"), "edit: the new name reached library.db");
         assert(saved.Contains("$[DOMAIN]"), "edit: the cover placeholder is written back, not this host's domain");
         assert(!saved.Contains("music.example.com"), "edit: no absolute domain was baked into the library");
 
@@ -733,6 +744,27 @@ static async Task EditCheck(Action<bool, string> assert)
 
 // ── DTO shapes. Deliberately not shared with Gaida.API/Contracts/DiscoveryContracts.cs: this pod
 // doesn't know the public host (no contentUrl), and Gaida.API adds fields (contentUrl) this must not. ──
+
+// Every row library.db holds, as "column=value" lines: what the self-checks search where they used to
+// read Info.json back.
+static string Stored(string root)
+{
+    using var db = new SqliteConnection($"Data Source={Path.Combine(root, "library.db")}");
+    db.Open();
+
+    var text = new StringBuilder();
+    foreach (var table in (string[])["songs", "song_titles", "song_artists"])
+    {
+        using var command = db.CreateCommand();
+        command.CommandText = $"SELECT * FROM {table}";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+            for (var column = 0; column < reader.FieldCount; column++)
+                text.Append(reader.GetName(column)).Append('=').Append(reader.GetValue(column)).Append('\n');
+    }
+
+    return text.ToString();
+}
 
 [UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record ResultDto(

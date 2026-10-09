@@ -60,7 +60,7 @@ Every host-specific value and every secret lives in `.env` beside [compose.yaml]
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `MUSIC_LIBRARY_PATH` | `./data/music` | The music library, mounted read-write — the scanner rewrites `Info.json` in place. |
+| `MUSIC_LIBRARY_PATH` | `./data/music` | The music library, mounted read-write — the scanner keeps its index, `library.db`, at the root. |
 | `ALBUM_COVERS_PATH` | `./data/covers` | Where extracted album art is written, and what nginx serves as `/Album_Covers`. |
 | `PUBLIC_DOMAIN` | `http://localhost` | Public prefix substituted into every cover URL. Needs the scheme. |
 | `PUBLIC_API_BASE_URL` | `http://localhost:5340` | What the API hands out as `contentUrl`. |
@@ -124,6 +124,7 @@ dotnet run --project Platforms/Gaida.Pods.YouTube -- --self-check
 
 - [.NET 10](https://dotnet.microsoft.com/) minimal APIs, with `IAsyncEnumerable<T>` as the streaming primitive and `.slnx` as the solution format
 - [Serilog](https://serilog.net/) with [Serilog.Expressions](https://github.com/serilog/serilog-expressions) for structured logging
+- [SQLite](https://sqlite.org/) for every store that outlives a restart — [Microsoft.Data.Sqlite](https://learn.microsoft.com/dotnet/standard/data/sqlite/) and [Dapper](https://github.com/DapperLib/Dapper) in the .NET services, the standard library's `sqlite3` in the Deezer pod
 - [TagLib#](https://github.com/mono/taglib-sharp) — reads ID3v2, FLAC and WavPack tags out of the library
 - [YoutubeExplode](https://github.com/Tyrrrz/YoutubeExplode), with [yt-dlp](https://github.com/yt-dlp/yt-dlp) as the fallback getter
 - [FFmpeg](https://ffmpeg.org/) for on-the-fly transcoding
@@ -146,11 +147,12 @@ dotnet run --project Platforms/Gaida.Pods.YouTube -- --self-check
 ├── Gaida Library/
 │   ├── Gaida.Admin/
 │   ├── Gaida.CLI/
-│   └── Gaida.Core/
-│       ├── FFmpeg/
-│       ├── Platforms/
-│       ├── Streams/
-│       └── Utils/
+│   ├── Gaida.Core/
+│   │   ├── FFmpeg/
+│   │   ├── Platforms/
+│   │   ├── Streams/
+│   │   └── Utils/
+│   └── Gaida.Sqlite/
 ├── Platforms/
 │   ├── Gaida.Platforms.MusicDatabase/
 │   ├── Gaida.Platforms.YouTube/
@@ -176,7 +178,7 @@ dotnet run --project Platforms/Gaida.Pods.YouTube -- --self-check
 └── nginx.example.conf
 ```
 
-[Gaida Library/Gaida.Core](Gaida%20Library/Gaida.Core) is the shared library every service builds on. `Platforms/` holds the abstract `Platform`, its `ISupports*` capability interfaces and `HttpPlatform`, the adapter that makes a remote pod look like an in-process one. `Streams/` holds `StreamSpreader`. `Utils/` holds the matching, romanization and parallel-streaming helpers.
+[Gaida Library/Gaida.Core](Gaida%20Library/Gaida.Core) is the shared library every service builds on. `Platforms/` holds the abstract `Platform`, its `ISupports*` capability interfaces and `HttpPlatform`, the adapter that makes a remote pod look like an in-process one. `Streams/` holds `StreamSpreader`. `Utils/` holds the matching, romanization and parallel-streaming helpers. [Gaida.Sqlite](Gaida%20Library/Gaida.Sqlite) is the little every .NET store shares — opening a database, the Dapper type handlers, and a schema upgrade keyed off `PRAGMA user_version` — and only the projects with a database reference it.
 
 [Platforms](Platforms) splits each service in two. `Gaida.Platforms.*` is library code — search providers and content getters. `Gaida.Pods.*` is the deployable that wraps one of them in HTTP, or, for Spotify and Deezer, a standalone Python app. Each of the six has its own README.
 

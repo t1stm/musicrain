@@ -1,10 +1,13 @@
 """
 The downloaded-song cache: this pod's only state, and the only reason it needs a volume.
 
-Two files per track in one flat directory: ``<id>.mp3`` or ``<id>.flac`` beside ``<id>.json``. The JSON
-sidecar is what makes the cache self-describing: Oko's table and the local pod's import both read a cached track's name, artist and
-format out of it rather than asking Deezer again, and a pod that restarts rebuilds its whole index from
-one directory scan.
+One audio file per track in one flat directory, ``<id>.mp3`` or ``<id>.flac``, and one row per track in
+``cache.db`` beside them. The row is what makes the cache self-describing: Oko's table and the local pod's
+import both read a cached track's name, artist and format out of it rather than asking Deezer again, and
+a pod that restarts rebuilds its whole index from one query.
+
+Older versions wrote a ``<id>.json`` sidecar per track instead. A ``cache.db`` that is new imports them
+once and leaves them where they are, so an older image pointed at this volume still finds its index.
 
 Nothing here is async. Every method is called from a worker thread (``asyncio.to_thread`` in
 :mod:`main`), which is also where the download that feeds it runs.
@@ -14,9 +17,10 @@ import asyncio
 import json
 import logging
 import os
+import sqlite3
 import threading
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import astuple, dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +64,13 @@ class Entry:
         }
 
 
+_COLUMNS = [field.name for field in fields(Entry)]
+_INSERT = f"INSERT OR REPLACE INTO entries VALUES ({', '.join('?' * len(_COLUMNS))})"
+
+SCHEMA_VERSION = 1
+"""``PRAGMA user_version`` once the table exists and the sidecars are imported. 0 is a new file."""
+
+
 class Cache:
     """
     Every downloaded track, indexed in memory and backed by the directory.
@@ -81,6 +92,11 @@ class Cache:
         self._downloads: dict[str, asyncio.Lock] = {}
 
         self.directory.mkdir(parents=True, exist_ok=True)
+
+        # One connection for every worker thread, so every statement runs under self._lock.
+        self._db = sqlite3.connect(self.directory / "cache.db", check_same_thread=False)
+        self._db.execute("PRAGMA journal_mode=WAL")
+        self._db.execute("PRAGMA synchronous=NORMAL")
         self._load()
 
     # ── reading ─────────────────────────────────────────────────────────────────────────────────
@@ -157,7 +173,9 @@ class Cache:
             if previous is not None and previous.format != audio_format:
                 _remove(self.directory / previous.filename)
 
-        (self.directory / f"{track_id}.json").write_text(json.dumps(asdict(entry)), encoding="utf-8")
+            with self._db:
+                self._db.execute(_INSERT, astuple(entry))
+
         self._evict_to_cap()
 
         log.info("Cached %s as %s (%d bytes)", track_id, audio_format, entry.bytes)
@@ -167,6 +185,7 @@ class Cache:
         """Deletes every file one track owns. ``False`` when it was not cached."""
         with self._lock:
             entry = self._entries.pop(track_id, None)
+            self._forget([track_id])
 
         if entry is None:
             return False
@@ -180,6 +199,8 @@ class Cache:
         with self._lock:
             entries = list(self._entries.values())
             self._entries.clear()
+            with self._db:
+                self._db.execute("DELETE FROM entries")
 
         for entry in entries:
             self._delete(entry)
@@ -207,32 +228,59 @@ class Cache:
     # ── internals ───────────────────────────────────────────────────────────────────────────────
 
     def _load(self) -> None:
-        """One directory scan at startup. A sidecar without its audio, or the reverse, is not cached."""
-        loaded: dict[str, Entry] = {}
-        for sidecar in self.directory.glob("*.json"):
-            try:
-                entry = Entry(**json.loads(sidecar.read_text(encoding="utf-8")))
-            except (OSError, ValueError, TypeError):
-                log.warning("Ignoring unreadable cache sidecar %s", sidecar.name)
-                continue
+        """One query at startup. A row without its audio is not cached, and does not stay."""
+        with self._lock:
+            if self._db.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION:
+                self._create()
 
-            if (self.directory / entry.filename).exists():
-                loaded[entry.id] = entry
-            else:
-                _remove(sidecar)
-                _remove(self.directory / f"{entry.id}.lrc")
+            rows = [Entry(*row) for row in self._db.execute(f"SELECT {', '.join(_COLUMNS)} FROM entries")]
+            loaded = {entry.id: entry for entry in rows if (self.directory / entry.filename).exists()}
+            self._forget([entry.id for entry in rows if entry.id not in loaded])
+
+        for entry in rows:
+            if entry.id not in loaded:
+                self._delete(entry)
 
         self._entries = loaded
         log.info("Loaded %d cached tracks from %s", len(loaded), self.directory)
 
+    def _create(self) -> None:
+        """
+        The table, and every sidecar an older version of this pod wrote. The import and the version bump
+        commit together, so a crash halfway leaves user_version at 0 and the next start imports again.
+        """
+        imported: list[Entry] = []
+        for sidecar in self.directory.glob("*.json"):
+            try:
+                imported.append(Entry(**json.loads(sidecar.read_text(encoding="utf-8"))))
+            except (OSError, ValueError, TypeError):
+                log.warning("Ignoring unreadable cache sidecar %s", sidecar.name)
+
+        with self._db:
+            self._db.execute("""CREATE TABLE IF NOT EXISTS entries (
+                id TEXT PRIMARY KEY, format TEXT NOT NULL, bytes INTEGER NOT NULL, at REAL NOT NULL,
+                name TEXT NOT NULL, artist TEXT NOT NULL, album TEXT, duration TEXT NOT NULL,
+                thumbnailUrl TEXT)""")
+            self._db.executemany(_INSERT, [astuple(entry) for entry in imported])
+            self._db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+        if imported:
+            log.info("Imported %d cache sidecars into %s", len(imported), self.directory / "cache.db")
+
+    def _forget(self, track_ids: list[str]) -> None:
+        """Drops rows. Caller holds ``self._lock``."""
+        if track_ids:
+            with self._db:
+                self._db.executemany("DELETE FROM entries WHERE id = ?", [(track_id,) for track_id in track_ids])
+
     def _delete(self, entry: Entry) -> None:
         """
-        Every file one cached track owns: the audio and the JSON sidecar.
+        Every file one cached track owns: the audio. Its row is the caller's to drop.
 
-        The ``.lrc`` is gone -- stih holds the timed lines now -- but deleting it stays, here and in
-        :meth:`_load`, because files an older version of this pod wrote are still sitting in deployed
-        volumes and this is the cheapest way to clear them out over time. Drop the two lines once every
-        deployment has rotated through its cache.
+        The ``.lrc`` and the JSON sidecar are gone -- stih holds the timed lines now, and ``cache.db`` the
+        metadata -- but deleting them stays, because files an older version of this pod wrote are still
+        sitting in deployed volumes and this is the cheapest way to clear them out over time. Drop the two
+        lines once every deployment has rotated through its cache.
         """
         _remove(self.directory / entry.filename)
         _remove(self.directory / f"{entry.id}.json")
@@ -262,6 +310,8 @@ class Cache:
                 doomed.append(entry)
                 del self._entries[entry.id]
                 total -= entry.bytes
+
+            self._forget([entry.id for entry in doomed])
 
         for entry in doomed:
             self._delete(entry)

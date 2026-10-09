@@ -19,6 +19,7 @@
          LevenshteinDistance the library's own matcher does, so a lyrics match and a search hit agree. -->
     <ProjectReference Include="..\..\Gaida Library\Gaida.Core\Gaida.Core.csproj"/>
     <ProjectReference Include="..\..\Gaida Library\Gaida.Admin\Gaida.Admin.csproj"/>
+    <ProjectReference Include="..\..\Gaida Library\Gaida.Sqlite\Gaida.Sqlite.csproj"/>
   </ItemGroup>
 
 </Project>

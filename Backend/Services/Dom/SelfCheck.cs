@@ -1,5 +1,6 @@
-using System.Text.Json;
+using System.Text;
 using Dom.Store;
+using Microsoft.Data.Sqlite;
 using ILogger = Serilog.ILogger;
 using Serilog;
 
@@ -7,7 +8,7 @@ namespace Dom;
 
 /// <summary>
 ///     The pieces of Dom worth proving runnable: the password path, the token path, and the fact that
-///     the file it writes reloads into the same accounts. Run with
+///     the database it writes reloads into the same accounts. Run with
 ///     <c>dotnet run --project Dom -- --self-check</c>.
 /// </summary>
 /// <remarks>
@@ -87,7 +88,7 @@ internal static class SelfCheck
         return ok;
     }
 
-    /// <summary>The file is the account. A restart has to be invisible.</summary>
+    /// <summary>The database is the account. A restart has to be invisible.</summary>
     private static bool Persistence()
     {
         using var scratch = new ScratchFile();
@@ -104,8 +105,8 @@ internal static class SelfCheck
                  && reloaded.Resolve(token)?.Username == "Радост"
                  && reloaded.Login("радост", "correct horse battery").token is not null
                  && reloaded.Login("радост", "wrong").error == "invalid_credentials"
-                 // the password itself must not be anywhere in the file
-                 && !File.ReadAllText(scratch.Path).Contains("correct horse battery");
+                 // the password itself must not be anywhere on disk
+                 && !scratch.Bytes().Contains("correct horse battery");
 
         Report(ok, "accounts, tokens and password hashes survive a restart",
             $"users={reloaded.UserCount} tokenResolved={reloaded.Resolve(token) is not null}");
@@ -113,7 +114,7 @@ internal static class SelfCheck
         return ok;
     }
 
-    /// <summary>An expired token is not a token. Aged on disk, because that is where the expiry lives.</summary>
+    /// <summary>An expired token is not a token. Aged in the database, because that is where the expiry lives.</summary>
     private static bool Expiry()
     {
         using var scratch = new ScratchFile();
@@ -124,16 +125,13 @@ internal static class SelfCheck
             token = store.Register("kris", "correct horse battery").token!.Value;
         }
 
-        var state = JsonSerializer.Deserialize<DomState>(File.ReadAllText(scratch.Path))!;
-        foreach (var stale in state.Users.SelectMany(u => u.Tokens))
-            stale.ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
-        File.WriteAllText(scratch.Path, JsonSerializer.Serialize(state));
+        scratch.Execute("UPDATE tokens SET ExpiresUtc = $at", DateTimeOffset.UtcNow.AddMinutes(-1));
 
         var store2 = new DomStore(scratch.Path, Quiet);
         var rejected = store2.Resolve(token) is null;
 
-        // the rejection also drops it, so the file no longer carries a token nobody can use
-        var pruned = !File.ReadAllText(scratch.Path).Contains(token);
+        // the rejection also drops it, so the database no longer carries a token nobody can use
+        var pruned = (long)scratch.Execute("SELECT COUNT(*) FROM tokens WHERE Value = $at", token)! == 0;
         var stillSignsIn = store2.Login("kris", "correct horse battery").token is not null;
 
         var ok = rejected && pruned && stillSignsIn;
@@ -196,18 +194,32 @@ internal static class SelfCheck
     private static void Report(bool ok, string claim, string detail) =>
         Console.WriteLine(ok ? $"OK: {claim}" : $"FAIL: {claim} — {detail}");
 
-    /// <summary>A throwaway accounts file, so a self-check run never touches a real one.</summary>
+    /// <summary>A throwaway accounts database, so a self-check run never touches a real one.</summary>
     private sealed class ScratchFile : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
-            "dom-selfcheck-" + Guid.NewGuid().ToString("n") + ".json");
+            "dom-selfcheck-" + Guid.NewGuid().ToString("n") + ".db");
+
+        /// <summary>Everything SQLite has written, the log included, as text to search.</summary>
+        public string Bytes() => string.Concat(new[] { Path, Path + "-wal" }.Where(File.Exists)
+            .Select(file => Encoding.UTF8.GetString(File.ReadAllBytes(file))));
+
+        /// <summary>One statement with one parameter, straight at the file, the way an operator would.</summary>
+        public object? Execute(string sql, object at)
+        {
+            using var db = new SqliteConnection($"Data Source={Path}");
+            db.Open();
+            using var command = db.CreateCommand();
+            command.CommandText = sql;
+            command.Parameters.AddWithValue("$at", at);
+            return command.ExecuteScalar();
+        }
 
         public void Dispose()
         {
             try
             {
-                File.Delete(Path);
-                File.Delete(Path + ".tmp");
+                foreach (var suffix in (string[])["", "-wal", "-shm"]) File.Delete(Path + suffix);
             }
             catch (IOException)
             {

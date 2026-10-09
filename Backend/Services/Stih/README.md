@@ -7,7 +7,7 @@ One service fetches the words, writes the files, keeps the index and answers the
 | Variable | What it does |
 | --- | --- |
 | `MUSIC_LIBRARY` | The music library, shared read-write with `gaida-local`. A library track's words are written beside its audio. |
-| `LYRICS_DATA` | This service's own volume: `Lyrics.json` and the words for tracks with no library folder. |
+| `LYRICS_DATA` | This service's own volume: `Lyrics.db` and the words for tracks with no library folder. A `Lyrics.json` from an older version is imported on the first start. |
 | `LRCLIB_URL` | Empty disables every outbound lookup — it still serves the files it has. |
 | `LRCLIB_USER_AGENT` | How lrclib.net reaches you if this deployment misbehaves. They ask for it explicitly. |
 | `Local__Url` / `Deezer__Url` | The pods that own `audio://` and `deezer://`. A prefix with no URL answers `204`. |
@@ -34,7 +34,7 @@ Lyrics are files named after the track they belong to, one of two extensions, an
 /lyrics/deezer/3135556.lrc                      ← a Deezer track, in stih's own volume
 ```
 
-A library track's words go **into the library** because that is what makes them outlive this stack: any other player reads them, a backup catches them, and moving the folder moves the words with it. `Lyrics.json` in `/lyrics` is the index — one row per track ever looked at, hit or miss — and it exists to avoid asking LRCLIB twice, not to be the truth about what is on disk. The file is the truth; `gaida-local` reconciles its own `Info.json` from `File.Exists` on every scan.
+A library track's words go **into the library** because that is what makes them outlive this stack: any other player reads them, a backup catches them, and moving the folder moves the words with it. `Lyrics.db` in `/lyrics` is the index — one row per track ever looked at, hit or miss — and it exists to avoid asking LRCLIB twice, not to be the truth about what is on disk. The file is the truth; `gaida-local` reconciles its own index from `File.Exists` on every scan.
 
 ## Interesting techniques
 
@@ -45,7 +45,7 @@ A library track's words go **into the library** because that is what makes them 
 - **The library's own matching rules, reused rather than reinvented.** [Matching.cs](Matching.cs) normalizes both sides with the same `TitleNormalizer` and `LevenshteinDistance` the library's matcher uses, weights title against artist 0.65/0.35, and requires the same 0.80. What it does not have is the library's weak band: a wrong song you can skip, but wrong words scrolling in time with the music is the one failure a listener cannot ignore.
 - **A ±1 second length gate.** The rule that throws out the live version sharing a title. LRCLIB reports whole seconds, so it is a gate on rounding rather than on performance length.
 - **A path fence around the one dangerous write.** Writing into someone's music library is the only thing here that could do real damage, so the relative path a pod hands back is rejected unless the resolved absolute path is still inside `MUSIC_LIBRARY`, and the extension is one of the two. A pod that starts answering with `../../etc/passwd` gets a log line and nothing else.
-- **A sweep with no resume marker.** `Info.json` and `Lyrics.json` are the progress. A pod restarted mid-sweep asks `gaida-local` for a page of tracks with no lyrics beside them and gets the ones it had not reached — there is no cursor to corrupt, and the work list costs one request per two hundred tracks.
+- **A sweep with no resume marker.** `gaida-local`'s index and `Lyrics.db` are the progress. A pod restarted mid-sweep asks `gaida-local` for a page of tracks with no lyrics beside them and gets the ones it had not reached — there is no cursor to corrupt, and the work list costs one request per two hundred tracks.
 
 ## Project structure
 
@@ -53,7 +53,7 @@ A library track's words go **into the library** because that is what makes them 
 .
 ├── Program.cs       — host, CORS, the two routes
 ├── Lyrics.cs        — the flow: index → file → resolve → LRCLIB → write → stamp
-├── LyricsIndex.cs   — Lyrics.json
+├── LyricsIndex.cs   — Lyrics.db
 ├── LrcLib.cs        — the only client of lrclib.net
 ├── Matching.cs      — which candidate is this track. Pure
 ├── LrcParser.cs     — LRC text → lines. Pure

@@ -33,8 +33,8 @@ var app = builder.Build();
 // No-op without ADMIN_TOKEN. See ADMIN_PLAN.md.
 app.MapAdmin(() => new { service = "gaida-youtube" });
 
-// One instance for the process lifetime: this pod owns exactly one platform. Initialize() loads the
-// Info.json search cache (YouTubeSearchProviderCached.Initialize) and orders the content downloaders
+// One instance for the process lifetime: this pod owns exactly one platform. Initialize() opens the
+// search cache (YouTubeSearchProviderCached.Initialize) and orders the content downloaders
 // by priority (GetterLocalCache 99 > GetterYouTubeExplode 40 > GetterYtDlp 20).
 var youTube = new YouTubePlatform(Log.Logger);
 youTube.Initialize();

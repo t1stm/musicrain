@@ -420,6 +420,22 @@ def test_a_file_that_cannot_be_tagged_is_still_cached():
         assert (Path(directory) / f"{TRACK}.flac").read_bytes() == b"x" * 10
 
 
+def test_cache_imports_the_old_sidecars_once():
+    """A volume an older version filled: its sidecars become rows, and stay put for that version."""
+    with tempfile.TemporaryDirectory() as directory:
+        (Path(directory) / f"{TRACK}.mp3").write_bytes(b"x" * 10)
+        entry = cache.Entry(TRACK, stream.MP3, 10, 1.0, "One More Time", "Daft Punk", None, "00:05:20", None)
+        sidecar = Path(directory) / f"{TRACK}.json"
+        sidecar.write_text(json.dumps(entry.__dict__))
+
+        assert cache.Cache(directory, cache.MAX_BYTES_DEFAULT).get(TRACK) == entry
+        assert sidecar.exists()
+
+        # Imported once: a sidecar edited after the import is not read again.
+        sidecar.write_text(json.dumps({**entry.__dict__, "name": "Edited"}))
+        assert cache.Cache(directory, cache.MAX_BYTES_DEFAULT).get(TRACK) == entry
+
+
 def test_cache_ignores_a_torn_sidecar():
     with tempfile.TemporaryDirectory() as directory:
         (Path(directory) / "9.json").write_text("{not json")

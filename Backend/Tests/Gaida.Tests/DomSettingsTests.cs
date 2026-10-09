@@ -58,19 +58,18 @@ public class DomSettingsTests : IDisposable
     [Fact]
     public void AFileWrittenBeforeSettingsExistedLoadsWithNone()
     {
-        Store().Register("radost", Password);
-
-        // what the file looked like before this change: no settings properties at all
-        var file = Path.Combine(_directory, "dom.json");
-        var state = JsonNode.Parse(File.ReadAllText(file))!;
-        var user = state["Users"]![0]!.AsObject();
-        Assert.True(user.Remove("Settings") && user.Remove("SettingsUpdatedUtc"));
-        File.WriteAllText(file, state.ToJsonString());
+        // what the file looked like before settings existed: no settings properties at all
+        File.WriteAllText(Path.Combine(_directory, "dom.json"), """
+            {"Version": 2, "Playlists": [], "Users": [{
+              "Username": "radost", "Salt": "AA==", "Hash": "AA==", "Iterations": 1,
+              "CreatedUtc": "2026-09-04T09:56:10+00:00", "Friends": [],
+              "Tokens": [{"Value": "t", "IssuedUtc": "2026-09-04T09:56:10+00:00", "ExpiresUtc": "2099-01-01T00:00:00+00:00"}]
+            }]}
+            """);
 
         var store = Store();
-        var reloaded = store.Resolve(store.Login("radost", Password).token!.Value)!;
 
-        Assert.Equal((null, null), store.Settings(reloaded));
+        Assert.Equal((null, null), store.Settings(store.Resolve("t")!));
     }
 
     [Fact]

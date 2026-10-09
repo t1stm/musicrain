@@ -1,22 +1,24 @@
+using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Dapper;
+using Gaida.Sqlite;
 using ILogger = Serilog.ILogger;
 
 namespace Dom.Store;
 
 /// <summary>
-///     Every account Dom knows about, held in memory and written to one JSON file.
+///     Every account Dom knows about, held in memory and written through to <c>dom.db</c>.
 /// </summary>
 /// <remarks>
-///     This is the first state in the stack that has to survive a restart, so the write is atomic:
-///     serialise beside the target, then <see cref="File.Move(string,string,bool)" /> over it. A
-///     half-written accounts file is everybody locked out.
+///     Memory is the authority while the process runs and the database is what it reloads from. Every
+///     change writes the accounts and playlists it touched, and only those, in one transaction: a
+///     half-written account is somebody locked out, and a crash mid-write rolls back to the last whole one.
 ///     <para>
-///         ponytail: one lock and a whole-file rewrite per mutation. Registers and logins are rare and
-///         the serialise is sub-millisecond at any plausible size; split into per-user files, or move to
-///         SQLite, when a write actually shows up in a trace.
+///         ponytail: one lock for the whole store, and a playlist's tracks rewritten whole when any of them
+///         changes. Split the lock, or write one track at a time, when a write shows up in a trace.
 ///     </para>
 /// </remarks>
 public sealed class DomStore
@@ -24,7 +26,11 @@ public sealed class DomStore
     /// <summary>OWASP's floor for PBKDF2-SHA256. Stored per user, so raising it is not a migration.</summary>
     private const int DefaultIterations = 210_000;
 
-    private static readonly JsonSerializerOptions FileJson = new() { WriteIndented = true };
+    /// <summary><c>PRAGMA user_version</c> once the tables exist and <c>dom.json</c> is imported.</summary>
+    private const int SchemaVersion = 1;
+
+    /// <summary>What the older versions wrote. Read once, on the first start with no database.</summary>
+    private static readonly JsonSerializerOptions LegacyJson = new();
 
     /// <summary>What a password-gated change says when the password is wrong.</summary>
     private const string WrongPassword = "That password is wrong.";
@@ -32,7 +38,7 @@ public sealed class DomStore
     private const string SignInFirst = "Sign in first.";
 
     private readonly Dictionary<string, User> _byToken = new(StringComparer.Ordinal);
-    private readonly string _dataFile;
+    private readonly string _connectionString;
     private readonly Lock _gate = new();
 
     /// <summary>
@@ -45,20 +51,30 @@ public sealed class DomStore
     private readonly Dictionary<string, Playlist> _playlists = new(StringComparer.Ordinal);
     private readonly Dictionary<string, User> _users = new(StringComparer.Ordinal);
 
+    static DomStore()
+    {
+        SqlMapper.AddTypeHandler(new JsonObjectHandler());
+    }
+
+    /// <param name="dataFile">
+    ///     Where the database lives. <c>Dom:DataFile</c> named the JSON file before, so whatever extension
+    ///     it carries, the database is the <c>.db</c> beside it and the JSON is the legacy import.
+    /// </param>
+    /// <param name="log">Where the store reports what it did.</param>
     public DomStore(string dataFile, ILogger log)
     {
-        _dataFile = dataFile;
+        _connectionString = Database.At(Path.ChangeExtension(dataFile, ".db"));
         _log = log;
-        Load();
+        Load(Path.ChangeExtension(dataFile, ".json"));
     }
 
     /// <summary>How long a token lasts from its last use — it slides, see <see cref="Resolve" />.</summary>
     private static TimeSpan TokenLifetime => TimeSpan.FromDays(30);
 
     /// <summary>
-    ///     How much a slide has to be worth before it is written down. Storage here is a whole-file
-    ///     rewrite under one lock, so sliding on every authenticated request is the one thing it cannot
-    ///     afford; a day's granularity makes it one write per active token per day and costs a token
+    ///     How much a slide has to be worth before it is written down. Every write is a transaction under
+    ///     the one lock, so sliding on every authenticated request would put a disk sync in front of every
+    ///     one of them; a day's granularity makes it one write per active token per day and costs a token
     ///     at most a day of the thirty.
     /// </summary>
     private static TimeSpan SlideGranularity => TimeSpan.FromDays(1);
@@ -105,7 +121,7 @@ public sealed class DomStore
 
             _users[user.Key] = user;
             var token = IssueLocked(user);
-            SaveLocked();
+            SaveLocked(users: [user]);
 
             _log.Information("Registered {Username}", user.Username);
             return (token, user, null, null);
@@ -126,7 +142,7 @@ public sealed class DomStore
                 return (null, null, "invalid_credentials", wrong);
 
             var token = IssueLocked(user);
-            SaveLocked();
+            SaveLocked(users: [user]);
 
             return (token, user, null, null);
         }
@@ -159,7 +175,7 @@ public sealed class DomStore
                 if (slid - live.ExpiresUtc >= SlideGranularity)
                 {
                     live.ExpiresUtc = slid;
-                    SaveLocked();
+                    SaveLocked(users: [user]);
                 }
 
                 return user;
@@ -168,7 +184,7 @@ public sealed class DomStore
             // expired: drop it here rather than waiting for the next login's prune
             user.Tokens.RemoveAll(t => t.Value == token);
             _byToken.Remove(token);
-            SaveLocked();
+            SaveLocked(users: [user]);
 
             return null;
         }
@@ -198,7 +214,7 @@ public sealed class DomStore
             if (!_byToken.Remove(token, out var user)) return;
 
             user.Tokens.RemoveAll(t => t.Value == token);
-            SaveLocked();
+            SaveLocked(users: [user]);
         }
     }
 
@@ -269,7 +285,7 @@ public sealed class DomStore
         lock (_gate)
         {
             _playlists[playlist.Id] = playlist;
-            SaveLocked();
+            SaveLocked(playlists: [playlist]);
         }
 
         _log.Information("{Owner} created playlist {Name} ({Tracks} tracks)",
@@ -330,7 +346,7 @@ public sealed class DomStore
 
             playlist.UpdatedUtc = DateTimeOffset.UtcNow;
 
-            SaveLocked();
+            SaveLocked(playlists: [playlist]);
 
             return (playlist, null, null);
         }
@@ -362,7 +378,7 @@ public sealed class DomStore
             playlist.Revision++;
             playlist.UpdatedUtc = DateTimeOffset.UtcNow;
 
-            SaveLocked();
+            SaveLocked(playlists: [playlist]);
 
             return (playlist, true, null, null);
         }
@@ -377,7 +393,7 @@ public sealed class DomStore
                 return (false, null);
 
             _playlists.Remove(id);
-            SaveLocked();
+            SaveLocked(gonePlaylists: [id]);
 
             return (true, playlist.CoverFile);
         }
@@ -461,7 +477,7 @@ public sealed class DomStore
             inviter.Friends = [.. inviter.Friends, caller.Username];
             invite.Joined = [.. invite.Joined, caller.Username];
 
-            SaveLocked();
+            SaveLocked(users: [caller, inviter]);
             _log.Information("{Caller} and {Inviter} are friends", caller.Username, inviter.Username);
 
             return (inviter.Username, false, null, null);
@@ -480,15 +496,17 @@ public sealed class DomStore
             if (friend is null) return false;
 
             user.Friends = [.. user.Friends.Where(f => !Same(f, friend))];
-            DropCollaboratorLocked(user, friend);
+            List<User> changed = [user];
+            var dropped = DropCollaboratorLocked(user, friend);
 
             if (_users.TryGetValue(User.Normalize(friend), out var other))
             {
                 other.Friends = [.. other.Friends.Where(f => !Same(f, user.Username))];
-                DropCollaboratorLocked(other, user.Username);
+                changed.Add(other);
+                dropped.AddRange(DropCollaboratorLocked(other, user.Username));
             }
 
-            SaveLocked();
+            SaveLocked(users: changed, playlists: dropped);
             return true;
         }
     }
@@ -523,7 +541,7 @@ public sealed class DomStore
 
             var now = DateTimeOffset.UtcNow;
             user.SettingsUpdatedUtc = now;
-            SaveLocked();
+            SaveLocked(users: [user]);
 
             return (settings.DeepClone().AsObject(), now);
         }
@@ -548,7 +566,7 @@ public sealed class DomStore
             RevokeLocked(user);
             var token = IssueLocked(user);
 
-            SaveLocked();
+            SaveLocked(users: [user]);
             return (token, null, null);
         }
     }
@@ -569,7 +587,7 @@ public sealed class DomStore
                 user.Tokens.Remove(token);
             }
 
-            SaveLocked();
+            SaveLocked(users: [user]);
 
             // an expired token is not a device anybody is signed in on
             return others.Count(token => token.ExpiresUtc > now);
@@ -633,7 +651,7 @@ public sealed class DomStore
             SetPasswordLocked(user, password!);
             RevokeLocked(user);
 
-            SaveLocked();
+            SaveLocked(users: [user]);
             return (true, null);
         }
     }
@@ -648,7 +666,7 @@ public sealed class DomStore
             var revoked = user.Tokens.Count;
             RevokeLocked(user);
 
-            SaveLocked();
+            SaveLocked(users: [user]);
             return (true, revoked);
         }
     }
@@ -697,7 +715,7 @@ public sealed class DomStore
 
             playlist.UpdatedUtc = DateTimeOffset.UtcNow;
 
-            SaveLocked();
+            SaveLocked(playlists: [playlist]);
             return (true, null);
         }
     }
@@ -709,7 +727,7 @@ public sealed class DomStore
         {
             if (!_playlists.Remove(id, out var playlist)) return (false, null);
 
-            SaveLocked();
+            SaveLocked(gonePlaylists: [id]);
             return (true, playlist.CoverFile);
         }
     }
@@ -771,11 +789,18 @@ public sealed class DomStore
         return next;
     }
 
-    /// <summary>Takes <paramref name="collaborator" /> off every playlist <paramref name="owner" /> owns. Caller holds <see cref="_gate" />.</summary>
-    private void DropCollaboratorLocked(User owner, string collaborator)
+    /// <summary>
+    ///     Takes <paramref name="collaborator" /> off every playlist <paramref name="owner" /> owns, and
+    ///     returns the ones it was on. Caller holds <see cref="_gate" />.
+    /// </summary>
+    private List<Playlist> DropCollaboratorLocked(User owner, string collaborator)
     {
-        foreach (var playlist in _playlists.Values.Where(p => p.OwnerKey == owner.Key && p.Collaborators.Any(c => Same(c, collaborator))))
+        var changed = _playlists.Values
+            .Where(p => p.OwnerKey == owner.Key && p.Collaborators.Any(c => Same(c, collaborator))).ToList();
+        foreach (var playlist in changed)
             playlist.Collaborators = [.. playlist.Collaborators.Where(c => !Same(c, collaborator))];
+
+        return changed;
     }
 
     /// <summary>A code as somebody typed or read it: case, dashes and the look-alikes Crockford folds together.</summary>
@@ -831,28 +856,36 @@ public sealed class DomStore
 
         // Playlist.Owner holds the display name and OwnerKey derives from it, so the playlists
         // have to move with the account or every one of them orphans on rename.
-        foreach (var playlist in _playlists.Values.Where(playlist => playlist.OwnerKey == oldKey))
-            playlist.Owner = name;
+        var changed = _playlists.Values.Where(playlist => playlist.OwnerKey == oldKey).ToHashSet();
+        foreach (var playlist in changed) playlist.Owner = name;
 
         // Friends, collaborators and who added what hold the display name too.
         // ponytail: every track of every playlist; a rename is rare and this is the global lock anyway
-        foreach (var other in _users.Values.Where(other => other.Friends.Any(f => User.Normalize(f) == oldKey)))
+        var befriended = _users.Values.Where(other => other.Friends.Any(f => User.Normalize(f) == oldKey)).ToList();
+        foreach (var other in befriended)
             other.Friends = [.. other.Friends.Select(f => User.Normalize(f) == oldKey ? name : f)];
 
         foreach (var playlist in _playlists.Values)
         {
             if (playlist.Collaborators.Any(c => User.Normalize(c) == oldKey))
+            {
                 playlist.Collaborators = [.. playlist.Collaborators.Select(c => User.Normalize(c) == oldKey ? name : c)];
+                changed.Add(playlist);
+            }
 
             foreach (var track in playlist.Tracks.Where(t => t.AddedBy is { } by && User.Normalize(by) == oldKey))
+            {
                 track.AddedBy = name;
+                changed.Add(playlist);
+            }
         }
 
         _users.Remove(oldKey);
         user.Username = name;
         _users[user.Key] = user;
 
-        SaveLocked();
+        // the old key goes first: a rename that only changes case keeps the key, and its row comes straight back
+        SaveLocked(users: [user, .. befriended], playlists: changed, goneUsers: [oldKey]);
         return (null, null);
     }
 
@@ -863,9 +896,11 @@ public sealed class DomStore
         foreach (var playlist in owned) _playlists.Remove(playlist.Id);
 
         // gone from every friend list and every playlist it could edit; the tracks it added keep its name
-        foreach (var other in _users.Values.Where(other => IsFriend(other, user.Username)))
+        var befriended = _users.Values.Where(other => IsFriend(other, user.Username)).ToList();
+        foreach (var other in befriended)
             other.Friends = [.. other.Friends.Where(f => !Same(f, user.Username))];
-        foreach (var playlist in _playlists.Values.Where(playlist => Collaborates(playlist, user)))
+        var collaborated = _playlists.Values.Where(playlist => Collaborates(playlist, user)).ToList();
+        foreach (var playlist in collaborated)
             playlist.Collaborators = [.. playlist.Collaborators.Where(c => User.Normalize(c) != user.Key)];
         foreach (var invite in _invites.Values.Where(invite => ReferenceEquals(invite.Owner, user)).ToList())
             _invites.Remove(invite.Code);
@@ -873,7 +908,8 @@ public sealed class DomStore
         RevokeLocked(user);
         _users.Remove(user.Key);
 
-        SaveLocked();
+        SaveLocked(users: befriended, playlists: collaborated, goneUsers: [user.Key],
+            gonePlaylists: owned.Select(playlist => playlist.Id));
         return (owned.Where(p => p.CoverFile is not null).Select(p => p.CoverFile!).ToList(), owned.Count);
     }
 
@@ -933,7 +969,7 @@ public sealed class DomStore
 
             playlist.CoverFile = coverFile;
             playlist.UpdatedUtc = DateTimeOffset.UtcNow;
-            SaveLocked();
+            SaveLocked(playlists: [playlist]);
         }
     }
 
@@ -1032,54 +1068,260 @@ public sealed class DomStore
     private static string Base64Url(byte[] bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-    private void Load()
+    private void Load(string legacy)
     {
-        if (!File.Exists(_dataFile))
+        using var db = Database.Open(_connectionString);
+        Database.Upgrade(db, SchemaVersion, transaction =>
         {
-            _log.Information("No accounts file at {Path} yet; starting empty", _dataFile);
-            return;
-        }
+            db.Execute(Schema, transaction: transaction);
+            Import(db, transaction, legacy);
+        });
 
-        var state = JsonSerializer.Deserialize<DomState>(File.ReadAllText(_dataFile), FileJson)
-                    ?? new DomState();
+        var users = db.Query<User>(
+                "SELECT Username, Salt, Hash, Iterations, CreatedUtc, Settings, SettingsUpdatedUtc FROM users")
+            .ToDictionary(user => user.Key, StringComparer.Ordinal);
+        foreach (var row in db.Query<TokenRow>(
+                     "SELECT UserKey, Value, IssuedUtc, ExpiresUtc FROM tokens ORDER BY rowid"))
+            users[row.UserKey].Tokens.Add(new Token
+                { Value = row.Value, IssuedUtc = row.IssuedUtc, ExpiresUtc = row.ExpiresUtc });
+        foreach (var friends in db.Query<FriendRow>("SELECT UserKey, Friend FROM friends ORDER BY UserKey, Position")
+                     .GroupBy(row => row.UserKey))
+            users[friends.Key].Friends = [.. friends.Select(row => row.Friend)];
+
+        var playlists = db.Query<Playlist>(
+                "SELECT Id, Owner, Name, Visibility, Revision, CoverFile, CreatedUtc, UpdatedUtc FROM playlists")
+            .ToDictionary(playlist => playlist.Id, StringComparer.Ordinal);
+        foreach (var team in db.Query<CollaboratorRow>(
+                         "SELECT PlaylistId, Collaborator FROM playlist_collaborators ORDER BY PlaylistId, Position")
+                     .GroupBy(row => row.PlaylistId))
+            playlists[team.Key].Collaborators = [.. team.Select(row => row.Collaborator)];
+        foreach (var tracks in db.Query<TrackRow>("""
+                         SELECT PlaylistId, Id, Name, Artist, Album, Duration, ThumbnailUrl, AddedBy
+                         FROM playlist_tracks ORDER BY PlaylistId, Position
+                         """).GroupBy(row => row.PlaylistId))
+            playlists[tracks.Key].Tracks = [.. tracks.Select(row => row.ToSnapshot())];
 
         lock (_gate)
         {
-            foreach (var user in state.Users)
+            foreach (var user in users.Values)
             {
                 _users[user.Key] = user;
                 foreach (var token in user.Tokens) _byToken[token.Value] = user;
             }
 
-            foreach (var playlist in state.Playlists)
-            {
-                // version 1 kept a bool; see Playlist.IsPublic
-                if (playlist.IsPublic is { } legacy)
-                {
-                    playlist.Visibility = legacy ? Visibility.Public : Visibility.Private;
-                    playlist.IsPublic = null;
-                }
-
-                _playlists[playlist.Id] = playlist;
-            }
+            foreach (var playlist in playlists.Values) _playlists[playlist.Id] = playlist;
         }
 
         _log.Information("Loaded {Users} account(s) and {Playlists} playlist(s) from {Path}",
-            state.Users.Count, state.Playlists.Count, _dataFile);
+            users.Count, playlists.Count, db.DataSource);
     }
 
-    /// <summary>Caller holds <see cref="_gate" />.</summary>
-    private void SaveLocked()
+    /// <summary>
+    ///     The accounts in the <c>dom.json</c> an older version wrote, inside the transaction that makes
+    ///     the tables. A file that will not parse fails the boot rather than starting empty: these are
+    ///     accounts, not a cache, and the database is not stamped until they are all in. The JSON stays
+    ///     where it is, for an older image pointed at this volume.
+    /// </summary>
+    private void Import(IDbConnection db, IDbTransaction transaction, string legacy)
     {
-        var directory = Path.GetDirectoryName(_dataFile);
-        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        if (!File.Exists(legacy)) return;
 
-        // Same directory as the target, so the move is a rename within one filesystem and therefore
-        // atomic. A temp file in /tmp would be a copy, which is exactly the torn write to avoid.
-        var temporary = _dataFile + ".tmp";
-        var state = new DomState { Users = [.. _users.Values], Playlists = [.. _playlists.Values] };
-        File.WriteAllText(temporary, JsonSerializer.Serialize(state, FileJson));
-        File.Move(temporary, _dataFile, true);
+        var state = JsonSerializer.Deserialize<DomState>(File.ReadAllText(legacy), LegacyJson) ?? new DomState();
+        foreach (var playlist in state.Playlists)
+        {
+            // version 1 kept a bool; see Playlist.IsPublic
+            if (playlist.IsPublic is { } legacyPublic)
+            {
+                playlist.Visibility = legacyPublic ? Visibility.Public : Visibility.Private;
+                playlist.IsPublic = null;
+            }
+        }
+
+        Write(db, transaction, state.Users, state.Playlists, [], []);
+        _log.Information("Imported {Users} account(s) and {Playlists} playlist(s) from {Path}",
+            state.Users.Count, state.Playlists.Count, legacy);
+    }
+
+    /// <summary>
+    ///     Writes <paramref name="users" /> and <paramref name="playlists" /> as they now are and drops the
+    ///     gone ones, in one transaction. Caller holds <see cref="_gate" />.
+    /// </summary>
+    private void SaveLocked(IEnumerable<User>? users = null, IEnumerable<Playlist>? playlists = null,
+        IEnumerable<string>? goneUsers = null, IEnumerable<string>? gonePlaylists = null)
+    {
+        using var db = Database.Open(_connectionString);
+        using var transaction = db.BeginTransaction();
+        Write(db, transaction, users ?? [], playlists ?? [], goneUsers ?? [], gonePlaylists ?? []);
+        transaction.Commit();
+    }
+
+    /// <summary>
+    ///     Each account and playlist is deleted and inserted again rather than diffed: the delete cascades
+    ///     to its tokens, friends, collaborators and tracks, so the rows always match the object exactly.
+    /// </summary>
+    private static void Write(IDbConnection db, IDbTransaction transaction, IEnumerable<User> users,
+        IEnumerable<Playlist> playlists, IEnumerable<string> goneUsers, IEnumerable<string> gonePlaylists)
+    {
+        db.Execute("DELETE FROM users WHERE Key = @key", goneUsers.Select(key => new { key }), transaction);
+        db.Execute("DELETE FROM playlists WHERE Id = @id", gonePlaylists.Select(id => new { id }), transaction);
+
+        foreach (var user in users)
+        {
+            db.Execute("DELETE FROM users WHERE Key = @Key", new { user.Key }, transaction);
+            db.Execute("""
+                INSERT INTO users (Key, Username, Salt, Hash, Iterations, CreatedUtc, Settings, SettingsUpdatedUtc)
+                VALUES (@Key, @Username, @Salt, @Hash, @Iterations, @CreatedUtc, @Settings, @SettingsUpdatedUtc)
+                """, user, transaction);
+            db.Execute("""
+                INSERT INTO tokens (Value, UserKey, IssuedUtc, ExpiresUtc)
+                VALUES (@Value, @UserKey, @IssuedUtc, @ExpiresUtc)
+                """, user.Tokens.Select(token => new { token.Value, UserKey = user.Key, token.IssuedUtc, token.ExpiresUtc }),
+                transaction);
+            db.Execute("INSERT INTO friends (UserKey, Position, Friend) VALUES (@UserKey, @Position, @Friend)",
+                user.Friends.Select((friend, position) => new { UserKey = user.Key, Position = position, Friend = friend }),
+                transaction);
+        }
+
+        foreach (var playlist in playlists)
+        {
+            db.Execute("DELETE FROM playlists WHERE Id = @Id", new { playlist.Id }, transaction);
+            db.Execute("""
+                INSERT INTO playlists (Id, Owner, Name, Visibility, Revision, CoverFile, CreatedUtc, UpdatedUtc)
+                VALUES (@Id, @Owner, @Name, @Visibility, @Revision, @CoverFile, @CreatedUtc, @UpdatedUtc)
+                """, new
+            {
+                playlist.Id,
+                playlist.Owner,
+                playlist.Name,
+                // the name it goes over the wire as, so the table reads the way the API does
+                Visibility = playlist.Visibility.ToString().ToLowerInvariant(),
+                playlist.Revision,
+                playlist.CoverFile,
+                playlist.CreatedUtc,
+                playlist.UpdatedUtc
+            }, transaction);
+            db.Execute("""
+                INSERT INTO playlist_collaborators (PlaylistId, Position, Collaborator)
+                VALUES (@PlaylistId, @Position, @Collaborator)
+                """, playlist.Collaborators.Select((collaborator, position) =>
+                new { PlaylistId = playlist.Id, Position = position, Collaborator = collaborator }), transaction);
+            db.Execute("""
+                INSERT INTO playlist_tracks (PlaylistId, Position, Id, Name, Artist, Album, Duration, ThumbnailUrl, AddedBy)
+                VALUES (@PlaylistId, @Position, @Id, @Name, @Artist, @Album, @Duration, @ThumbnailUrl, @AddedBy)
+                """, playlist.Tracks.Select((track, position) => new
+            {
+                PlaylistId = playlist.Id,
+                Position = position,
+                track.Id,
+                track.Name,
+                track.Artist,
+                track.Album,
+                track.Duration,
+                track.ThumbnailUrl,
+                track.AddedBy
+            }), transaction);
+        }
+    }
+
+    /// <summary>
+    ///     Names, not keys, in <c>friends</c>, <c>Owner</c> and <c>playlist_collaborators</c>: they hold the
+    ///     display name the way the objects do, and a rename rewrites them the way it rewrites the objects.
+    ///     The foreign keys are ownership only — what goes when an account or a playlist does.
+    /// </summary>
+    private const string Schema = """
+        CREATE TABLE IF NOT EXISTS users (
+            Key TEXT PRIMARY KEY,
+            Username TEXT NOT NULL,
+            Salt TEXT NOT NULL,
+            Hash TEXT NOT NULL,
+            Iterations INTEGER NOT NULL,
+            CreatedUtc TEXT NOT NULL,
+            Settings TEXT,
+            SettingsUpdatedUtc TEXT
+        ) STRICT;
+
+        CREATE TABLE IF NOT EXISTS tokens (
+            Value TEXT PRIMARY KEY,
+            UserKey TEXT NOT NULL REFERENCES users (Key) ON DELETE CASCADE,
+            IssuedUtc TEXT NOT NULL,
+            ExpiresUtc TEXT NOT NULL
+        ) STRICT;
+        CREATE INDEX IF NOT EXISTS tokens_by_user ON tokens (UserKey);
+
+        CREATE TABLE IF NOT EXISTS friends (
+            UserKey TEXT NOT NULL REFERENCES users (Key) ON DELETE CASCADE,
+            Position INTEGER NOT NULL,
+            Friend TEXT NOT NULL,
+            PRIMARY KEY (UserKey, Position)
+        ) STRICT;
+
+        CREATE TABLE IF NOT EXISTS playlists (
+            Id TEXT PRIMARY KEY,
+            Owner TEXT NOT NULL,
+            Name TEXT NOT NULL,
+            Visibility TEXT NOT NULL,
+            Revision INTEGER NOT NULL,
+            CoverFile TEXT,
+            CreatedUtc TEXT NOT NULL,
+            UpdatedUtc TEXT NOT NULL
+        ) STRICT;
+
+        CREATE TABLE IF NOT EXISTS playlist_collaborators (
+            PlaylistId TEXT NOT NULL REFERENCES playlists (Id) ON DELETE CASCADE,
+            Position INTEGER NOT NULL,
+            Collaborator TEXT NOT NULL,
+            PRIMARY KEY (PlaylistId, Position)
+        ) STRICT;
+
+        CREATE TABLE IF NOT EXISTS playlist_tracks (
+            PlaylistId TEXT NOT NULL REFERENCES playlists (Id) ON DELETE CASCADE,
+            Position INTEGER NOT NULL,
+            Id TEXT NOT NULL,
+            Name TEXT NOT NULL,
+            Artist TEXT NOT NULL,
+            Album TEXT,
+            Duration TEXT NOT NULL,
+            ThumbnailUrl TEXT,
+            AddedBy TEXT,
+            PRIMARY KEY (PlaylistId, Position)
+        ) STRICT;
+        """;
+
+    private sealed record TokenRow(string UserKey, string Value, DateTimeOffset IssuedUtc, DateTimeOffset ExpiresUtc);
+
+    private sealed record FriendRow(string UserKey, string Friend);
+
+    private sealed record CollaboratorRow(string PlaylistId, string Collaborator);
+
+    private sealed record TrackRow(
+        string PlaylistId,
+        string Id,
+        string Name,
+        string Artist,
+        string? Album,
+        string Duration,
+        string? ThumbnailUrl,
+        string? AddedBy)
+    {
+        public TrackSnapshot ToSnapshot() => new()
+        {
+            Id = Id, Name = Name, Artist = Artist, Album = Album, Duration = Duration, ThumbnailUrl = ThumbnailUrl,
+            AddedBy = AddedBy
+        };
+    }
+
+    /// <summary><see cref="User.Settings" /> is opaque here, so it is stored the way it arrived: as JSON.</summary>
+    private sealed class JsonObjectHandler : SqlMapper.TypeHandler<JsonObject>
+    {
+        public override void SetValue(IDbDataParameter parameter, JsonObject? value)
+        {
+            parameter.Value = value?.ToJsonString() ?? (object)DBNull.Value;
+        }
+
+        public override JsonObject? Parse(object value)
+        {
+            return JsonNode.Parse((string)value)?.AsObject();
+        }
     }
 }
 

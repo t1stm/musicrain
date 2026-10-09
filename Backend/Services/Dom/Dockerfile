@@ -7,6 +7,7 @@ WORKDIR /src
 
 COPY Services/Dom/Dom.csproj Services/Dom/
 COPY ["Gaida Library/Gaida.Admin/Gaida.Admin.csproj", "Gaida Library/Gaida.Admin/"]
+COPY ["Gaida Library/Gaida.Sqlite/Gaida.Sqlite.csproj", "Gaida Library/Gaida.Sqlite/"]
 # Every project's PackageReference to JetBrains.Annotations lives here, so the props file has to
 # be in the context before the restore or [UsedImplicitly] stops compiling.
 COPY Directory.Build.props .
@@ -14,6 +15,7 @@ RUN dotnet restore Services/Dom/Dom.csproj
 
 COPY Services/Dom/ Services/Dom/
 COPY ["Gaida Library/Gaida.Admin/", "Gaida Library/Gaida.Admin/"]
+COPY ["Gaida Library/Gaida.Sqlite/", "Gaida Library/Gaida.Sqlite/"]
 RUN dotnet publish Services/Dom/Dom.csproj -c Release -o /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime

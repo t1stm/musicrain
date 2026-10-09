@@ -1,6 +1,8 @@
 using System.Text.Json;
+using Dapper;
 using Gaida.Platforms.MusicDatabase;
 using Gaida.Platforms.MusicDatabase.Manager;
+using Gaida.Sqlite;
 
 namespace Pods.Tests;
 
@@ -78,7 +80,7 @@ public class LyricsTests : IDisposable
         Assert.Equal(LyricsOrigin.Lrclib, entry.LyricsSource);
     }
 
-    // ── Info.json ───────────────────────────────────────────────────────────────────────────────
+    // ── The stored format ───────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void TheFieldsRoundTripThroughInfoJsonByName()
@@ -177,15 +179,16 @@ public class LyricsTests : IDisposable
     }
 
     [Fact]
-    public async Task AHitIsWrittenIntoTheFoldersInfoJson()
+    public async Task AHitIsWrittenIntoTheLibraryDatabase()
     {
         var manager = Seeded(Entry("wants-them"));
 
         var (_, error) = await manager.StampLyricsAsync("wants-them", LyricsKind.Synchronized, LyricsOrigin.Deezer);
         Assert.Null(error);
 
-        var written = await File.ReadAllTextAsync(Path.Combine(_storage, "Rock/Rammstein/Info.json"));
-        Assert.Contains("\"LyricsSource\": \"Deezer\"", written);
+        await using var db = Database.Open(Database.At(Path.Combine(_storage, "library.db")));
+        Assert.Equal(("Synchronized", "Deezer"), await db.QuerySingleAsync<(string, string)>(
+            "SELECT LyricsType, LyricsSource FROM songs WHERE Id = 'wants-them'"));
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────────────────────────
