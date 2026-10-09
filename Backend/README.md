@@ -13,7 +13,8 @@ The frontend-facing contract is in [API.md](API.md), the room protocol in [MULTI
 | [Gaida.API](Services/Gaida.API) | The public front door. Fans a search out to every pod, resolves metadata-only results into playable ones, and transcodes on the way out. The only stateless service, so the only one worth scaling. |
 | [Dunav](Services/Dunav) | The fan-out download cache. One upstream fetch per key, an on-disk body served to every client that asked, LRU eviction against a disk budget. |
 | [Selo](Services/Selo) | Rooms. WebSocket sessions holding several listeners on one shared clock. |
-| [Dom](Services/Dom) | Accounts and playlists. Talks to nothing, and the one volume that holds real user data. |
+| [Dom](Services/Dom) | Accounts and playlists. Talks only to Moliv, to forget a deleted account's history. One of the two volumes that hold real user data. |
+| [Moliv](Services/Moliv) | Listening history: every play on every device, as track IDs and how they were heard. Asks Dom who a token belongs to; the other volume of real user data. |
 | [Stih](Services/Stih) | Lyrics. The stack's only LRCLIB client: it fetches the words, writes them beside the audio and indexes what it has. |
 | [Oko](Services/Oko) | The admin panel. Reads every other service, holds no state of its own. |
 | [Gaida.Bot](Services/Gaida.Bot) | A Discord bot playing from the same library, over HTTP like any other client. Several accounts can play in one guild at once, and Oko watches it like any other service. |
@@ -41,6 +42,7 @@ That is the whole stack on compose's defaults — no secrets, no credentials, ev
 | Selo | 5342 | `127.0.0.1` |
 | Dom | 5343 | `127.0.0.1` |
 | Stih | 5345 | `127.0.0.1` |
+| Moliv | 5346 | `127.0.0.1` |
 | Oko | 5344 | every interface |
 
 The pods themselves publish nothing: they are reachable only from the compose network, by service name.
@@ -66,6 +68,7 @@ Every host-specific value and every secret lives in `.env` beside [compose.yaml]
 | `PUBLIC_API_BASE_URL` | `http://localhost:5340` | What the API hands out as `contentUrl`. |
 | `ADMIN_TOKEN` | *(unset)* | The shared secret Oko authenticates with. Unset, every `/Admin/*` route answers 404. |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | *(unset)* | Oko's own Basic auth. |
+| `MOLIV_PORT` | `5346` | Host port of the listening history, the one nginx's `/Audio/History` proxies to. |
 | `DEEZER_ARL` | *(unset)* | Deezer account cookie. Unset, the pod is metadata-only. |
 | `DEEZER_RESOLVE` | `true` | Tells Gaida.API to resolve Deezer hits elsewhere — what metadata-only mode needs. |
 | `DUNAV_MAX_BYTES` | 20 GiB | Disk budget for the download cache, evicted LRU. |
@@ -166,8 +169,10 @@ dotnet run --project Platforms/Gaida.Pods.YouTube -- --self-check
 │   ├── Dunav/
 │   ├── Gaida.API/
 │   ├── Gaida.Bot/
+│   ├── Moliv/
 │   ├── Oko/
-│   └── Selo/
+│   ├── Selo/
+│   └── Stih/
 ├── Tests/
 │   ├── Gaida.Tests/
 │   └── Pods.Tests/

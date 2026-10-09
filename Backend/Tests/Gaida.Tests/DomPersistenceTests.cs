@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dom.Store;
+using Microsoft.Data.Sqlite;
 using Serilog.Core;
 
 namespace Gaida.Tests;
@@ -83,6 +84,55 @@ public class DomPersistenceTests : IDisposable
         var after = State(store);
         Assert.Contains("Kristian", after);
         Assert.DoesNotContain("MILA", after);
+    }
+
+    /// <summary>
+    ///     A version 1 database has no account IDs. The upgrade gives every account its own, and neither a
+    ///     restart nor a rename changes it — which is the whole reason Moliv keys history by it.
+    /// </summary>
+    [Fact]
+    public void UpgradeGivesEveryAccountALastingId()
+    {
+        var store = Store();
+        var kris = store.Register("kris", Password).token!.Value;
+        var ana = store.Register("ana", Password).token!.Value;
+
+        // back to what a version 1 database looked like
+        using (var db = new SqliteConnection($"Data Source={Path.Combine(_directory, "dom.db")}"))
+        {
+            db.Open();
+            using var command = db.CreateCommand();
+            command.CommandText = "DROP INDEX users_by_id; ALTER TABLE users DROP COLUMN Id; PRAGMA user_version = 1;";
+            command.ExecuteNonQuery();
+        }
+
+        var upgraded = Store();
+        var krisId = upgraded.Resolve(kris)!.Id;
+        var anaId = upgraded.Resolve(ana)!.Id;
+        Assert.Equal(22, krisId.Length);
+        Assert.NotEqual(krisId, anaId);
+
+        Assert.Null(upgraded.Rename(upgraded.Resolve(kris)!, Password, "Kristian").error);
+        Assert.Equal(krisId, Store().Resolve(kris)!.Id);
+        Assert.Equal(anaId, Store().Resolve(ana)!.Id);
+    }
+
+    /// <summary>An account imported from <c>dom.json</c>, which never had an ID, gets one that lasts.</summary>
+    [Fact]
+    public void ImportedAccountsGetALastingId()
+    {
+        File.WriteAllText(Path.Combine(_directory, "dom.json"), """
+            {"Version": 2, "Playlists": [], "Users": [{
+              "Username": "radost", "Salt": "AA==", "Hash": "AA==", "Iterations": 1,
+              "CreatedUtc": "2026-09-04T09:56:10+00:00", "Friends": [],
+              "Tokens": [{"Value": "t", "IssuedUtc": "2026-09-04T09:56:10+00:00", "ExpiresUtc": "2099-01-01T00:00:00+00:00"}]
+            }]}
+            """);
+
+        var id = Store().Resolve("t")!.Id;
+
+        Assert.Equal(22, id.Length);
+        Assert.Equal(id, Store().Resolve("t")!.Id);
     }
 
     /// <summary>The live accounts and playlists, as the old file would have held them, in a stable order.</summary>

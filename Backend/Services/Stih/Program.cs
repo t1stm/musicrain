@@ -71,7 +71,7 @@ app.MapGet("/Audio/Lyrics/Get", async (string? id, Lyrics lyrics, HttpResponse r
 // Gaida.Admin's constant-time compare rather than a second secret of its own.
 app.MapPost("/register", async (RegisterDto body, HttpRequest request, Lyrics lyrics, CancellationToken ct) =>
 {
-    if (!Authorized(request, app.Configuration)) return Results.Unauthorized();
+    if (!Gaida.Admin.AdminApi.Authorized(request, app.Configuration["ADMIN_TOKEN"])) return Results.Unauthorized();
 
     var error = await lyrics.RegisterAsync(body, ct);
     return error is null
@@ -81,14 +81,3 @@ app.MapPost("/register", async (RegisterDto body, HttpRequest request, Lyrics ly
 
 app.Run();
 return 0;
-
-static bool Authorized(HttpRequest request, IConfiguration configuration)
-{
-    var expected = configuration["ADMIN_TOKEN"];
-    if (string.IsNullOrWhiteSpace(expected)) return true;
-
-    var given = request.Headers[Gaida.Admin.AdminApi.TokenHeader].ToString();
-    return given.Length == expected.Length &&
-           System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-               System.Text.Encoding.UTF8.GetBytes(expected), System.Text.Encoding.UTF8.GetBytes(given));
-}

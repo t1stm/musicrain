@@ -19,6 +19,10 @@ public sealed record SearchResultDto(
     string? OriginalTitle,
     string? OriginalArtist);
 
+/// <summary>One answer of <c>/Audio/Resolve</c>: the ID as it was asked for, and what it plays as now.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
+public sealed record ResolvedDto(string Id, SearchResultDto Result);
+
 /// <summary>What the local library has to say about a YouTube result the roll landed on.</summary>
 /// <param name="Match"><c>same</c>, <c>variant</c> (a tagged upload, a plain library copy) or <c>weak</c>.</param>
 /// <param name="DurationDeltaSeconds">Library minus upload. Reported, never a reason to reject a strong match.</param>

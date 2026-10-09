@@ -26,9 +26,6 @@ public sealed class DomStore
     /// <summary>OWASP's floor for PBKDF2-SHA256. Stored per user, so raising it is not a migration.</summary>
     private const int DefaultIterations = 210_000;
 
-    /// <summary><c>PRAGMA user_version</c> once the tables exist and <c>dom.json</c> is imported.</summary>
-    private const int SchemaVersion = 1;
-
     /// <summary>What the older versions wrote. Read once, on the first start with no database.</summary>
     private static readonly JsonSerializerOptions LegacyJson = new();
 
@@ -675,14 +672,14 @@ public sealed class DomStore
     ///     Deletes an account and everything it owns. Returns the cover files left behind, which are
     ///     the caller's to unlink — the store owns the accounts file and nothing else on disk.
     /// </summary>
-    public (bool ok, List<string> covers, int _playlists) AdminDeleteUser(string username)
+    public (bool ok, string? id, List<string> covers, int _playlists) AdminDeleteUser(string username)
     {
         lock (_gate)
         {
-            if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, [], 0);
+            if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, null, [], 0);
 
             var (covers, deleted) = DeleteLocked(user);
-            return (true, covers, deleted);
+            return (true, user.Id, covers, deleted);
         }
     }
 
@@ -1068,17 +1065,36 @@ public sealed class DomStore
     private static string Base64Url(byte[] bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
+    /// <summary>A new <see cref="User.Id" />.</summary>
+    internal static string NewId() => Base64Url(RandomNumberGenerator.GetBytes(16));
+
     private void Load(string legacy)
     {
         using var db = Database.Open(_connectionString);
-        Database.Upgrade(db, SchemaVersion, transaction =>
+        // 1: the tables exist and dom.json is imported.
+        Database.Upgrade(db, 1, transaction =>
         {
             db.Execute(Schema, transaction: transaction);
             Import(db, transaction, legacy);
         });
 
+        // 2: every account has an Id that a rename does not change. A database made at version 1 has
+        // no column for it; one made since got it from Schema, so this only adds the index.
+        Database.Upgrade(db, 2, transaction =>
+        {
+            if (!db.Query<string>("SELECT name FROM pragma_table_info('users')", transaction: transaction)
+                    .Contains("Id"))
+                db.Execute("ALTER TABLE users ADD COLUMN Id TEXT", transaction: transaction);
+
+            var missing = db.Query<string>("SELECT Key FROM users WHERE Id IS NULL", transaction: transaction);
+            db.Execute("UPDATE users SET Id = @id WHERE Key = @key",
+                missing.Select(key => new { id = NewId(), key }), transaction);
+
+            db.Execute("CREATE UNIQUE INDEX users_by_id ON users (Id)", transaction: transaction);
+        });
+
         var users = db.Query<User>(
-                "SELECT Username, Salt, Hash, Iterations, CreatedUtc, Settings, SettingsUpdatedUtc FROM users")
+                "SELECT Id, Username, Salt, Hash, Iterations, CreatedUtc, Settings, SettingsUpdatedUtc FROM users")
             .ToDictionary(user => user.Key, StringComparer.Ordinal);
         foreach (var row in db.Query<TokenRow>(
                      "SELECT UserKey, Value, IssuedUtc, ExpiresUtc FROM tokens ORDER BY rowid"))
@@ -1169,8 +1185,8 @@ public sealed class DomStore
         {
             db.Execute("DELETE FROM users WHERE Key = @Key", new { user.Key }, transaction);
             db.Execute("""
-                INSERT INTO users (Key, Username, Salt, Hash, Iterations, CreatedUtc, Settings, SettingsUpdatedUtc)
-                VALUES (@Key, @Username, @Salt, @Hash, @Iterations, @CreatedUtc, @Settings, @SettingsUpdatedUtc)
+                INSERT INTO users (Key, Id, Username, Salt, Hash, Iterations, CreatedUtc, Settings, SettingsUpdatedUtc)
+                VALUES (@Key, @Id, @Username, @Salt, @Hash, @Iterations, @CreatedUtc, @Settings, @SettingsUpdatedUtc)
                 """, user, transaction);
             db.Execute("""
                 INSERT INTO tokens (Value, UserKey, IssuedUtc, ExpiresUtc)
@@ -1231,6 +1247,7 @@ public sealed class DomStore
     private const string Schema = """
         CREATE TABLE IF NOT EXISTS users (
             Key TEXT PRIMARY KEY,
+            Id TEXT,
             Username TEXT NOT NULL,
             Salt TEXT NOT NULL,
             Hash TEXT NOT NULL,

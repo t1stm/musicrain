@@ -46,15 +46,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
 
             if (claim.Kind == QueryType.Id)
             {
-                var found = await manager.SearchId(claim.Query, cancellationToken);
-
-                // A Spotify link resolves to a name, not to audio — the playable track is whatever the
-                // library or YouTube has for it.
-                if (found is not null) found = await resolver.ResolveOne(found, cancellationToken);
-
-                var mapped = found is null
-                    ? null
-                    : DiscoveryResultMapper.Map(found, Request, configuration, environment);
+                var mapped = await LookUp(claim.Query, manager, resolver, cancellationToken);
                 return Ok(mapped is null ? Array.Empty<SearchResultDto>() : [mapped]);
             }
         }
@@ -85,6 +77,59 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
             .DistinctBy(result => result.Id);
 
         return Ok(this.Mapped(results, configuration, environment));
+    }
+
+    /// <summary>
+    ///     Many IDs at once, which is how the listening history shows its rows: it stores IDs and nothing
+    ///     else. Each result is paired with the ID that was asked for, because the resolver can hand back
+    ///     another — a metadata-only <c>deezer://</c> comes back as the library's or YouTube's copy. An ID
+    ///     nothing resolves is left out, and so is one whose lookup failed: a pod that throws costs its own
+    ///     rows, not the answer.
+    /// </summary>
+    [HttpGet]
+    [Route("/Audio/Resolve")]
+    [Produces("application/json")]
+    [ProducesResponseType<IReadOnlyList<ResolvedDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorBody>(StatusCodes.Status400BadRequest)]
+    public IActionResult Resolve([FromQuery] string[] id, [FromServices] ManagerService managerService,
+        [FromServices] PlayableResolver resolver)
+    {
+        if (id.Length is 0 or > 50 || id.Any(one => !one.Contains("://", StringComparison.Ordinal)))
+            return BadRequest(new ApiErrorBody(new ApiError("invalid_query",
+                "Send 1 to 50 ids, each like audio://… or yt://….")));
+
+        logger.LogInformation("Resolving {Count} ids", id.Length);
+        var manager = managerService.Manager;
+
+        // The same budget the resolver keeps, since most of these are a YouTube or Deezer lookup.
+        return Ok(id.Distinct(StringComparer.Ordinal).AsAsync().SelectParallel<string, ResolvedDto>(
+            resolver.Concurrency, async (one, cancellationToken) =>
+            {
+                try
+                {
+                    return await LookUp(one, manager, resolver, cancellationToken) is { } result
+                        ? new ResolvedDto(one, result)
+                        : null;
+                }
+                catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+                {
+                    logger.LogWarning(exception, "Resolving {Id} failed", one);
+                    return null;
+                }
+            }, HttpContext.RequestAborted));
+    }
+
+    /// <summary>One ID, made playable and mapped; <c>null</c> when nothing has it.</summary>
+    private async Task<SearchResultDto?> LookUp(string id, AudioManager manager, PlayableResolver resolver,
+        CancellationToken cancellationToken)
+    {
+        var found = await manager.SearchId(id, cancellationToken);
+
+        // A Spotify link resolves to a name, not to audio — the playable track is whatever the
+        // library or YouTube has for it.
+        if (found is not null) found = await resolver.ResolveOne(found, cancellationToken);
+
+        return found is null ? null : DiscoveryResultMapper.Map(found, Request, configuration, environment);
     }
 
     [HttpGet]

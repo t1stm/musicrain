@@ -14,6 +14,8 @@ internal static class Admin
     {
         var store = app.Services.GetRequiredService<DomStore>();
         var covers = app.Configuration["Dom:CoverDir"] ?? "covers";
+        var http = app.Services.GetRequiredService<IHttpClientFactory>();
+        var log = app.Services.GetRequiredService<ILogger<DomStore>>();
 
         var admin = app.MapAdmin(store.Snapshot);
         if (admin is null) return;
@@ -32,12 +34,13 @@ internal static class Admin
             return ok ? Results.Ok(new { revoked }) : Results.NotFound();
         });
 
-        admin.MapPost("/delete-user", (string username) =>
+        admin.MapPost("/delete-user", async (string username) =>
         {
-            var (ok, orphaned, deleted) = store.AdminDeleteUser(username);
+            var (ok, id, orphaned, deleted) = store.AdminDeleteUser(username);
             if (!ok) return Results.NotFound();
 
             foreach (var cover in orphaned) Forget(covers, cover);
+            await ForgetHistory(http, app.Configuration, log, id!);
             return Results.Ok(new { deletedPlaylists = deleted });
         });
 
@@ -77,6 +80,36 @@ internal static class Admin
         catch (IOException)
         {
             // ponytail: a leftover cover costs a few kilobytes; failing the delete would cost the operator
+        }
+    }
+
+    /// <summary>
+    ///     Has Moliv drop the account's listening history, after the account itself is gone. Best effort,
+    ///     like the covers: the deletion already happened and stands either way. Unset <c>Moliv:Url</c>
+    ///     skips it.
+    /// </summary>
+    /// <remarks>
+    ///     ponytail: Moliv down at this moment leaves the account's plays orphaned for good — rows under an
+    ///     ID nobody can sign in as. Give Oko a forget button if the log ever shows one.
+    /// </remarks>
+    internal static async Task ForgetHistory(IHttpClientFactory http, IConfiguration config, ILogger log,
+        string userId)
+    {
+        var moliv = config["Moliv:Url"];
+        if (string.IsNullOrWhiteSpace(moliv)) return;
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post,
+                $"{moliv.TrimEnd('/')}/forget?user={Uri.EscapeDataString(userId)}");
+            if (config["ADMIN_TOKEN"] is { Length: > 0 } token) request.Headers.Add(AdminApi.TokenHeader, token);
+
+            using var response = await http.CreateClient("moliv").SendAsync(request);
+            response.EnsureSuccessStatusCode();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            log.LogWarning(exception, "Moliv did not forget the history of account {Id}", userId);
         }
     }
 }

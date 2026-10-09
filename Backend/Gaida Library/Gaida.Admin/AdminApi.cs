@@ -109,6 +109,19 @@ public static class AdminApi
         return group;
     }
 
+    /// <summary>
+    ///     The check for a service's internal routes outside <c>/Admin</c> — Stih's <c>/register</c>, Moliv's
+    ///     <c>/forget</c>: the same header and the same constant-time compare, rather than a second secret.
+    ///     Open when <c>ADMIN_TOKEN</c> is unset, unlike <c>/Admin</c>: those routes are also fenced by not
+    ///     being under <c>/Audio</c>, so no nginx location reaches them, and by a port bound to 127.0.0.1.
+    /// </summary>
+    public static bool Authorized(HttpRequest request, string? expected)
+    {
+        if (string.IsNullOrWhiteSpace(expected)) return true;
+
+        return Matches(Encoding.UTF8.GetBytes(expected), request.Headers[TokenHeader].ToString());
+    }
+
     /// <summary>Constant-time, so a wrong token cannot be walked one byte at a time off the response latency.</summary>
     private static bool Matches(byte[] expected, string given)
     {

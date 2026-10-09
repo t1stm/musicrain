@@ -42,6 +42,21 @@ Two consequences for clients that do read it incrementally:
 - The status code is decided before the first element. Once the array has started, an upstream failure can only end it early, so a truncated result set is short, never an error body. Every validation error (`invalid_count`, `invalid_share`) still arrives as a normal `400` with nothing written.
 - Ordering is the producer's, and it is not grouped by service. `Search` asks every platform at once and writes each hit the moment it lands, so a library track, a YouTube video and a Deezer track can arrive in any order — relevance, service and everything else is the client's to sort. `RandomResults` interleaves its YouTube and library picks as they arrive rather than shuffling a finished list; the requested `youTubeShare` still holds, and the library still backfills whatever YouTube is short of.
 
+### Resolving many IDs
+
+`GET /Audio/Resolve?id={id}&id={id}…` looks up to 50 IDs at once — what the listening history displays
+its rows through. The answer pairs each ID as it was asked for with the discovery result it plays as
+now, because the two can differ: in metadata-only mode a `deezer://` ID comes back as the library's or
+YouTube's copy.
+
+```json
+[{"id":"deezer://3135556","result":{"id":"audio://example-id","name":"…","artist":"…", "…": "…"}}]
+```
+
+An ID nothing resolves — a deleted library file, a removed video, a pod that failed to answer — is left
+out rather than answered with `null`, so join on `id`, not on position. It streams like the endpoints
+above. No IDs, more than 50, or one without `://` is `400 invalid_query`.
+
 ## Mixed query resolver
 
 `GET /Audio/FindQueryType?query={value}` resolves pasted values. The response has a machine-readable `kind` discriminator.
@@ -159,8 +174,9 @@ path answers `[]`.
 
 ## Accounts
 
-`/Audio/Accounts/*` is served by Dom, which owns accounts and playlists. It calls no
-other service and is the only part of the stack holding data that does not rebuild itself.
+`/Audio/Accounts/*` is served by Dom, which owns accounts and playlists. The only service it calls is
+Moliv, to forget a deleted account's history, and with Moliv it is the part of the stack holding data
+that does not rebuild itself.
 
 Everything here sends a password or a bearer token in the request body or an `Authorization`
 header. **These endpoints must only be reachable over TLS.**
@@ -196,7 +212,9 @@ expiry a client reads may trail the real one by up to a day. `Logout` revokes on
 devices signed in to the same account stay signed in — and answers `204` whether or not the token was
 still live.
 
-`Me` returns `{"username":"Радост","createdUtc":"…","expiresUtc":"…"}`. Because the expiry slides, the
+`Me` returns `{"id":"q3Lx…","username":"Радост","createdUtc":"…","expiresUtc":"…"}`. `id` is 16 random
+bytes, base64url, and unlike the username it never changes — it is what other services, the
+[listening history](#listening-history) first, key an account by. Because the expiry slides, the
 `expiresUtc` a client kept from `Login` only understates it; `Me` is where the current one is read.
 
 A username is 2–32 characters with no whitespace and no control characters; any script is accepted,
@@ -261,8 +279,9 @@ the token is fine, and a client treats `401` as "you are signed out".
   live sessions it ended. It needs no password: it only takes access away.
 - `Rename` follows the username rules above (`400`, or `409 username_taken`), carries the account's
   playlists across, and answers `{"username":"…"}`. Existing tokens stay valid.
-- `Delete` removes the account, its playlists and their covers, and answers `204`. It is a `POST`
-  because it carries a body.
+- `Delete` removes the account, its playlists and their covers, and its listening history, and answers
+  `204`. It is a `POST` because it carries a body. The history goes on a best-effort call to Moliv: if
+  that fails the account is deleted all the same, and the failure is in Dom's log.
 
 ### Friends
 
@@ -395,6 +414,72 @@ A name is 1–80 characters. Every track needs an `id` and a `name`; `duration` 
 `TimeSpan` string like everywhere else in this API, and anything unparseable is stored as zero. Bad
 input answers `400 invalid_request` with a message that says which rule; a missing or dead token
 answers `401 unauthorized`.
+
+## Listening history
+
+`/Audio/History*` is served by Moliv. Every play, on every device, as a track ID and the listening
+around it — never a name or a cover, so display goes through [`/Audio/Resolve`](#resolving-many-ids).
+
+Every request sends `X-Device-Id`, a UUID the client makes once and keeps. A signed-in one also sends
+`Authorization: Bearer …`, and its history is the account's from every device; without one it is that
+device's alone. A token Dom refuses is `401 unauthorized` — never a quiet fall back to the device — and
+Dom unreachable is `503 unavailable`, which a client should retry.
+
+```
+PUT    /Audio/History/Plays/{id}       {play}            204
+GET    /Audio/History?before=…&limit=50                  200   {"plays":[…],"next":"…"}
+GET    /Audio/History/Recent?limit=12                    200   [{"trackId":"…","startedUtc":"…"}]
+POST   /Audio/History/Claim            Bearer only        200   {"claimed":3}
+DELETE /Audio/History                                    200   {"deleted":41}
+```
+
+`PUT` creates or updates one play, keyed by a UUID the client made when it started. The client sends
+it when the track starts, once when half a minute has been heard, when the track ends, and when the
+page is hidden — so the same play arrives several times, and any of them may be a late retry:
+
+```json
+{
+  "trackId": "audio://example-id",
+  "startedUtc": "2026-10-09T18:22:41.913Z",
+  "utcOffsetMinutes": 180,
+  "durationMs": 225000,
+  "playedMs": 61400,
+  "startReason": "chosen",
+  "endReason": null,
+  "sourceKind": "album",
+  "sourceId": "Radiohead — OK Computer",
+  "sessionId": "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
+  "sessionPosition": 4,
+  "platform": "pwa",
+  "deviceKind": "mobile",
+  "shuffled": false
+}
+```
+
+A second write never makes the play worse: `playedMs` keeps the larger value, `endReason` the first
+non-null one, an anonymous play takes the account of the first signed-in write, and every other field
+is the first write's. A play recorded on another device is `403 forbidden`.
+
+- `playedMs` is time actually heard — seeks and pauses excluded. More than `durationMs` plus five
+  seconds is clamped; with `durationMs` 0 (unknown) it is kept as sent.
+- `startReason` is `chosen`, `collection`, `autoplay`, `next`, `previous` or `room`; `endReason` is
+  `finished`, `skipped`, `previous`, `replaced`, `stopped`, `error` or `null`, which means the track never
+  reported an end.
+- `sourceKind` is `search`, `album`, `artist`, `playlist`, `browse`, `home-roll`, `recent`, `history`,
+  `link`, `queue` or `room`; `platform` is `web`, `pwa` or `discord`; `deviceKind` `mobile` or `desktop`.
+- `startedUtc` may be at most five minutes ahead and 30 days old. Anything else is `400 invalid_request`,
+  and so is a body over 4 KiB.
+
+`GET /Audio/History` lists plays newest first — `id`, `trackId`, `startedUtc`, `playedMs`, `durationMs`,
+`endReason` — `limit` 1–100. Pass `next` back as `before` for the next page; it is `null` on the last.
+`Recent` is distinct tracks, most recently played first, `limit` 1–50. Both leave out plays under 30
+seconds that did not finish; those are kept, just not shown.
+
+`Claim` moves the device's anonymous plays onto the signed-in account. `DELETE` clears the caller's
+history: signed in, every play on the account from every device; signed out, the device's own.
+
+Nothing proves a device ID, so each one keeps its newest 1000 anonymous plays, and an anonymous play
+nobody claims is deleted after 90 days.
 
 ## Audio downloads and CORS
 

@@ -10,6 +10,13 @@ namespace Dom.Store;
 /// </summary>
 public sealed class User
 {
+    /// <summary>
+    ///     What other services key an account by, because <see cref="Key" /> changes with a rename and this
+    ///     never does. Defaulted rather than required, so an account read from the legacy <c>dom.json</c>,
+    ///     which never had one, arrives with one too.
+    /// </summary>
+    public string Id { get; init; } = DomStore.NewId();
+
     /// <summary>As typed. <see cref="Key" /> is what uniqueness is decided on.</summary>
     public required string Username { get; set; }
 

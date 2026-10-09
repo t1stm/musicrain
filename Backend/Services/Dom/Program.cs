@@ -31,6 +31,10 @@ builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => poli
     .AllowAnyMethod()));
 
 builder.Services.AddSingleton(Log.Logger);
+
+// Dom's one outbound call: telling Moliv an account is gone (Admin.ForgetHistory). Moliv is on the
+// Docker network, so a slow answer is a down one.
+builder.Services.AddHttpClient("moliv", http => http.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddSingleton(services => new DomStore(
     services.GetRequiredService<IConfiguration>()["Dom:DataFile"] ?? "dom.db",
     Log.Logger));

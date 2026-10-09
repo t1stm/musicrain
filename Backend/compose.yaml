@@ -10,6 +10,7 @@
 #   /Audio/Multiplayer*                → 127.0.0.1:5342  (selo, WebSocket upgrade)
 #   /Audio/Accounts*, /Audio/Playlists* → 127.0.0.1:5343  (dom)
 #   /Audio/Lyrics*                     → 127.0.0.1:5345  (stih)
+#   /Audio/History*                    → 127.0.0.1:5346  (moliv)
 #   everything else                    → 127.0.0.1:5340  (gaida-api)
 #
 # The admin panel is not on that list: it is published on 0.0.0.0:5344 and fronted by the host
@@ -237,8 +238,9 @@ services:
       - "127.0.0.1:${SELO_PORT:-5342}:8080"
 
   # ── Accounts and playlists ─────────────────────────────────────────────────────
-  # Talks to nothing. Unlike every other service here, losing its volume loses real
-  # user data rather than a cache that refills itself — this is the one to back up.
+  # Talks to one thing: moliv, to have a deleted account's history forgotten. Unlike every
+  # other service here but moliv, losing its volume loses real user data rather than a
+  # cache that refills itself — back it up.
 
   dom:
     <<: *service
@@ -251,6 +253,9 @@ services:
       # again, and still there for an older image pointed at this volume.
       Dom__DataFile: /data/dom.db
       Dom__CoverDir: /covers
+      # Told when an account is deleted, so its listening history goes with it. Best effort: moliv down
+      # at that moment is logged and the deletion stands. Unset, nothing is told.
+      Moliv__Url: http://moliv:8080
     ports:
       - "127.0.0.1:${DOM_PORT:-5343}:8080"
     volumes:
@@ -259,6 +264,25 @@ services:
       - dom-data:/data
       # Uploaded playlist covers. Losing these loses artwork, not playlists.
       - dom-covers:/covers
+
+  # ── Listening history ──────────────────────────────────────────────────────────
+  # Every play, on every device, as track IDs and the listening around them — never a name or a
+  # cover. Asks dom who a bearer token belongs to; a signed-out device is keyed by the random ID
+  # it sends. Like dom-data, moliv-data is real user data, not a cache — back it up.
+
+  moliv:
+    <<: *service
+    build:
+      context: .
+      dockerfile: Services/Moliv/Dockerfile
+    environment:
+      <<: *env
+      Moliv__DataFile: /data/plays.db
+      Dom__Url: http://dom:8080
+    ports:
+      - "127.0.0.1:${MOLIV_PORT:-5346}:8080"
+    volumes:
+      - moliv-data:/data
 
   # ── Lyrics ─────────────────────────────────────────────────────────────────────
   # Fetches, stores and serves every lyric in the stack. Two volumes: the music library, shared
@@ -346,6 +370,8 @@ services:
       # answer — Oko pulls, so a target that is not running is a target that does not answer.
       Targets__9__Name: gaida-bot
       Targets__9__Url: http://gaida-bot:8080
+      Targets__10__Name: moliv
+      Targets__10__Url: http://moliv:8080
     ports:
       # The one port in this file NOT bound to 127.0.0.1: published on every interface so the host
       # firewall decides who reaches it, as asked. That makes the firewall the only thing between
@@ -408,6 +434,8 @@ volumes:
   thumbnails:
   dom-data:
   dom-covers:
+  # Listening history. Real user data, like dom-data.
+  moliv-data:
   # Lyrics for tracks with no library folder, plus Lyrics.db. The library's own words are in
   # MUSIC_LIBRARY_PATH beside the audio, so losing this costs re-fetches and nothing else.
   lyrics-data:

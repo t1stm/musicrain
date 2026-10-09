@@ -14,7 +14,8 @@ namespace Dom.Controllers;
 ///     that is a spam and password-guessing surface — see the open questions in PLAYLISTS_PLAN.md. The
 ///     cheapest answer if it becomes real is an invite code read from configuration.
 /// </remarks>
-public class Accounts(ILogger<Accounts> logger, DomStore store, IConfiguration config) : ControllerBase
+public class Accounts(ILogger<Accounts> logger, DomStore store, IConfiguration config, IHttpClientFactory http)
+    : ControllerBase
 {
     [HttpPost("/Audio/Accounts/Register")]
     public IActionResult Register([FromBody] Credentials? body)
@@ -53,6 +54,7 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, IConfiguration c
             ? Api.Error(401, "unauthorized", "Sign in first.")
             : new JsonResult(new
             {
+                id = user.Id,
                 username = user.Username,
                 createdUtc = user.CreatedUtc,
                 expiresUtc = store.ExpiryOf(token)
@@ -142,7 +144,7 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, IConfiguration c
     ///     because it carries a body, and some proxies drop the body of a <c>DELETE</c>.
     /// </summary>
     [HttpPost("/Audio/Accounts/Delete")]
-    public IActionResult Delete([FromBody] Confirmation? body)
+    public async Task<IActionResult> Delete([FromBody] Confirmation? body)
     {
         var user = store.Resolve(Api.Bearer(Request));
         if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
@@ -152,6 +154,7 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, IConfiguration c
 
         var directory = config["Dom:CoverDir"] ?? "covers";
         foreach (var cover in covers) Admin.Forget(directory, cover);
+        await Admin.ForgetHistory(http, config, logger, user.Id);
 
         return NoContent();
     }

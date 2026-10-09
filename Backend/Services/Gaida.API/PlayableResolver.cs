@@ -20,7 +20,7 @@ public sealed class PlayableResolver(
     IConfiguration configuration,
     ILogger<PlayableResolver> logger)
 {
-    private int Concurrency => Math.Max(1, configuration.GetValue("Resolve:Concurrency", 4));
+    public int Concurrency => Math.Max(1, configuration.GetValue("Resolve:Concurrency", 4));
 
     /// <summary>
     ///     Resolves a stream of metadata-only results. Tracks nothing playable was found for are dropped
