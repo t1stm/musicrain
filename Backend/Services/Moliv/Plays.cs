@@ -159,18 +159,29 @@ public sealed class Plays
     public object Snapshot()
     {
         using var db = Database.Open(_connectionString);
-        return db.QuerySingle<SnapshotRow>("""
+        var row = db.QuerySingle<SnapshotRow>("""
             SELECT COUNT(*) AS Plays, COUNT(DISTINCT UserId) AS Accounts,
                    (SELECT COUNT(DISTINCT DeviceId) FROM plays WHERE UserId IS NULL) AS AnonymousDevices,
                    MAX(UpdatedUtc) AS LastWriteUtc
             FROM plays
             """);
+        return new { row.Plays, row.Accounts, row.AnonymousDevices, row.LastWriteUtc };
     }
 
     private static string Owner(Caller caller) =>
         caller.UserId is null ? "UserId IS NULL AND DeviceId = @DeviceId" : "UserId = @UserId";
 
-    private sealed record SnapshotRow(long Plays, long Accounts, long AnonymousDevices, string? LastWriteUtc);
+    /// <summary>
+    ///     Properties, not a positional record: on an empty table <c>MAX</c> is a NULL with no type, which
+    ///     Dapper reads as a blob and cannot match to a constructor's <c>string</c>.
+    /// </summary>
+    private sealed class SnapshotRow
+    {
+        public long Plays { get; init; }
+        public long Accounts { get; init; }
+        public long AnonymousDevices { get; init; }
+        public string? LastWriteUtc { get; init; }
+    }
 }
 
 /// <summary>One row of <c>plays</c>, as written. See HISTORY_PLAN.md §A4 for what each column means.</summary>

@@ -102,6 +102,7 @@ internal static class SelfCheck
     {
         using var scratch = new Scratch();
         var plays = scratch.Plays();
+        var empty = plays.Snapshot().ToString();
 
         // two plays of one track, one of another, and a skip nobody wants to see
         var older = Row(Guid.NewGuid().ToString(), Anonymous, Now.AddMinutes(-30)) with { TrackId = "yt://song" };
@@ -136,7 +137,8 @@ internal static class SelfCheck
                    recent.Count == 3 && recent[1].TrackId == "yt://song" &&
                    recent.Select(play => play.TrackId).Distinct().Count() == 3)
                & Check("claim moves every anonymous play of the device", claimed == 5 && nowMine == 4 && leftAnonymous == 0)
-               & Check("the snapshot counts", snapshot.ToString()!.Contains("Plays = 5"))
+               & Check("the snapshot counts, an empty table included",
+                   snapshot.ToString()!.Contains("Plays = 5") && empty!.Contains("Plays = 0"))
                & Check("clear deletes the account's plays", cleared == 5)
                & Check("forget deletes the account's plays", forgotten == 1);
     }
