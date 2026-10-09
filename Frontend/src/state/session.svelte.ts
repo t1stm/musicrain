@@ -5,6 +5,7 @@ import current from './current.svelte';
 import audio from './audio.svelte';
 import rooms from './rooms.svelte';
 import skipped from './skipped.svelte';
+import history from './history.svelte';
 import { isUnnamed, roomLabel } from '$requests/rooms';
 import { SyncClock, minSyncSpacingMs, settledSyncSpacingMs } from '$lib/syncClock';
 
@@ -420,6 +421,7 @@ class Session {
 			if (now) {
 				this.currentTrackId = now.id;
 				current.set(now);
+				history.begin(now, 'room');
 			} else {
 				this.currentTrackId = '';
 				current.clear();

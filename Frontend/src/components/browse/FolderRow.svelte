@@ -64,7 +64,7 @@
 		try {
 			const tracks = await getBrowseTracks(folder.path, fetch);
 			if (!menuOpen) return;
-			queue.replaceWith(tracks);
+			queue.replaceWith(tracks.map((track) => ({ ...track, origin: { kind: 'browse', id: folder.path } })));
 			menuOpen = false;
 		} catch {
 			playFailed = true;
@@ -169,7 +169,7 @@
 					<Self folder={child} />
 				{/each}
 				{#each level.files as file (file.id)}
-					<SearchRow result={file} />
+					<SearchRow result={file} origin={{ kind: 'browse', id: folder.path }} />
 				{/each}
 				{#if level.folders.length === 0 && level.files.length === 0}
 					<p class="px-2 py-2 text-sm text-fog">This folder has no tracks.</p>

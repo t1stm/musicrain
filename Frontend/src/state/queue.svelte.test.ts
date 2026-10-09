@@ -52,13 +52,13 @@ describe('removeIndex', () => {
 describe('nextTrack', () => {
 	it('pauses instead of looping when it runs past the end of the queue', () => {
 		queue.currentIndex = 2; // 'c', last item
-		queue.nextTrack();
+		queue.nextTrack('next');
 		expect(queue.currentIndex).toBe(2);
 		expect(audio.paused).toBe(true);
 	});
 
 	it('advances and keeps playing mid-queue', () => {
-		queue.nextTrack();
+		queue.nextTrack('next');
 		expect(queue.currentIndex).toBe(2);
 		expect(current.name).toBe('c');
 		expect(audio.paused).toBe(false);

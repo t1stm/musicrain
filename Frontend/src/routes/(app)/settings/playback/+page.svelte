@@ -1,6 +1,10 @@
 <script lang="ts">
 	import Switch from '$components/settings/Switch.svelte';
 	import SyncToggle from '$components/settings/SyncToggle.svelte';
+	import { clearHistory } from '$requests/history';
+	import { AudioApiError } from '$requests/songs';
+	import account from '$states/account.svelte';
+	import history from '$states/history.svelte';
 	import lyrics from '$states/lyrics.svelte';
 	import quality, { bitrates, codecs } from '$states/quality.svelte';
 
@@ -9,6 +13,26 @@
 
 	/** kbps × 3600 s ÷ 8 bits ÷ 1000 — on a phone, this is what "quality" costs. */
 	let perHour = $derived(Math.round(quality.bitrate * 0.45));
+
+	// Clearing asks once, and the question says how far it reaches: signed in, the account's
+	// history from every device; signed out, only what this device recorded.
+	let confirming = $state(false);
+	let clearing = $state(false);
+	let cleared = $state('');
+
+	async function clear() {
+		clearing = true;
+		try {
+			const { deleted } = await clearHistory(account.token);
+			cleared = deleted === 1 ? 'Cleared 1 play.' : `Cleared ${deleted} plays.`;
+			confirming = false;
+		} catch (error) {
+			if (error instanceof AudioApiError) account.reject(error.status);
+			cleared = 'Could not reach the history service. Try again shortly.';
+		} finally {
+			clearing = false;
+		}
+	}
 </script>
 
 <svelte:head><title>Playback · Settings · musicrain</title></svelte:head>
@@ -88,3 +112,55 @@
 	</label>
 </section>
 
+<section class="mt-9 flex flex-col gap-4">
+	<h2 class="eyebrow flex items-center gap-3">
+		Listening history
+		<span class="h-px flex-1 bg-haze"></span>
+	</h2>
+
+	<label class="flex min-h-11 cursor-pointer items-center justify-between gap-4 text-sm text-chalk">
+		Record what you play
+		<Switch bind:checked={() => !history.paused, (on) => (history.paused = !on)} />
+	</label>
+	<p class="-mt-2 text-sm text-fog">
+		{account.signedIn
+			? 'On every device signed in to your account.'
+			: 'On this device. Sign in and what it recorded moves to your account.'}
+	</p>
+
+	{#if confirming}
+		<div class="flex flex-col gap-2 rounded-row border border-haze p-3">
+			<p class="text-sm text-chalk">
+				{account.signedIn
+					? 'Clear every play on your account, from every device? This can\'t be undone.'
+					: 'Clear every play this device recorded? This can\'t be undone.'}
+			</p>
+			<div class="flex flex-wrap gap-2">
+				<button
+					type="button"
+					disabled={clearing}
+					class="min-h-11 rounded-row bg-ember px-4 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-60 sm:min-h-9"
+					onclick={clear}
+				>
+					Clear history
+				</button>
+				<button
+					type="button"
+					class="min-h-11 rounded-row border border-haze px-4 text-sm font-semibold text-chalk hover:bg-surface-200 sm:min-h-9"
+					onclick={() => (confirming = false)}
+				>
+					Keep it
+				</button>
+			</div>
+		</div>
+	{:else}
+		<button
+			type="button"
+			class="min-h-11 w-fit rounded-row border border-haze px-4 text-sm font-semibold text-ember hover:bg-surface-200 sm:min-h-9"
+			onclick={() => ((confirming = true), (cleared = ''))}
+		>
+			Clear history…
+		</button>
+	{/if}
+	{#if cleared}<p class="text-sm text-fog" aria-live="polite">{cleared}</p>{/if}
+</section>

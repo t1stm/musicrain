@@ -1,7 +1,9 @@
 <script lang="ts">
 	import type { SearchResult } from '$states/search.svelte';
 	import { Check, Icon, Play, Plus } from 'svelte-hero-icons';
-	const { song }: { song: SearchResult } = $props();
+	const { song: given, origin }: { song: SearchResult; origin?: SearchResult['origin'] } = $props();
+	// what the card queues carries the row it was picked from, for the listening history
+	let song = $derived(origin ? { ...given, origin } : given);
 	import queue from '$states/queue.svelte';
 	import session from '$states/session.svelte';
 	import ArtistLink from '$components/ArtistLink.svelte';

@@ -87,7 +87,7 @@
 				</h2>
 				<div class="flex flex-col">
 					{#each section.rows as result (result.id)}
-						<SearchRow {result} />
+						<SearchRow {result} origin={{ kind: 'search' }} />
 					{/each}
 				</div>
 			</section>

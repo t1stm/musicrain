@@ -173,8 +173,15 @@
 	// see ArtistLink: the artist name is a real link, so the row must not act on it —
 	// and a press anywhere in the menu is the menu's
 	function playUnlessLink(track: SearchResult, event: MouseEvent) {
-		if (!(event.target as HTMLElement).closest('a, details')) queue.playNow(track);
+		if (!(event.target as HTMLElement).closest('a, details')) queue.playNow(queued(track));
 	}
+
+	// What goes into the queue says it came from here, for the listening history. Tagged on the
+	// way in rather than on `tracks`, which is also what a save writes back.
+	const queued = (track: SearchResult): SearchResult => ({
+		...track,
+		origin: { kind: 'playlist', id: playlist?.id }
+	});
 
 	// The rows are an #each, not components, so the one open menu is held here by position.
 	let menuAt = $state<number | null>(null);
@@ -310,7 +317,7 @@
 						type="button"
 						class="min-h-9 rounded-row bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-0 disabled:opacity-60"
 						disabled={tracks.length === 0}
-						onclick={() => queue.replaceWith(tracks)}
+						onclick={() => queue.replaceWith(tracks.map(queued))}
 					>
 						Play all
 					</button>
@@ -318,7 +325,7 @@
 						type="button"
 						class="min-h-9 rounded-row border border-haze px-3 py-1.5 text-sm font-semibold hover:bg-surface-200 disabled:opacity-60"
 						disabled={tracks.length === 0}
-						onclick={() => tracks.forEach((track) => queue.add(track))}
+						onclick={() => tracks.forEach((track) => queue.add(queued(track)))}
 					>
 						Queue all
 					</button>
@@ -476,13 +483,13 @@
 									icon: Plus,
 									color: 'var(--color-surface-400)',
 									done: 'Queued',
-									run: () => queue.add(track)
+									run: () => queue.add(queued(track))
 								},
 								{
 									icon: QueueList,
 									color: 'var(--color-primary-600)',
 									done: 'Next Up',
-									run: () => queue.playNext(track)
+									run: () => queue.playNext(queued(track))
 								}
 							]}
 							left={{
@@ -500,7 +507,7 @@
 								class="group flex cursor-pointer items-center gap-3 rounded-row px-2 py-2 not-has-open:hover:bg-surface-100 not-has-open:active:bg-surface-200 focus-visible:bg-surface-100 focus-visible:outline-none"
 								class:select-none={canEdit}
 								onclick={(event) => playUnlessLink(track, event)}
-								onkeydown={pressKeys(() => queue.playNow(track))}
+								onkeydown={pressKeys(() => queue.playNow(queued(track)))}
 							>
 								<!-- a list you can edit: the number and the sleeve pick a row up, as in the queue -->
 								<span
@@ -532,7 +539,7 @@
 								</span>
 								<!-- a phone reaches it with a swipe; the row has no width left for a third button -->
 								<TrackMenu
-									result={track}
+									result={queued(track)}
 									bind:open={() => menuAt === index, (open) => setMenu(index, open)}
 									replace={canEdit ? (result) => replaceAt(index, result) : undefined}
 									class="max-sm:[&>summary]:hidden pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100 pointer-fine:open:opacity-100"

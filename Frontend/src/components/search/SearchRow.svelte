@@ -10,7 +10,9 @@
 	import TrackMenu from '$components/TrackMenu.svelte';
 
 
-	const { result }: { result: SearchResult } = $props();
+	const { result: given, origin }: { result: SearchResult; origin?: SearchResult['origin'] } = $props();
+	// what the row queues carries the list it was picked from, for the listening history
+	let result = $derived(origin ? { ...given, origin } : given);
 	let duration = $derived(getTimeString(convertTimeSpanStringToSeconds(result.duration)));
 	let isLong = $derived(convertTimeSpanStringToSeconds(result.duration) > 15 * 60);
 	let source = $derived(sourceOf(result.id));

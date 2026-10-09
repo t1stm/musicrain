@@ -69,7 +69,7 @@
 				</h2>
 				<div class="flex flex-col">
 					{#each root.files as file (file.id)}
-						<SearchRow result={file} />
+						<SearchRow result={file} origin={{ kind: 'browse' }} />
 					{/each}
 				</div>
 			</section>

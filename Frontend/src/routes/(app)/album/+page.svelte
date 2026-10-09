@@ -26,7 +26,7 @@
 	async function fill(stream: AsyncIterable<SearchResult>, alive: () => boolean) {
 		for await (const track of stream) {
 			if (!alive()) return;
-			tracks.push(track);
+			tracks.push({ ...track, origin: { kind: 'album', id: `${data.artist} — ${data.album}` } });
 		}
 	}
 

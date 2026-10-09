@@ -1,6 +1,7 @@
 <script lang="ts">
 	import current from '$states/current.svelte';
 	import audio from '$states/audio.svelte';
+	import history from '$states/history.svelte';
 	import queue from '$states/queue.svelte';
 	import session from '$states/session.svelte';
 	import quality from '$states/quality.svelte';
@@ -235,6 +236,7 @@
 		});
 
 		if (!retrying || !element) {
+			history.end('error');
 			// The element keeps the HTTP status to itself: a 502 or 503 lands here as
 			// NETWORK or SRC_NOT_SUPPORTED depending on the browser.
 			session.giveUp(
@@ -305,10 +307,11 @@
 	onerror={recover}
 	onended={() => {
 		hold();
+		history.end('finished');
 		// in a room the server owns the advance: report once and wait for the
 		// finishing barrier to release for everybody
 		if (session.inRoom) session.reportEnded();
-		else queue.nextTrack();
+		else queue.nextTrack('autoplay');
 	}}
 >
 </audio>

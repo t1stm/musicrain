@@ -130,7 +130,7 @@
 	// its presses — the seek bar, the lyrics, and the format menu over the bar.
 	const gestures = swipe({
 		ignore: 'input, [role=slider], #player-quality > div, #player-lyrics',
-		left: () => queue.nextTrack(),
+		left: () => queue.nextTrack('next'),
 		right: () => queue.previousTrack(),
 		// Read as the drag goes, so a way the player cannot go is not offered: it neither
 		// lands nor ticks (see `haptic`) — up with nothing to open, or already open; down

@@ -2,12 +2,13 @@
 	import { goto, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import type { PageData } from './$types';
 	import type { SearchResult } from '$states/search.svelte';
 	import queue from '$states/queue.svelte';
 	import session from '$states/session.svelte';
-	import { getRecentlyPlayed } from '$lib/recentlyPlayed';
+	import account from '$states/account.svelte';
+	import { recentTracks, resolveIds } from '$requests/history';
 	import {
 		AudioApiError,
 		findQueryType,
@@ -28,7 +29,7 @@
 	import Skeleton from '$components/Skeleton.svelte';
 	import ArtistLink from '$components/ArtistLink.svelte';
 
-	import { ArrowPath, FolderOpen, Icon, Link, Play } from 'svelte-hero-icons';
+	import { ArrowPath, Clock, FolderOpen, Icon, Link, Play } from 'svelte-hero-icons';
 
 	const { data }: { data: PageData } = $props();
 
@@ -198,8 +199,27 @@
 	// The requests are already in flight from the load function; this is where what
 	// they carry starts landing in the page. In onMount rather than beside it, so the
 	// slot arrays are read when they are handed over rather than captured at init.
+	// An effect, not onMount: the layout reads the stored session after this page has mounted,
+	// so the first run is signed out and the next one is whoever that turns out to be. Only the
+	// newest answer lands.
+	let recentAsked = 0;
+	$effect(() => {
+		const token = account.token;
+		const asked = ++recentAsked;
+		void untrack(async () => {
+			try {
+				const recent = await recentTracks(token);
+				const tracks = await resolveIds(recent.map((play) => play.trackId));
+				if (asked !== recentAsked) return;
+				// a track that no longer resolves — deleted, taken down — is simply not in the row
+				recentlyPlayed = recent.flatMap((play) => tracks.get(play.trackId) ?? []);
+			} catch {
+				// the row is a convenience: no history service, no row
+			}
+		});
+	});
+
 	onMount(() => {
-		recentlyPlayed = getRecentlyPlayed();
 		countArtists();
 
 		// Coming back to this page lands on the history entry it left on, and that entry's
@@ -304,7 +324,8 @@
 		if (song && which) act(which, song);
 	}
 
-	function act(which: 'play' | 'queue', song: SearchResult) {
+	function act(which: 'play' | 'queue', picked: SearchResult) {
+		const song: SearchResult = { ...picked, origin: { kind: 'home-roll' } };
 		// In a room queue.add sends `add <id>`, so swapping the id means the room
 		// streams a local file instead of every listener going out to YouTube.
 		if (which === 'play') queue.playNow(song);
@@ -366,7 +387,8 @@
 	}
 
 	/** The first track of a paste starts playing; the rest queue behind it. Both land on the tape. */
-	function play(song: SearchResult) {
+	function play(pasted: SearchResult) {
+		const song: SearchResult = { ...pasted, origin: { kind: 'link' } };
 		if (pasteTracks.length === 0) queue.playNow(song);
 		else queue.add(song);
 		pasteTracks.push(song);
@@ -638,16 +660,23 @@
 			<!-- keyed by slot, not by track: the slot is what persists while the row fills -->
 			<div class="flex gap-4 overflow-x-auto pb-2" aria-busy={artistSongs.includes(null)}>
 				{#each artistSongs as song, slot (slot)}
-					{#if song}<Song {song} />{:else}<SongSkeleton />{/if}
+					{#if song}<Song {song} origin={{ kind: 'artist', id: hero ? heroArtist(hero.artist) : undefined }} />{:else}<SongSkeleton />{/if}
 				{/each}
 			</div>
 		</section>
 	{/if}
 	{#if recentlyPlayed.length > 0}
 		<section>
-			<h2 class="eyebrow mb-3">Back where you left off</h2>
+			<div class="mb-3 flex items-center gap-3">
+				<h2 class="eyebrow">Back where you left off</h2>
+				<a
+					href={resolve('/history')}
+					class="inline-flex min-h-9 items-center gap-1.5 rounded-[5px] border border-haze px-2.5 py-1 text-xs font-semibold text-chalk hover:border-gold hover:text-gold"
+					><Icon src={Clock} mini size="14" /> History</a
+				>
+			</div>
 			<div class="flex gap-4 overflow-x-auto pb-2">
-				{#each recentlyPlayed as song (song.id)}<Song {song} />{/each}
+				{#each recentlyPlayed as song (song.id)}<Song {song} origin={{ kind: 'recent' }} />{/each}
 			</div>
 		</section>
 	{/if}
@@ -713,7 +742,7 @@
 			aria-busy={curated.includes(null)}
 		>
 			{#each curated as song, slot (slot)}
-				{#if song}<Song {song} />{:else}<SongSkeleton />{/if}
+				{#if song}<Song {song} origin={{ kind: 'home-roll' }} />{:else}<SongSkeleton />{/if}
 			{/each}
 		</div>
 	</section>

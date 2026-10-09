@@ -126,7 +126,7 @@
 		{#if activeResults.length > 0 || waiting > 0}
 			<div class="flex flex-col" aria-busy={activeLoading}>
 				{#each activeResults as result (result.id)}
-					<SearchRow {result} />
+					<SearchRow {result} origin={{ kind: 'artist', id: data.term }} />
 				{/each}
 				{#each [...Array(waiting).keys()] as row (row)}
 					<RowSkeleton />

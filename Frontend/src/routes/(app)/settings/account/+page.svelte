@@ -251,7 +251,8 @@
 			<summary class="{row} text-ember">Delete account</summary>
 			<form class="flex max-w-sm flex-col gap-2 pb-4" onsubmit={submitDelete}>
 				<p class="text-sm text-fog">
-					Deletes your account and every playlist you made. This can't be undone.
+					Deletes your account, every playlist you made and your listening history. This can't be
+					undone.
 				</p>
 				<input
 					type="password"

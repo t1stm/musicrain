@@ -1,7 +1,7 @@
 import type { SearchResult } from '$states/search.svelte';
 import { convertTimeSpanStringToSeconds } from '$lib';
-import { rememberRecentlyPlayed } from '$lib/recentlyPlayed';
 import { downloadUrl, takePrefetched } from '$requests/songs';
+import history from './history.svelte';
 
 class Current {
 	/** The platform ID, kept only so the player can say which service the track came from. */
@@ -31,7 +31,6 @@ class Current {
 		this.url = prefetched ?? downloadUrl(now.id);
 		this.lengthSeconds = convertTimeSpanStringToSeconds(now.duration);
 		this.thumbnail = now.thumbnailUrl ?? '/empty.png';
-		rememberRecentlyPlayed(now);
 	}
 
 	#release() {
@@ -41,6 +40,7 @@ class Current {
 	}
 
 	clear() {
+		history.end('stopped');
 		this.#release();
 		this.id = '';
 		this.name = '';

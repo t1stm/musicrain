@@ -22,7 +22,7 @@
 		},
 		{
 			icon: Forward,
-			onClick: () => queue.nextTrack(),
+			onClick: () => queue.nextTrack('next'),
 			// the gap between reaching for skip and pressing it is enough to start
 			// the next encode in
 			onHover: () => queue.preloadNext()
@@ -44,7 +44,7 @@
       queue.previousTrack();
     });
     navigator.mediaSession.setActionHandler('nexttrack', () => {
-      queue.nextTrack();
+      queue.nextTrack('next');
     });
   })
 

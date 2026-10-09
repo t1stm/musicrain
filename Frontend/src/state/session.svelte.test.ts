@@ -128,7 +128,7 @@ describe('losing the connection', () => {
 
 		// everything a bored user can press while the strip says "reconnecting"
 		session.send('playpause');
-		queue.nextTrack();
+		queue.nextTrack('next');
 		session.reportEnded();
 
 		vi.advanceTimersByTime(30_000);
@@ -592,7 +592,7 @@ describe('queue verbs while connected', () => {
 
 		queue.removeIndex(0);
 		queue.playIndex(1);
-		queue.nextTrack();
+		queue.nextTrack('next');
 		queue.shuffle();
 		queue.clearOthers();
 		queue.move(1, 0);

@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import audio from '$states/audio.svelte';
 	import current from '$states/current.svelte';
+	import history from '$states/history.svelte';
 	import queue from '$states/queue.svelte';
 	import quality from '$states/quality.svelte';
 	import skipped, { reasonOf } from '$states/skipped.svelte';
@@ -54,7 +55,10 @@
 
 		const engine = new Splicer(built, volume);
 		engine.onadvance = advance;
-		engine.onend = () => queue.nextTrack();
+		engine.onend = () => {
+			history.end('finished');
+			queue.nextTrack('autoplay');
+		};
 
 		context = built;
 		gain = volume;
@@ -237,8 +241,10 @@
 			// a retry (see the paused effect), so a prefix that did play is dropped too.
 			splicer.stop();
 			const track = queue.items[queue.currentIndex];
-			if (track && skipped.add(track, reasonOf(error))) queue.nextTrack();
-			else audio.paused = true;
+			if (track && skipped.add(track, reasonOf(error))) {
+				history.end('error');
+				queue.nextTrack('autoplay');
+			} else audio.paused = true;
 			return;
 		}
 		// superseded while it downloaded, or the player went away underneath it
@@ -285,7 +291,8 @@
 		// only ever the track after this one is queued, and the effect below
 		// unqueues the moment that stops being true, so `nextTrack` lands on the
 		// track the sound is already playing.
-		queue.nextTrack();
+		history.end('finished');
+		queue.nextTrack('autoplay');
 		// `setCurrent` zeroes the display, which the seek effect would otherwise
 		// read as someone dragging the bar back to the start of the new track.
 		audio.currentSeconds = position();

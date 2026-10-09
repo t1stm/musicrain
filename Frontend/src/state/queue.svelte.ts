@@ -1,11 +1,15 @@
 import type { SearchResult } from '$states/search.svelte';
 import current from './current.svelte';
 import audio from './audio.svelte';
+import history from './history.svelte';
 import { preloadSong } from '$requests/songs';
+import type { StartReason } from '$requests/history';
 
 class Queue {
 	items: SearchResult[] = $state([]);
 	currentIndex: number = $state(0);
+	/** The upcoming order came from the shuffle button. Gone when the queue is replaced or cleared. */
+	shuffled = false;
 
 	/**
 	 * Set by the session while it owns the room socket. Every verb below becomes
@@ -24,14 +28,14 @@ class Queue {
 			audio.currentSeconds + 1 >= current.lengthSeconds
 		) {
 			this.items.push(item);
-			this.nextTrack();
+			this.nextTrack('autoplay');
 			return;
 		}
 		this.items.push(item);
 
 		if (this.items.length !== 1) return;
 
-		this.setCurrent();
+		this.setCurrent('chosen');
 	}
 
 	removeItem(item: SearchResult) {
@@ -55,7 +59,7 @@ class Queue {
 			this.currentIndex = this.items.length - 1;
 		}
 		if (this.currentIndex < 0) return;
-		this.setCurrent();
+		this.setCurrent('autoplay');
 	}
 
 	playNow(item: SearchResult) {
@@ -65,7 +69,7 @@ class Queue {
 		const insertAt = this.items.length > 0 ? this.currentIndex + 1 : 0;
 		this.items.splice(insertAt, 0, item);
 		this.currentIndex = insertAt;
-		this.setCurrent();
+		this.setCurrent('chosen');
 	}
 
 	playNext(item: SearchResult) {
@@ -75,7 +79,7 @@ class Queue {
 
 		if (this.items.length === 0) {
 			this.items.push(item);
-			this.setCurrent();
+			this.setCurrent('chosen');
 			return;
 		}
 
@@ -86,7 +90,7 @@ class Queue {
 		if (index < 0 || index >= this.items.length) return;
 		if (this.remote) return this.remote(`skipto ${index}`);
 		this.currentIndex = index;
-		this.setCurrent();
+		this.setCurrent('chosen');
 	}
 
 	setNext(targetIndex: number) {
@@ -134,6 +138,7 @@ class Queue {
 		}
 
 		this.items = [...this.items.slice(0, firstUpcoming), ...shuffled];
+		this.shuffled = true;
 	}
 
 	/**
@@ -149,7 +154,8 @@ class Queue {
 
 		this.items = [...items];
 		this.currentIndex = 0;
-		this.setCurrent();
+		this.shuffled = false;
+		this.setCurrent('collection');
 	}
 
 	/** The Clear button: keep what is playing, drop everything around it. */
@@ -159,6 +165,7 @@ class Queue {
 		const now = this.items[this.currentIndex];
 		this.items = now ? [now] : [];
 		this.currentIndex = 0;
+		this.shuffled = false;
 	}
 
 	previousTrack() {
@@ -169,11 +176,14 @@ class Queue {
 
 		if (this.currentIndex - 1 <= -1) {
 			audio.currentSeconds = 0;
+			// the same track again, from the top, is a new play — without `current.set`, which
+			// would drop the prefetched copy it is playing from
+			history.begin(this.items[this.currentIndex], 'previous', this.shuffled);
 			return;
 		}
 
 		this.currentIndex -= 1;
-		this.setCurrent();
+		this.setCurrent('previous');
 	}
 
 	/** Warms the encode for whatever plays next, so the switch does not wait on ffmpeg. */
@@ -182,7 +192,11 @@ class Queue {
 		if (next) preloadSong(next.id);
 	}
 
-	nextTrack() {
+	/**
+	 * `autoplay` when the queue moves on by itself — a track ran out or would not load, and
+	 * the player ended its play already — and `next` when somebody pressed for it.
+	 */
+	nextTrack(reason: 'autoplay' | 'next') {
 		if (this.remote) return this.remote('next');
 		if (this.items.length < 1) return;
 
@@ -192,14 +206,16 @@ class Queue {
 		}
 
 		this.currentIndex += 1;
-		this.setCurrent();
+		this.setCurrent(reason);
 	}
 
-	setCurrent() {
+	/** Every caller says how the track began; nothing here guesses (see HISTORY_PLAN.md §B2). */
+	setCurrent(reason: StartReason) {
 		audio.currentSeconds = 0;
 		audio.paused = false;
 		const now = this.items[this.currentIndex];
 		current.set(now);
+		history.begin(now, reason, this.shuffled);
 	}
 }
 

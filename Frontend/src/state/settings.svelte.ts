@@ -3,6 +3,7 @@ import { getSettings, patchSettings } from '$requests/accounts';
 import { AudioApiError } from '$requests/songs';
 import account from './account.svelte';
 import advanced, { vibrations } from './advanced.svelte';
+import history from './history.svelte';
 import lyrics from './lyrics.svelte';
 import quality, { bitrates, codecs, type Bitrate, type Codec } from './quality.svelte';
 import user from './user.svelte';
@@ -58,6 +59,13 @@ const fields = {
 	lyricsOpen: {
 		get: () => lyrics.open,
 		set: (value) => (lyrics.open = value),
+		valid: (value): value is boolean => typeof value === 'boolean',
+		sync: 'always',
+	} satisfies Field<boolean>,
+	// Always the account's: pausing history on one device pauses it on every one.
+	historyPaused: {
+		get: () => history.paused,
+		set: (value) => (history.paused = value),
 		valid: (value): value is boolean => typeof value === 'boolean',
 		sync: 'always',
 	} satisfies Field<boolean>,
