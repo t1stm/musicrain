@@ -445,6 +445,33 @@ def test_cache_ignores_a_torn_sidecar():
         assert songs.stats() == (0, 0)
 
 
+def test_search_results_are_remembered_first_seen_wins():
+    with tempfile.TemporaryDirectory() as directory:
+        songs = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
+        songs.remember([to_dto(_track())])
+        songs.remember([to_dto(_track(title="Edited"))])
+
+        assert cache.Cache(directory, cache.MAX_BYTES_DEFAULT).result(TRACK) == to_dto(_track())
+        assert songs.result("1") is None
+        # Remembered is not downloaded: nothing here is audio /content could serve.
+        assert songs.get(TRACK) is None
+
+
+def test_a_version_1_cache_gains_the_results_table():
+    """The volume every deployment already has: its entries stay, and searches start being remembered."""
+    with tempfile.TemporaryDirectory() as directory:
+        songs = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
+        songs.store(TRACK, b"x" * 10, stream.MP3, _dto())
+        songs._db.execute("DROP TABLE results")
+        songs._db.execute("PRAGMA user_version = 1")
+        songs._db.close()
+
+        reopened = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
+        assert reopened.get(TRACK) is not None
+        reopened.remember([to_dto(_track(id=1))])
+        assert reopened.result("1")["id"] == "deezer://1"
+
+
 if __name__ == "__main__":
     for name, test in sorted(dict(globals()).items()):
         if name.startswith("test_"):

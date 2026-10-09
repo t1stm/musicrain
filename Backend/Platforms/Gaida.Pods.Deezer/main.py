@@ -119,10 +119,14 @@ async def resolve(id: str | None = None) -> Response:
         return Response(status_code=404)
 
     # A cached track already carries everything /resolve returns, so a replay of something in the
-    # cache is answered without touching Deezer at all.
+    # cache is answered without touching Deezer at all -- and so is anything a search listed.
     cached = songs.get(track_id)
     if cached is not None:
         return JSONResponse(cached.to_dto())
+
+    listed = await asyncio.to_thread(songs.result, track_id)
+    if listed is not None:
+        return JSONResponse(listed)
 
     track = await _ask(lambda: client.api.get_track(track_id), f"track {track_id}")
     dto = to_dto(track)
@@ -136,7 +140,7 @@ async def search(q: str | None = None) -> Response:
         return JSONResponse([])
 
     found = await _ask(lambda: client.api.search_track(query, limit=SEARCH_LIMIT), f"search {query!r}")
-    return JSONResponse(_mapped((found or {}).get("data") or []))
+    return JSONResponse(await _mapped((found or {}).get("data") or []))
 
 
 @app.get("/playlist")
@@ -150,7 +154,7 @@ async def playlist(url: str | None = None) -> Response:
 
     # Streamed rather than assembled, matching the Spotify pod: the client renders the first tracks
     # while the rest of the array is still being written.
-    entries = _mapped((tracks or {}).get("data") or [])
+    entries = await _mapped((tracks or {}).get("data") or [])
     return StreamingResponse(_json_array(entries), media_type="application/json")
 
 
@@ -188,7 +192,7 @@ async def _artist_top(name: str) -> list[dict[str, Any]]:
 
     top = await _ask(lambda: client.api.get_artist_top(chosen["id"], limit=ARTIST_LIMIT),
                      f"artist top {chosen['id']}")
-    return _mapped((top or {}).get("data") or [])
+    return await _mapped((top or {}).get("data") or [])
 
 
 @app.get("/album")
@@ -219,8 +223,8 @@ async def album(artist: str | None = None, album: str | None = None) -> Response
 
     # Deezer's own order, which for an album is the running order -- the one place a pod's ordering is
     # already what the listener wants. Streamed like /playlist above.
-    return StreamingResponse(_json_array(_mapped(with_album(record, (tracks or {}).get("data") or []))),
-                             media_type="application/json")
+    entries = await _mapped(with_album(record, (tracks or {}).get("data") or []))
+    return StreamingResponse(_json_array(entries), media_type="application/json")
 
 
 @app.get("/content")
@@ -418,9 +422,14 @@ async def _refetch(id: str | None, prefer_flac: bool) -> Response:
     return JSONResponse({"id": entry.id, "format": entry.format, "bytes": entry.bytes})
 
 
-def _mapped(tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Every entry Deezer listed that is actually a playable catalogue track, in its own order."""
-    return [dto for dto in (to_dto(track) for track in tracks) if dto]
+async def _mapped(tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Every entry Deezer listed that is actually a playable catalogue track, in its own order -- and
+    remembered, so a later ``/resolve`` of any of them costs no Deezer call.
+    """
+    dtos = [dto for dto in (to_dto(track) for track in tracks) if dto]
+    await asyncio.to_thread(songs.remember, dtos)
+    return dtos
 
 
 def _same(name: str | None, wanted: str) -> bool:

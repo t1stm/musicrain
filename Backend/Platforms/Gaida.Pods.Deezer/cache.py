@@ -1,10 +1,15 @@
 """
-The downloaded-song cache: this pod's only state, and the only reason it needs a volume.
+The downloaded-song cache and the search cache: this pod's only state, and the only reason it needs a
+volume.
 
 One audio file per track in one flat directory, ``<id>.mp3`` or ``<id>.flac``, and one row per track in
 ``cache.db`` beside them. The row is what makes the cache self-describing: Oko's table and the local pod's
 import both read a cached track's name, artist and format out of it rather than asking Deezer again, and
 a pod that restarts rebuilds its whole index from one query.
+
+Every track a search, playlist, artist or album listed is one row in ``results`` in the same file, so a
+later ``/resolve`` of it costs no Deezer call -- the same job ``YouTube.db`` does for the YouTube pod.
+Those rows are never held in memory and never evicted: a row is a few hundred bytes, not a song.
 
 Older versions wrote a ``<id>.json`` sidecar per track instead. A ``cache.db`` that is new imports them
 once and leaves them where they are, so an older image pointed at this volume still finds its index.
@@ -67,8 +72,14 @@ class Entry:
 _COLUMNS = [field.name for field in fields(Entry)]
 _INSERT = f"INSERT OR REPLACE INTO entries VALUES ({', '.join('?' * len(_COLUMNS))})"
 
-SCHEMA_VERSION = 1
-"""``PRAGMA user_version`` once the table exists and the sidecars are imported. 0 is a new file."""
+_RESULT_COLUMNS = ("name", "artist", "album", "duration", "thumbnailUrl")
+_REMEMBER = f"INSERT OR IGNORE INTO results (id, {', '.join(_RESULT_COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?)"
+
+SCHEMA_VERSION = 2
+"""
+``PRAGMA user_version`` once every table exists and the sidecars are imported. 0 is a new file, 1 one
+written before the ``results`` table.
+"""
 
 
 class Cache:
@@ -120,7 +131,35 @@ class Cache:
 
         return entries[:limit] if limit > 0 else entries
 
+    def result(self, track_id: str) -> dict[str, Any] | None:
+        """A track some search listed, in pod-result shape, or ``None`` when none ever did."""
+        with self._lock:
+            row = self._db.execute(f"SELECT {', '.join(_RESULT_COLUMNS)} FROM results WHERE id = ?",
+                                   (track_id,)).fetchone()
+
+        if row is None:
+            return None
+
+        return {"id": "deezer://" + track_id, **dict(zip(_RESULT_COLUMNS, row)),
+                "originalTitle": None, "originalArtist": None}
+
     # ── writing ─────────────────────────────────────────────────────────────────────────────────
+
+    def remember(self, results: list[dict[str, Any]]) -> None:
+        """
+        Keeps search results not seen before. One already remembered keeps what it was first seen as,
+        like the YouTube pod's cache.
+
+        A failed write is logged, not raised: the search it came from already has its answer, and
+        losing the row costs one Deezer call on a later ``/resolve``, nothing else.
+        """
+        rows = [(dto["id"].removeprefix("deezer://"), *(dto[column] for column in _RESULT_COLUMNS))
+                for dto in results]
+        try:
+            with self._lock, self._db:
+                self._db.executemany(_REMEMBER, rows)
+        except sqlite3.Error:
+            log.warning("Could not remember %d search results", len(rows), exc_info=True)
 
     def store(self, track_id: str, data: bytes, audio_format: str, dto: dict[str, Any],
               cover: bytes | None = None, lyrics: str | None = None) -> Entry:
@@ -230,8 +269,15 @@ class Cache:
     def _load(self) -> None:
         """One query at startup. A row without its audio is not cached, and does not stay."""
         with self._lock:
-            if self._db.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION:
+            version = self._db.execute("PRAGMA user_version").fetchone()[0]
+            if version < 1:
                 self._create()
+            if version < SCHEMA_VERSION:
+                with self._db:
+                    self._db.execute("""CREATE TABLE IF NOT EXISTS results (
+                        id TEXT PRIMARY KEY, name TEXT NOT NULL, artist TEXT NOT NULL, album TEXT,
+                        duration TEXT NOT NULL, thumbnailUrl TEXT)""")
+                    self._db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
             rows = [Entry(*row) for row in self._db.execute(f"SELECT {', '.join(_COLUMNS)} FROM entries")]
             loaded = {entry.id: entry for entry in rows if (self.directory / entry.filename).exists()}
@@ -246,8 +292,8 @@ class Cache:
 
     def _create(self) -> None:
         """
-        The table, and every sidecar an older version of this pod wrote. The import and the version bump
-        commit together, so a crash halfway leaves user_version at 0 and the next start imports again.
+        The entries table, and every sidecar an older version of this pod wrote. The import and the version
+        bump commit together, so a crash halfway leaves user_version at 0 and the next start imports again.
         """
         imported: list[Entry] = []
         for sidecar in self.directory.glob("*.json"):
@@ -262,7 +308,7 @@ class Cache:
                 name TEXT NOT NULL, artist TEXT NOT NULL, album TEXT, duration TEXT NOT NULL,
                 thumbnailUrl TEXT)""")
             self._db.executemany(_INSERT, [astuple(entry) for entry in imported])
-            self._db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            self._db.execute("PRAGMA user_version = 1")
 
         if imported:
             log.info("Imported %d cache sidecars into %s", len(imported), self.directory / "cache.db")
