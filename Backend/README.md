@@ -128,7 +128,7 @@ dotnet run --project Platforms/Gaida.Pods.YouTube -- --self-check
 - [.NET 10](https://dotnet.microsoft.com/) minimal APIs, with `IAsyncEnumerable<T>` as the streaming primitive and `.slnx` as the solution format
 - [Serilog](https://serilog.net/) with [Serilog.Expressions](https://github.com/serilog/serilog-expressions) for structured logging
 - [SQLite](https://sqlite.org/) for every store that outlives a restart — [Microsoft.Data.Sqlite](https://learn.microsoft.com/dotnet/standard/data/sqlite/) and [Dapper](https://github.com/DapperLib/Dapper) in the .NET services, the standard library's `sqlite3` in the Deezer pod
-- [TagLib#](https://github.com/mono/taglib-sharp) — reads ID3v2, FLAC and WavPack tags out of the library
+- [ATL.NET](https://github.com/Zeugma440/atldotnet) — reads every tag and cover out of the library, in-process
 - [YoutubeExplode](https://github.com/Tyrrrz/YoutubeExplode), with [yt-dlp](https://github.com/yt-dlp/yt-dlp) as the fallback getter
 - [FFmpeg](https://ffmpeg.org/) for on-the-fly transcoding
 - [WavPack](https://www.wavpack.com/) — `wvunpack`, the only decoder that reads a `.wvc` correction file, so hybrid tracks decode lossless

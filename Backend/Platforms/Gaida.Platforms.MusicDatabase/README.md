@@ -8,7 +8,7 @@ Two environment variables shape it: `STORAGE` is the library root, `ALBUM_COVERS
 
 ## Using it
 
-Not a deployable — it is referenced by [Gaida.Pods.MusicDatabase](../Gaida.Pods.MusicDatabase) and by [Gaida.Bot](../../Services/Gaida.Bot), both of which construct `MusicManager` and let it scan. `ffprobe`, `metaflac` and `wvunpack` — the last from `wavpack` — are expected on `PATH`.
+Not a deployable — it is referenced by [Gaida.Pods.MusicDatabase](../Gaida.Pods.MusicDatabase) and by [Gaida.Bot](../../Services/Gaida.Bot), both of which construct `MusicManager` and let it scan. `ffmpeg` and `wvunpack` — the latter from `wavpack` — are expected on `PATH`, for serving hybrid WavPack tracks. Tags and covers need nothing installed.
 
 ```bash
 dotnet test Tests/Pods.Tests         # from Backend/ — the matcher's calibration lives here
@@ -20,15 +20,15 @@ dotnet test Tests/Pods.Tests         # from Backend/ — the matcher's calibrati
 - **A versioned scan.** Each entry is stamped with the tag-reading pass that produced it. Bumping `ScanVersion` re-reads every entry stamped below it, once, on the next load — which is how the scanner learned to read the album tag without a manual migration.
 - **Covers deduplicated by content hash.** [CoverExtractor.cs](Manager/CoverExtractor.cs) pulls embedded art out of every song that has none recorded, in parallel, and names each file by its hash, so one album's art is written once however many tracks carry it.
 - **A cover URL with a placeholder in it.** Entries are stored with `$[DOMAIN]` in place of the host and substituted on load, so the same library serves correct absolute URLs on localhost and in production with no rewrite pass.
-- **Four tag readers behind one interface.** `ffprobe` supplies the metadata; embedded art comes from [Id3v2.cs](Manager/Id3v2.cs) through TagLib#, or from `metaflac` and `wvunpack` for the two formats it does not cover.
-- **The file is the authority, the index is its projection.** Lyrics live as `.lrc` or `.txt` files beside the audio, written by `stih` rather than by anything here. [MusicManager.Lyrics.cs](Manager/MusicManager.Lyrics.cs) rewrites each entry's `LyricsType` and `LyricsSource` from two `File.Exists` calls on every scan — cheap enough to do for every song, and it means a hand-deleted sidecar cannot leave an entry pointing at nothing. Deliberately not a `ScanVersion` bump: that would re-run `ffprobe` over the whole library to learn something two `stat` calls already know.
+- **One tag reader, in-process.** [MediaInfo.cs](Manager/MediaInfo.cs) reads names, length and embedded art through [ATL](https://github.com/Zeugma440/atldotnet) for every format, about a millisecond a file. It replaced `ffprobe` (50 ms and a process per file, blind to an Ogg's comments and wrong about a VBR MP3's length), `metaflac` and TagLib#; `ScanVersion` 4 re-read the whole library through it once.
+- **The file is the authority, the index is its projection.** Lyrics live as `.lrc` or `.txt` files beside the audio, written by `stih` rather than by anything here. [MusicManager.Lyrics.cs](Manager/MusicManager.Lyrics.cs) rewrites each entry's `LyricsType` and `LyricsSource` from two `File.Exists` calls on every scan — cheap enough to do for every song, and it means a hand-deleted sidecar cannot leave an entry pointing at nothing. Deliberately not a `ScanVersion` bump: that would re-read every file in the library to learn something two `stat` calls already know.
 - **A single edit gate.** Admin edits serialise on one `SemaphoreSlim` for the whole library rather than one per folder — edits arrive at the rate a person clicks Save, and the work under it is a lookup and one row written.
 - **One index, imported a folder at a time.** The library is indexed in `library.db` at its root: one row per file, keyed by where it is, with its titles and artists as ordered child rows. A folder with no rows yet starts from the `Info.json` older versions kept beside its audio, through the same scan passes that version would have run, and the file is never touched again — so an older image pointed at the same library still reads it. The scan reads every row once, parses folders in parallel, and writes the folders that changed in one transaction at the end.
 
 ## Technologies worth a look
 
-- [TagLib#](https://github.com/mono/taglib-sharp) (`taglib-sharp-netstandard2.0`) for ID3v2 tags and embedded pictures
-- [FFmpeg](https://ffmpeg.org/) — `ffprobe` for metadata, `metaflac` for FLAC art
+- [ATL.NET](https://github.com/Zeugma440/atldotnet) (`z440.atl.core`) for every tag and embedded picture, in every format the library holds
+- [FFmpeg](https://ffmpeg.org/) — wraps a decoded hybrid WavPack track as FLAC
 - [WavPack](https://www.wavpack.com/) — `wvunpack` for WavPack art, and for decoding a hybrid track against its `.wvc` correction file
 - [Microsoft.Data.Sqlite](https://learn.microsoft.com/dotnet/standard/data/sqlite/) and [Dapper](https://github.com/DapperLib/Dapper) for `library.db`, through the shared [Gaida.Sqlite](../../Gaida%20Library/Gaida.Sqlite)
 - [Serilog](https://serilog.net/), through the shared [Gaida.Core](../../Gaida%20Library/Gaida.Core) abstractions

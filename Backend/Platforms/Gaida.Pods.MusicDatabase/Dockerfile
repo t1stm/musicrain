@@ -23,10 +23,10 @@ RUN dotnet publish "Platforms/Gaida.Pods.MusicDatabase/Gaida.Pods.MusicDatabase.
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
-# MusicManager.Manager/MediaInfo.cs shells out to ffprobe to read audio tags; MusicGetter.cs shells
-# out to wvunpack, the only decoder here that reads a .wvc WavPack correction file; Flac.cs shells
-# out to metaflac (package flac) for embedded covers -- without it every FLAC scans with no cover.
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg wavpack flac \
+# Tags and covers are read in-process by ATL (Manager/MediaInfo.cs). MusicGetter.cs shells out to
+# wvunpack, the only decoder here that reads a .wvc WavPack correction file, and to ffmpeg to wrap
+# what it decodes as FLAC.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg wavpack \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app .

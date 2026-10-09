@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using ATL;
 
 namespace Gaida.Platforms.MusicDatabase.Manager;
 
@@ -20,26 +21,29 @@ public class CoverExtractor
         _exportLocation = Environment.GetEnvironmentVariable("ALBUM_COVERS", EnvironmentVariableTarget.Process) ??
                          _exportLocation;
 
-        // A file that has been deleted since the last scan is not an error worth a crash: Flac and
-        // WavPack answer null for a missing path, but Id3V2 throws, and that took the whole library
-        // load down with it.
+        // A file that has been deleted since the last scan is not an error worth a crash.
         if (!File.Exists(location)) return null;
 
         byte[]? image;
         try
         {
-            image = Flac.GetImageFromFile(location) ?? WavPack.GetImageFromFile(location) ??
-                Id3V2.GetImageFromTag(location);
+            // The front cover when the file says which one that is, else the first picture: what metaflac and
+            // TagLib# handed back before, for every file in the library that names none.
+            var pictures = MediaInfo.Read(location).EmbeddedPictures;
+            image = (pictures.FirstOrDefault(picture => picture.PicType == PictureInfo.PIC_TYPE.Front) ??
+                     pictures.FirstOrDefault())?.PictureData;
         }
         catch (Exception)
         {
-            // Same rule as the missing file above, for a file that is there but unreadable: TagLib throws
-            // CorruptFileException on a truncated or mislabelled .mp3, and this runs inside the
-            // Parallel.ForEach of the library scan — one bad file must not take the whole load with it.
+            // Same rule as the missing file above, for a file that is there but unreadable: this runs inside
+            // the Parallel.ForEach of the library scan, and one bad file must not take the whole load with it.
             return null;
         }
 
-        return image is null ? null : StoreCover(image);
+        // Only a JPEG or a PNG is a cover, which is every cover in the library. Anything else is a broken
+        // picture frame: TagLib# handed one back empty and it became a zero-byte file, and ATL reads past the
+        // same 13-byte APIC (Оркестър Колорит - Миленово хоро.mp3) into 12 MB of the audio after it.
+        return image is not null && ImageFiletype(image).Length > 0 ? StoreCover(image) : null;
     }
 
     /// <summary>
@@ -56,7 +60,7 @@ public class CoverExtractor
         _exportLocation = Environment.GetEnvironmentVariable("ALBUM_COVERS", EnvironmentVariableTarget.Process) ??
                          _exportLocation;
 
-        var name = $"{Convert.ToHexStringLower(SHA1.HashData(image))}.{Flac.GetImageFiletype(image)}";
+        var name = $"{Convert.ToHexStringLower(SHA1.HashData(image))}.{ImageFiletype(image)}";
         var filename = $"{_exportLocation}/{name}";
 
         // ponytail: one lock for every cover write; they are rare and small, split it per-hash if that ever shows up.
@@ -67,5 +71,14 @@ public class CoverExtractor
         }
 
         return name;
+    }
+
+    private static string ImageFiletype(ReadOnlySpan<byte> data)
+    {
+        ReadOnlySpan<byte> pngHeader = [137, 80, 78, 71, 13, 10, 26, 10];
+        ReadOnlySpan<byte> jpegHeader = [255, 216, 255];
+
+        if (data.StartsWith(pngHeader)) return "png";
+        return data.StartsWith(jpegHeader) ? "jpg" : "";
     }
 }

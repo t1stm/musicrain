@@ -517,7 +517,7 @@ static async Task RunSelfCheck()
 // library.db (otherwise it is gone on the next restart), and a second import of the same track must
 // be refused rather than overwrite a file whose entry someone may already have renamed.
 //
-// The bytes are not real audio, which is the point: ffprobe reads no tags out of them, so what is
+// The bytes are not real audio, which is the point: ATL reads no tags out of them, so what is
 // under test is the filename-and-folder path every import falls back to rather than one particular
 // encoder.
 static async Task ImportCheck(Action<bool, string> assert)
@@ -632,7 +632,7 @@ static async Task RescanCheck(Action<bool, string> assert)
 // The album backfill, against a throwaway library whose one entry predates the tag being read. The
 // thing that would go wrong quietly is the ID: RereadTags re-rolls it, and re-rolling every ID in
 // the library to fill an album would orphan every playlist, cache key and recently-played entry
-// that holds one. The media file is a stand-in with no tags, so ffprobe finds no album and only the
+// that holds one. The media file is a stand-in with no tags, so ATL finds no album and only the
 // bookkeeping is under test. A second entry has no file at all: it is left out of the library and
 // kept in library.db, where it would come back with its ID if the file did. The library starts as the
 // Info.json an older version wrote, so this is the import path too.

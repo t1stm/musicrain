@@ -45,9 +45,11 @@ public partial class MusicManager(ILogger logger)
     ///     The current tag-reading pass. Bump it when the scanner learns to read a tag it did not before:
     ///     every entry stamped below this is re-read once on the next load, and stamped. Pass 1 is the
     ///     album, which <see cref="MediaInfo" /> never asked ffprobe for. Pass 2 is which name leads, and
-    ///     pass 3 writes a shared credit with commas — see <see cref="MusicInfo.AddNames" />.
+    ///     pass 3 writes a shared credit with commas — see <see cref="MusicInfo.AddNames" />. Pass 4 is ATL
+    ///     in place of ffprobe, which reads what ffprobe missed: an Ogg's Vorbis comments, and a VBR MP3's
+    ///     real length.
     /// </summary>
-    public const int ScanVersion = 3;
+    public const int ScanVersion = 4;
 
     public async Task Initialize()
     {
@@ -73,7 +75,7 @@ public partial class MusicManager(ILogger logger)
 
     /// <summary>
     ///     Starts the boot scan again, for files dropped into the library while the pod is up. Returns without
-    ///     waiting: new files each cost an ffprobe, which outlasts Oko's action timeout. The snapshot's
+    ///     waiting: a library's worth of new files outlasts Oko's action timeout. The snapshot's
     ///     <c>scanning</c> flag is how the panel sees it finish.
     /// </summary>
     /// <returns><c>false</c> when a scan is already running.</returns>
@@ -195,7 +197,7 @@ public partial class MusicManager(ILogger logger)
         // and only .mp3 arrives lowercased. NewFiles never revisits an indexed song, so the re-read has to
         // happen here or those names stay path-derived forever.
         var legacy = existing.Where(entry => entry.WasLegacy).ToList();
-        foreach (var entry in legacy) await RereadTags(entry);
+        foreach (var entry in legacy) RereadTags(entry);
         if (legacy.Count > 0)
             Logger.Information("Re-read tags for {Count} entries of '{Artist}'", legacy.Count, artist);
 
@@ -204,7 +206,7 @@ public partial class MusicManager(ILogger logger)
         var behind = existing.Where(entry => entry.Scan < ScanVersion).ToList();
         foreach (var entry in behind)
         {
-            await Backfill(entry);
+            Backfill(entry);
             entry.Scan = ScanVersion;
         }
 
@@ -213,7 +215,7 @@ public partial class MusicManager(ILogger logger)
                 ScanVersion);
 
         // The lyrics sidecars, every scan rather than once behind a ScanVersion bump: it is two
-        // File.Exists per song against a version bump that would re-run ffprobe over the whole library,
+        // File.Exists per song against a version bump that would re-read every file in the library,
         // and it is what lets a .lrc deleted by hand disappear from the index at the next boot.
         var reconciled = existing.Count(ReconcileLyrics);
         if (reconciled > 0)
@@ -221,7 +223,7 @@ public partial class MusicManager(ILogger logger)
 
         var newFiles = NewFiles(existing, songs).ToList();
         foreach (var file in newFiles)
-            existing.Add(await ParseFile(file));
+            existing.Add(ParseFile(file));
 
         return (existing, imported || stale > 0 || newFiles.Count > 0 || legacy.Count > 0 || behind.Count > 0 ||
                           reconciled > 0);
@@ -269,16 +271,16 @@ public partial class MusicManager(ILogger logger)
         Logger.Information("Extracted {Count} cover(s)", covered.Count);
     }
 
-    private static async Task RereadTags(MusicInfo entry)
+    private static void RereadTags(MusicInfo entry)
     {
         var path = StorageDirectory + "/" + entry.RelativeLocation;
         if (!File.Exists(path)) return;
 
-        var tagged = await MediaInfo.GetInformation(path);
+        var tagged = MediaInfo.GetInformation(path);
         entry.PreferTags(tagged);
         entry.Id = entry.UpdateRandomId();
 
-        // The pipe deadlock in MediaInfo left a couple of entries with no duration at all, and the weak
+        // The pipe deadlock ffprobe once had left a couple of entries with no duration at all, and the weak
         // match gates on it. The re-read is the one place that can repair them.
         if (entry.Duration == TimeSpan.Zero) entry.Duration = tagged.Duration;
     }
@@ -287,23 +289,32 @@ public partial class MusicManager(ILogger logger)
     ///     Brings an entry up from the pass that indexed it. Never touches the ID: playlists, cache keys and
     ///     recently-played lists hold it, and <see cref="MusicInfo.UpdateRandomId" /> ends in a random suffix.
     /// </summary>
-    private static async Task Backfill(MusicInfo entry)
+    /// <remarks>
+    ///     Every pass, whatever the entry is stamped with: pass 4 changed the reader under the first three, so
+    ///     they all run again over what it reads.
+    /// </remarks>
+    private static void Backfill(MusicInfo entry)
     {
         var path = StorageDirectory + "/" + entry.RelativeLocation;
         if (!File.Exists(path)) return;
 
-        var fresh = await MediaInfo.GetInformation(path);
+        var fresh = MediaInfo.GetInformation(path);
 
         // Pass 1. An album an admin typed outranks the file, so this only fills a missing one.
-        if (entry.Scan < 1) entry.Album ??= fresh.Album;
+        entry.Album ??= fresh.Album;
 
         // Passes 2 and 3, both nothing but AddNames run again.
-        if (entry.Scan < 3)
-        {
-            var (title, author, folder) = PathNames(path);
-            fresh.AddNames(title, author, folder);
-            entry.Rederive(fresh);
-        }
+        var (title, author, folder) = PathNames(path);
+        fresh.AddNames(title, author, folder);
+        entry.Rederive(fresh);
+
+        // Pass 4. ffprobe guessed a VBR MP3 with no Xing header from its bitrate: 326 s for a 140 s track,
+        // which is the length the weak match gates on.
+        if (fresh.Duration > TimeSpan.Zero) entry.Duration = fresh.Duration;
+
+        // Also pass 4: a cover named by the SHA-1 of nothing is the zero-byte file an empty TagLib# picture
+        // became. Dropped, so the cover pass after the load extracts the real one through ATL.
+        if (entry.CoverUrl?.EndsWith("/da39a3ee5e6b4b0d3255bfef95601890afd80709.") == true) entry.CoverUrl = null;
     }
 
     private static IEnumerable<string> NewFiles(List<MusicInfo> existing, List<string> files)
@@ -330,13 +341,13 @@ public partial class MusicManager(ILogger logger)
             split.Length > 1 ? split[^2] : string.Empty);
     }
 
-    private static async Task<MusicInfo> ParseFile(string location)
+    private static MusicInfo ParseFile(string location)
     {
         var (title, author, folder) = PathNames(location);
 
         // The path spellings are kept as alternates rather than discarded, so a folder typo costs a variant
         // instead of the whole name. AddNames decides whether the tag or the filename leads.
-        var entry = await MediaInfo.GetInformation(location);
+        var entry = MediaInfo.GetInformation(location);
         entry.AddNames(title, author, folder);
         entry.RelativeLocation ??= RelativeLocation(location);
         entry.Id = entry.UpdateRandomId();
@@ -665,7 +676,7 @@ public partial class MusicManager(ILogger logger)
 
             File.Move(temporary, location);
 
-            var entry = await ParseFile(location);
+            var entry = ParseFile(location);
             entry.Album ??= album?.Trim() is { Length: > 0 } named ? named : null;
 
             // The file's own artwork first, the source's only when it has none. The substituted form,

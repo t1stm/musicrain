@@ -244,21 +244,38 @@ public class MusicInfoFormatTests
 public class MediaInfoTests
 {
     [Fact]
-    public async Task ReadsAFileWhoseTagsOverflowThePipeBuffer()
+    public async Task ReadsAnOggsVorbisComments()
     {
-        // ffprobe emits 80KB for one .mp3 in the library (a 65KB TRAKTOR4 tag) against a 64KB pipe buffer.
-        // Waiting for the process to exit before draining stdout deadlocks both sides forever, and the
-        // library load never finishes.
-        var path = Path.Combine(Path.GetTempPath(), $"gaida-{Guid.NewGuid():N}.mp3");
-        if (!await Ffmpeg($"-f lavfi -i anullsrc=r=8000:cl=mono -t 0.2 -metadata comment={new string('x', 70000)} " +
-                          $"-metadata title=Overflow -metadata artist=Tester -y \"{path}\"")) return;
+        // ffprobe keeps an Ogg's comments on the stream rather than the container, and the scan only asked the
+        // container: 22 of the library's 26 .ogg files were indexed under their path names alone.
+        var path = Path.Combine(Path.GetTempPath(), $"gaida-{Guid.NewGuid():N}.ogg");
+        if (!await Ffmpeg($"-f lavfi -i anullsrc=r=8000:cl=mono -t 0.2 -c:a libvorbis -metadata title=Overflow " +
+                          $"-metadata artist=Tester -metadata ARTISTS=Tester;Guest -y \"{path}\"")) return;
 
         try
         {
-            var info = await MediaInfo.GetInformation(path).WaitAsync(TimeSpan.FromSeconds(30));
+            var info = MediaInfo.GetInformation(path);
 
             Assert.Equal("Overflow", info.Title);
-            Assert.Equal("Tester", info.Artist);
+            Assert.Equal(["Tester", "Tester, Guest"], info.Artists);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task LeavesAMissingTitleToThePath()
+    {
+        // ATL's default is the filename as the title, which would lead in front of the names AddNames parses
+        // out of the path -- the whole "Author - Title" as one title.
+        var path = Path.Combine(Path.GetTempPath(), $"Tester - Untitled {Guid.NewGuid():N}.mp3");
+        if (!await Ffmpeg($"-f lavfi -i anullsrc=r=8000:cl=mono -t 0.2 -metadata artist=Tester -y \"{path}\"")) return;
+
+        try
+        {
+            Assert.Empty(MediaInfo.GetInformation(path).Titles);
         }
         finally
         {
@@ -273,7 +290,7 @@ public class MediaInfoTests
     [InlineData(null, null)]
     public void KeepsEveryValueOfARepeatedTag(string? probed, string? expected)
     {
-        // A FLAC carries one ARTISTS comment per performer and ffprobe joins them with ";". Reading that
+        // A FLAC carries one ARTISTS comment per performer and ATL joins them with ";". Reading that
         // as a single name left the library showing the last performer alone as the artist.
         Assert.Equal(expected, MediaInfo.Merge(probed));
     }
