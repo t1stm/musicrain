@@ -36,8 +36,9 @@ public class Cover(ILogger<Cover> logger, IConfiguration configuration) : Contro
 
     [HttpGet]
     [Route("/Audio/Cover")]
-    [Produces("image/jpeg", "image/png", "image/webp", "image/gif")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    // The image types belong to the 200 alone. As [Produces] they filtered every result, and the JSON error
+    // bodies below had no formatter left that would write them as an image -- every 400 and 404 went out as 406.
+    [ProducesResponseType(typeof(Stream), StatusCodes.Status200OK, "image/jpeg", "image/png", "image/webp", "image/gif")]
     [ProducesResponseType<ApiErrorBody>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ApiErrorBody>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(string? id, [FromServices] ManagerService managerService)
