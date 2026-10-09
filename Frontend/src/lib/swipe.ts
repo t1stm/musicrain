@@ -60,8 +60,8 @@ async function land(node: HTMLElement, direction: Direction, then: () => unknown
 
 /** A direction's handler. One that hands back a promise keeps the offset until it settles. */
 type Swipe = Partial<Record<Direction, () => unknown>> & {
-	/** A press that went nowhere. Handed the event, so the caller can ask what was under it. */
-	tap?: (event: PointerEvent) => void;
+	/** A press that went nowhere. Handed its click, so the caller can ask what was under it. */
+	tap?: (event: MouseEvent) => void;
 	/** Presses that start on these are the control's own — a slider, a scrolling pane. */
 	ignore?: string;
 	/** A way back in through `ignore`: a press on one of these is the surface's again.
@@ -91,8 +91,15 @@ export const swipe =
 		// pointer's click: a keyboard's has no press behind it, and one sent after a swipe that
 		// no click followed would otherwise be the one eaten.
 		let dragged = false;
-		const swallow = (event: MouseEvent) => {
-			if (!dragged || event.detail === 0) return;
+		// A tap is answered on its click, not as the finger lifts: a phone picks what the click
+		// lands on only after `pointerup`, so a tap that reshapes the page there sends its click
+		// on to whatever is now under the finger — a row on the page beneath, say.
+		let tapped = false;
+		const click = (event: MouseEvent) => {
+			if (event.detail === 0) return;
+			if (tapped) handlers.tap?.(event);
+			tapped = false;
+			if (!dragged) return;
 			dragged = false;
 			event.preventDefault();
 			event.stopPropagation();
@@ -100,6 +107,7 @@ export const swipe =
 
 		const start = (down: PointerEvent) => {
 			dragged = false;
+			tapped = false;
 			if (!down.isPrimary || down.button !== 0) return;
 			if (ignored(down.target as Element, handlers.ignore, handlers.handle)) return;
 
@@ -155,7 +163,7 @@ export const swipe =
 				// on from there. The offset holds until the handler's change is on the page, or
 				// the node heads home for a frame first.
 				if (handler) await land(node, direction, handler);
-				else if (!cancelled && !moved) handlers.tap?.(event);
+				else tapped = !cancelled && !moved;
 				node.style.removeProperty('--swipe-x');
 				node.style.removeProperty('--swipe-y');
 				handlers.drag?.(0, 0);
@@ -167,9 +175,9 @@ export const swipe =
 		};
 
 		node.addEventListener('pointerdown', start);
-		node.addEventListener('click', swallow, true);
+		node.addEventListener('click', click, true);
 		return () => {
 			node.removeEventListener('pointerdown', start);
-			node.removeEventListener('click', swallow, true);
+			node.removeEventListener('click', click, true);
 		};
 	};

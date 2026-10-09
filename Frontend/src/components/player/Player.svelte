@@ -92,9 +92,10 @@
 			[...document.querySelectorAll<HTMLImageElement>('#player img')].map((image) => image.decode())
 		);
 
-	// micro is a player-only frame with no room for a bigger shape
+	// micro is a player-only frame with no room for a bigger shape. Already open, a tap on
+	// the sleeve has nothing to open — and setting `rise` again would replay it.
 	async function expand() {
-		if (!current.name || window.matchMedia('(max-height: 320px)').matches) return;
+		if (full || !current.name || window.matchMedia('(max-height: 320px)').matches) return;
 		// A phone with nothing over the bar rises. Otherwise it grows out of the bar, the
 		// way it folds back into it — and on a phone, the other half of `toggle`: the sheet
 		// would sit over the full shape, so the two trade places in the same morph, the
