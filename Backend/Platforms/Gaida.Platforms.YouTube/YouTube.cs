@@ -1,12 +1,12 @@
 using System.Runtime.CompilerServices;
 using Gaida.Core.Platforms;
-using Gaida.Core.Platforms.Cross_Platform;
 using Gaida.Core.Platforms.Optional.Supports;
 using Gaida.Core.Utils;
 using Gaida.Platforms.YouTube.Cache;
 using Gaida.Platforms.YouTube.Getters;
 using Gaida.Platforms.YouTube.Search_Providers;
 using Serilog;
+using YoutubeExplode;
 
 namespace Gaida.Platforms.YouTube;
 
@@ -14,20 +14,23 @@ public sealed class YouTube : Platform, ISupportsSearch, ISupportsPlaylist, ISup
 {
     private readonly YouTubeCacher _cacher;
 
-    public YouTube(ILogger logger) : base(logger)
+    public YouTube(ILogger logger, YouTubeOptions options) : base(logger)
     {
-        _cacher = new YouTubeCacher(logger);
+        _cacher = new YouTubeCacher(logger, options.CacheDatabasePath);
+
+        // One client for the platform, shared by the search provider and the downloader.
+        var client = new YoutubeClient();
 
         SearchProviders =
         [
             new YouTubeSearchProviderCached(logger, _cacher),
-            new YouTubeSearchProviderExplode(logger)
+            new YouTubeSearchProviderExplode(logger, client)
         ];
 
         ContentDownloaders =
         [
-            new GetterLocalCache(logger),
-            new GetterYouTubeExplode(logger),
+            new GetterLocalCache(logger, options.AudioCacheDirectory),
+            new GetterYouTubeExplode(logger, client),
             new GetterYtDlp(logger)
         ];
     }

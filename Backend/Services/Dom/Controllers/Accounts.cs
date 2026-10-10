@@ -14,8 +14,7 @@ namespace Dom.Controllers;
 ///     that is a spam and password-guessing surface — see the open questions in PLAYLISTS_PLAN.md. The
 ///     cheapest answer if it becomes real is an invite code read from configuration.
 /// </remarks>
-public class Accounts(ILogger<Accounts> logger, DomStore store, IConfiguration config, IHttpClientFactory http)
-    : ControllerBase
+public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup cleanup) : ControllerBase
 {
     [HttpPost("/Audio/Accounts/Register")]
     public IActionResult Register([FromBody] Credentials? body)
@@ -152,9 +151,7 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, IConfiguration c
         var (error, message, covers) = store.DeleteAccount(user, body?.Password);
         if (error is not null) return Refusal(error, message!);
 
-        var directory = config["Dom:CoverDir"] ?? "covers";
-        foreach (var cover in covers) Admin.Forget(directory, cover);
-        await Admin.ForgetHistory(http, config, logger, user.Id);
+        await cleanup.AfterDeleteAsync(user.Id, covers);
 
         return NoContent();
     }

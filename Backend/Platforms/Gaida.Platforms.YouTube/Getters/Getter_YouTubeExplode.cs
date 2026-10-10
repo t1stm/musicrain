@@ -1,15 +1,13 @@
 using Gaida.Core.Platforms;
 using Gaida.Core.Streams;
-using Gaida.Platforms.YouTube.Search_Providers;
 using Serilog;
 using YoutubeExplode;
 
 namespace Gaida.Platforms.YouTube.Getters;
 
-public class GetterYouTubeExplode(ILogger logger) : ContentGetter(logger)
+public class GetterYouTubeExplode(ILogger logger, YoutubeClient client) : ContentGetter(logger)
 {
     public override int Priority => 40;
-    private static YoutubeClient Client => YouTubeSearchProviderExplode.Client;
 
     public override async Task<StreamSpreader?> GetContentDataAsync(PlatformResult result,
         CancellationToken cancellationToken)
@@ -22,7 +20,7 @@ public class GetterYouTubeExplode(ILogger logger) : ContentGetter(logger)
 
         try
         {
-            var manifest = await Client.Videos.Streams.GetManifestAsync(
+            var manifest = await client.Videos.Streams.GetManifestAsync(
                 youtubeResult.GetPureId().ToString(), cancellationToken);
 
             var chosenAudioOnlyStream = manifest.GetAudioOnlyStreams()
@@ -39,7 +37,7 @@ public class GetterYouTubeExplode(ILogger logger) : ContentGetter(logger)
             {
                 try
                 {
-                    await Client.Videos.Streams.CopyToAsync(chosenAudioOnlyStream, streamSpreader,
+                    await client.Videos.Streams.CopyToAsync(chosenAudioOnlyStream, streamSpreader,
                         cancellationToken: cancellationToken);
                     Logger.Debug("Downloaded audio-only stream for YouTube video ID: {ID}", youtubeResult.Id);
                 }

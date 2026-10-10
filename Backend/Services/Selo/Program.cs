@@ -33,7 +33,7 @@ builder.Services.AddSingleton(Log.Logger);
 // /Audio/Search instead of an in-process AudioManager.
 var gaidaUrl = builder.Configuration["Gaida:Url"]
                ?? throw new InvalidOperationException("Gaida:Url must be configured.");
-builder.Services.AddSingleton(new HttpClient { BaseAddress = new Uri(gaidaUrl) });
+builder.Services.AddHttpClient(MultiplayerManager.Gaida, http => http.BaseAddress = new Uri(gaidaUrl));
 builder.Services.AddSingleton<MultiplayerManager>();
 
 var app = builder.Build();

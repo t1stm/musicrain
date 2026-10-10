@@ -91,20 +91,4 @@ public class AudioManager(ILogger logger)
 
         Logger.Debug("Playlist search for {Query} finished with {Count} results", query, totalResults);
     }
-
-    /// <summary>
-    ///     Fans <c>/classify</c> out across every HTTP platform pod. First claim wins; nobody claiming
-    ///     means an ordinary keyword search, which is the one classification rule that stays in Gaida.
-    /// </summary>
-    public async Task<ClassifyClaim> ClassifyAsync(string query, CancellationToken cancellationToken = default)
-    {
-        var trimmed = query.Trim();
-        foreach (var platform in Platforms.OfType<HttpPlatform>())
-        {
-            var claim = await platform.ClassifyAsync(trimmed, cancellationToken);
-            if (claim is not null) return claim.Value;
-        }
-
-        return new ClassifyClaim(QueryType.Keywords, trimmed, null);
-    }
 }

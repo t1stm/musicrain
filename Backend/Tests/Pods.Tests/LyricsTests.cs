@@ -11,23 +11,14 @@ namespace Pods.Tests;
 ///     anything: reconciliation is two File.Exists against a temp directory, and the other two are a
 ///     LINQ pass over an in-memory list.
 /// </summary>
-[Collection("STORAGE")]
 public class LyricsTests : IDisposable
 {
     private readonly string _storage = Directory.CreateTempSubdirectory("gaida-lyrics").FullName;
 
-    public LyricsTests()
-    {
-        // MusicManager reads STORAGE as a process variable, the way the pods set it — see
-        // Gaida.Pods.MusicDatabase/Program.cs:30. Tests in one class run sequentially, so the
-        // per-test value never races another one in here.
-        Environment.SetEnvironmentVariable("STORAGE", _storage, EnvironmentVariableTarget.Process);
-    }
-
     public void Dispose()
     {
-        Environment.SetEnvironmentVariable("STORAGE", null, EnvironmentVariableTarget.Process);
         try { Directory.Delete(_storage, true); } catch (IOException) { /* temp dir */ }
+        GC.SuppressFinalize(this);
     }
 
     // ── ReconcileLyrics ─────────────────────────────────────────────────────────────────────────
@@ -37,7 +28,7 @@ public class LyricsTests : IDisposable
     {
         var entry = Track("Rock/Rammstein/Rammstein - Sonne.flac", ".lrc");
 
-        Assert.True(MusicManager.ReconcileLyrics(entry));
+        Assert.True(Library().ReconcileLyrics(entry));
         Assert.Equal(LyricsKind.Synchronized, entry.LyricsType);
         // Unknown provenance means it was already there, which is the state nothing overwrites.
         Assert.Null(entry.LyricsSource);
@@ -47,11 +38,11 @@ public class LyricsTests : IDisposable
     public void APlainFileIsUnsynchronizedAndATimedOneWinsOverIt()
     {
         var entry = Track("Rock/Rammstein/Rammstein - Sonne.flac", ".txt");
-        Assert.True(MusicManager.ReconcileLyrics(entry));
+        Assert.True(Library().ReconcileLyrics(entry));
         Assert.Equal(LyricsKind.Unsynchronized, entry.LyricsType);
 
         File.WriteAllText(Path.Combine(_storage, "Rock/Rammstein/Rammstein - Sonne.lrc"), "[00:12.34]Alle warten");
-        Assert.True(MusicManager.ReconcileLyrics(entry));
+        Assert.True(Library().ReconcileLyrics(entry));
         Assert.Equal(LyricsKind.Synchronized, entry.LyricsType);
     }
 
@@ -63,7 +54,7 @@ public class LyricsTests : IDisposable
         entry.LyricsSource = LyricsOrigin.Lrclib;
         entry.LyricsChecked = new DateOnly(2026, 1, 1);
 
-        Assert.True(MusicManager.ReconcileLyrics(entry));
+        Assert.True(Library().ReconcileLyrics(entry));
         Assert.Null(entry.LyricsType);
         Assert.Null(entry.LyricsSource);
         // Someone deleting a bad .lrc should not trigger an immediate re-fetch of the same bad .lrc.
@@ -77,7 +68,7 @@ public class LyricsTests : IDisposable
         entry.LyricsType = LyricsKind.Synchronized;
         entry.LyricsSource = LyricsOrigin.Lrclib;
 
-        Assert.False(MusicManager.ReconcileLyrics(entry));
+        Assert.False(Library().ReconcileLyrics(entry));
         Assert.Equal(LyricsOrigin.Lrclib, entry.LyricsSource);
     }
 
@@ -217,13 +208,19 @@ public class LyricsTests : IDisposable
     private TestMusicManager Seeded(params MusicInfo[] songs)
     {
         Directory.CreateDirectory(Path.Combine(_storage, "Rock/Rammstein"));
-        return new TestMusicManager(songs);
+        return new TestMusicManager(new LibraryOptions(_storage), songs);
     }
 
     /// <summary>The library in memory, without a scan — the same shim MusicManagerTests uses.</summary>
+    private TestMusicManager Library()
+    {
+        return new TestMusicManager(new LibraryOptions(_storage));
+    }
+
     private sealed class TestMusicManager : MusicManager
     {
-        public TestMusicManager(params MusicInfo[] songs) : base(Serilog.Core.Logger.None)
+        public TestMusicManager(LibraryOptions options, params MusicInfo[] songs)
+            : base(Serilog.Core.Logger.None, options)
         {
             Songs = [.. songs];
         }

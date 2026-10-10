@@ -1,5 +1,4 @@
 using Gaida.API.Contracts;
-using Gaida.Core.Platforms;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gaida.API.Controllers;
@@ -19,7 +18,7 @@ public class Artist(IConfiguration configuration, IHostEnvironment environment) 
     [ProducesResponseType<IReadOnlyList<SearchResultDto>>(StatusCodes.Status200OK)]
     public IActionResult GetArtistLocal(string? term, [FromServices] ManagerService managerService)
     {
-        if (string.IsNullOrWhiteSpace(term) || managerService.Manager.PlatformFor("audio://") is not HttpPlatform local)
+        if (string.IsNullOrWhiteSpace(term) || managerService.Pod(Prefix.Local) is not { } local)
             return Ok(Array.Empty<SearchResultDto>());
 
         return Ok(this.Mapped(local.ArtistAsync(term, HttpContext.RequestAborted), configuration, environment));
@@ -35,8 +34,8 @@ public class Artist(IConfiguration configuration, IHostEnvironment environment) 
     [ProducesResponseType<IReadOnlyList<SearchResultDto>>(StatusCodes.Status200OK)]
     public IActionResult GetArtistDeezer(string? term, [FromServices] ManagerService managerService)
     {
-        if (string.IsNullOrWhiteSpace(term) || managerService.NeedsResolving("deezer://") ||
-            managerService.Manager.PlatformFor("deezer://") is not HttpPlatform deezer)
+        if (string.IsNullOrWhiteSpace(term) || managerService.NeedsResolving(Prefix.Deezer) ||
+            managerService.Pod(Prefix.Deezer) is not { } deezer)
             return Ok(Array.Empty<SearchResultDto>());
 
         return Ok(this.Mapped(deezer.ArtistAsync(term, HttpContext.RequestAborted), configuration, environment));
@@ -49,7 +48,7 @@ public class Artist(IConfiguration configuration, IHostEnvironment environment) 
     [ProducesResponseType<IReadOnlyList<SearchResultDto>>(StatusCodes.Status200OK)]
     public IActionResult GetArtistYouTube(string? term, [FromServices] ManagerService managerService)
     {
-        if (string.IsNullOrWhiteSpace(term) || managerService.Manager.PlatformFor("yt://") is not HttpPlatform youTube)
+        if (string.IsNullOrWhiteSpace(term) || managerService.Pod(Prefix.YouTube) is not { } youTube)
             return Ok(Array.Empty<SearchResultDto>());
 
         // Just a keyword search on the YouTube pod: there is no separate "artist" route for it.

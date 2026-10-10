@@ -1,5 +1,5 @@
 using System.Security.Cryptography;
-using Gaida.API.Controllers;
+using Gaida.API;
 
 namespace Gaida.Tests;
 
@@ -14,7 +14,7 @@ public class CoverTests
 
         try
         {
-            await Cover.PumpAsync(new MemoryStream(payload), response, temporary, cache);
+            await ThumbnailCache.PumpAsync(new MemoryStream(payload), response, temporary, cache);
 
             Assert.Equal(payload, response.ToArray());
             Assert.Equal(payload, await File.ReadAllBytesAsync(cache));
@@ -34,7 +34,7 @@ public class CoverTests
         try
         {
             await Assert.ThrowsAsync<IOException>(() =>
-                Cover.PumpAsync(new BreakingStream(), new MemoryStream(), temporary, cache));
+                ThumbnailCache.PumpAsync(new BreakingStream(), new MemoryStream(), temporary, cache));
 
             Assert.False(File.Exists(cache));
             Assert.False(File.Exists(temporary));

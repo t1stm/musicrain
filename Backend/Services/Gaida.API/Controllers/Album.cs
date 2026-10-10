@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Gaida.API.Contracts;
 using Gaida.Core.Platforms;
+using Gaida.Infrastructure.Platforms;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gaida.API.Controllers;
@@ -45,9 +46,9 @@ public class Album(IConfiguration configuration, IHostEnvironment environment) :
     private static async IAsyncEnumerable<PlatformResult> FirstNonEmpty(string artist, string album,
         ManagerService managerService, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        foreach (var prefix in new[] { "audio://", "deezer://" })
+        foreach (var prefix in (string[])[Prefix.Local, Prefix.Deezer])
         {
-            if (managerService.Manager.PlatformFor(prefix) is not HttpPlatform pod) continue;
+            if (managerService.Pod(prefix) is not { } pod) continue;
 
             var any = false;
             await foreach (var result in pod.AlbumAsync(artist, album, cancellationToken))

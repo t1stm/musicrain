@@ -4,20 +4,11 @@ using Serilog;
 
 namespace Gaida.Platforms.YouTube.Getters;
 
-public class GetterLocalCache(ILogger logger) : ContentGetter(logger)
+/// <param name="logger">Where the getter reports what it did.</param>
+/// <param name="cacheLocation">The webm cache, <see cref="YouTubeOptions.AudioCacheDirectory" />.</param>
+public class GetterLocalCache(ILogger logger, string cacheLocation) : ContentGetter(logger)
 {
-    private string _cacheLocation = "./YouTube Cache";
     public override int Priority => 99;
-
-    public override void Initialize()
-    {
-        var env = Environment.GetEnvironmentVariable("YOUTUBE_CACHE", EnvironmentVariableTarget.Process);
-
-        if (env is null) Environment.SetEnvironmentVariable("YOUTUBE_CACHE", _cacheLocation);
-        _cacheLocation = env ?? _cacheLocation;
-
-        base.Initialize();
-    }
 
     public override Task<StreamSpreader?> GetContentDataAsync(PlatformResult result,
         CancellationToken cancellationToken)
@@ -29,9 +20,9 @@ public class GetterLocalCache(ILogger logger) : ContentGetter(logger)
         }
 
         var file = youtubeResult.GetPureId().ToString() + ".webm";
-        Directory.CreateDirectory(_cacheLocation);
+        Directory.CreateDirectory(cacheLocation);
 
-        var path = Path.Combine(_cacheLocation, file);
+        var path = Path.Combine(cacheLocation, file);
         if (!File.Exists(path))
         {
             Logger.Debug("Not in the local cache: {Path}", path);
@@ -40,5 +31,25 @@ public class GetterLocalCache(ILogger logger) : ContentGetter(logger)
 
         // Already on disk -- adopt the cached file rather than reading 90G of webm through the heap.
         return Task.FromResult<StreamSpreader?>(StreamSpreader.FromExistingFile(path));
+    }
+
+    /// <summary>
+    ///     Tells a freshly started download to land in the webm cache instead of scratch space.
+    /// </summary>
+    /// <remarks>
+    ///     This used to subscribe to the spreader and write every chunk out a second time, into a second
+    ///     file, behind its own queue and semaphore. Now that a spreader is already a file, keeping it is a
+    ///     move at close -- the bytes are only ever written once. Readers streaming the download while it
+    ///     happens are unaffected: they hold their own handles.
+    /// </remarks>
+    public void Keep(YouTubeResult result, StreamSpreader streamSpreader)
+    {
+        var filePath = Path.Combine(cacheLocation, $"{result.GetPureId()}.webm");
+
+        // Already cached, or already being served straight out of the cache by GetContentDataAsync -- in which
+        // case the spreader's file IS filePath and moving it onto itself would be nonsense.
+        if (File.Exists(filePath)) return;
+
+        streamSpreader.KeepAs(filePath);
     }
 }

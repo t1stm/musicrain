@@ -1,7 +1,7 @@
 using System.Globalization;
 using Gaida.API.Contracts;
 using Gaida.Core;
-using Gaida.Core.Platforms;
+using Gaida.Infrastructure.Platforms;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gaida.API.Controllers;
@@ -27,12 +27,12 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
         {
             // Fanned out across every platform pod's /classify: first claim wins, and nobody claiming means
             // an ordinary keyword search — the one classification rule left in Gaida.
-            var claim = await managerService.Manager.ClassifyAsync(trimmed, HttpContext.RequestAborted);
+            var claim = await managerService.ClassifyAsync(trimmed, HttpContext.RequestAborted);
             if (claim.Error is not null) return BadRequest(Error("invalid_query", claim.Error));
 
             return claim.Kind switch
             {
-                QueryType.Id => await ResolveOne(claim.Query, managerService, resolver),
+                QueryType.Id => await ResolveOne(claim.Query, resolver),
                 QueryType.Playlist => Ok(PlaylistResolution(claim.Query)),
                 _ => Ok(new QueryResolutionDto { Kind = "search", Query = trimmed })
             };
@@ -70,12 +70,14 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
             !TimeSpan.TryParse(duration, CultureInfo.InvariantCulture, out length))
             return BadRequest(Error("invalid_query", "The duration must look like 00:04:32."));
 
-        if (managerService.Manager.PlatformFor("audio://") is not HttpPlatform local) return NoContent();
+        if (managerService.Pod(Prefix.Local) is not { } local) return NoContent();
 
         var found = await local.VariantAsync(name, artist, length, HttpContext.RequestAborted);
         if (found?.Result is null) return NoContent();
 
-        var mapped = ToSearchResult(found.Result);
+        // The variant's matched track arrives as a sub-resource rather than through a search, and becomes a
+        // result the same way a search's would.
+        var mapped = DiscoveryResultMapper.Map(local.ToResult(found.Result), Request, configuration, environment);
         if (mapped is null) return NoContent();
 
         return Ok(new LocalVariantDto(
@@ -87,15 +89,12 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
             mapped));
     }
 
-    private async Task<ActionResult<QueryResolutionDto>> ResolveOne(string id, ManagerService managerService,
-        PlayableResolver resolver)
+    private async Task<ActionResult<QueryResolutionDto>> ResolveOne(string id, PlayableResolver resolver)
     {
-        var result = await managerService.Manager.SearchId(id, HttpContext.RequestAborted);
-
         // A Spotify link resolves to a name; what the client gets back is whatever platform actually has the
         // track, which is also what `kind` then reports. A Deezer link normally passes straight through —
         // that pod has the audio — unless it is running without an ARL, when it resolves like Spotify does.
-        if (result is not null) result = await resolver.ResolveOne(result, HttpContext.RequestAborted);
+        var result = await resolver.LookUpAsync(id, HttpContext.RequestAborted);
         if (result is null) return NotFound(Error("not_found", "No result was found for this ID."));
 
         var mapped = DiscoveryResultMapper.Map(result, Request, configuration, environment);
@@ -139,24 +138,6 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
             Query = playlistUrl,
             PlaylistId = ExtractPlaylistId(playlistUrl)
         };
-    }
-
-    private SearchResultDto? ToSearchResult(PodResultDto dto)
-    {
-        // The local pod's own conversion lives on HttpPlatform; this is the one-off case where a
-        // sub-resource (the variant's matched track) needs the same treatment without a full search.
-        return DiscoveryResultMapper.Map(new HttpResult
-        {
-            Id = dto.Id ?? "",
-            Name = dto.Name,
-            Artist = dto.Artist,
-            Album = dto.Album,
-            Duration = TimeSpan.TryParse(dto.Duration, CultureInfo.InvariantCulture, out var d) ? d : TimeSpan.Zero,
-            ThumbnailUrl = dto.ThumbnailUrl,
-            OriginalTitle = dto.OriginalTitle,
-            OriginalArtist = dto.OriginalArtist,
-            Downloaders = []
-        }, Request, configuration, environment);
     }
 
     /// <summary>

@@ -6,17 +6,17 @@ using Serilog;
 
 namespace Gaida.Platforms.MusicDatabase.Search_Providers;
 
-public class MusicSearchProvider(ILogger logger) : SearchProvider(logger),
+public class MusicSearchProvider(ILogger logger, LibraryOptions options) : SearchProvider(logger),
     ISupportsId, ISupportsSearch, ISupportsRandomResults
 {
-    private readonly MusicManager _musicManager = new(logger);
+    private readonly MusicManager _musicManager = new(logger, options);
     public override string PlatformIdentifier => "audio://";
     public override int Priority => 99;
 
     public Task<PlatformResult?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
     {
         var found = _musicManager.SearchById(id);
-        return Task.FromResult<PlatformResult?>(found?.ToMusicResult(ContentDownloaders));
+        return Task.FromResult<PlatformResult?>(found?.ToMusicResult(ContentDownloaders, options.StorageDirectory));
     }
 
     public IAsyncEnumerable<PlatformResult> GetRandomResults(int count,
@@ -45,7 +45,7 @@ public class MusicSearchProvider(ILogger logger) : SearchProvider(logger),
     public (IReadOnlyList<(string Name, int Songs)> Folders, IReadOnlyList<PlatformResult> Files) Browse(string? path)
     {
         var (folders, files) = _musicManager.Browse(path);
-        return (folders, [.. files.Select(PlatformResult (song) => song.ToMusicResult(ContentDownloaders))]);
+        return (folders, [.. files.Select(PlatformResult (song) => song.ToMusicResult(ContentDownloaders, options.StorageDirectory))]);
     }
 
     public IAsyncEnumerable<PlatformResult> BrowseTracks(string? path)
@@ -89,7 +89,7 @@ public class MusicSearchProvider(ILogger logger) : SearchProvider(logger),
     public (LocalMatch Match, PlatformResult Result)? FindLocalVariant(string name, string? artist, TimeSpan duration)
     {
         var match = _musicManager.FindLocalVariant(name, artist, duration);
-        return match is null ? null : (match, match.Song.ToMusicResult(ContentDownloaders));
+        return match is null ? null : (match, match.Song.ToMusicResult(ContentDownloaders, options.StorageDirectory));
     }
 
     protected override void Initialize()
@@ -114,6 +114,6 @@ public class MusicSearchProvider(ILogger logger) : SearchProvider(logger),
 
     private IAsyncEnumerable<PlatformResult> ToResults(IEnumerable<MusicInfo> songs)
     {
-        return songs.Select(PlatformResult (song) => song.ToMusicResult(ContentDownloaders)).AsAsync();
+        return songs.Select(PlatformResult (song) => song.ToMusicResult(ContentDownloaders, options.StorageDirectory)).AsAsync();
     }
 }

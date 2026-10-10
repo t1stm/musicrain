@@ -11,9 +11,9 @@ public sealed class MusicDatabase : Platform, ISupportsSearch, ISupportsRandomRe
 {
     private readonly MusicSearchProvider _provider;
 
-    public MusicDatabase(ILogger logger) : base(logger)
+    public MusicDatabase(ILogger logger, LibraryOptions options) : base(logger)
     {
-        _provider = new MusicSearchProvider(logger);
+        _provider = new MusicSearchProvider(logger, options);
 
         SearchProviders = [_provider];
         ContentDownloaders = [new MusicGetter(logger)];

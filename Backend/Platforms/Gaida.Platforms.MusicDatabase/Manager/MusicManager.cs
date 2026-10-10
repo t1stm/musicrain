@@ -1,18 +1,15 @@
 using System.Collections.Concurrent;
-using System.Data;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Dapper;
 using Gaida.Core.Utils;
-using Gaida.Sqlite;
-using Microsoft.Data.Sqlite;
 using Serilog;
 
 namespace Gaida.Platforms.MusicDatabase.Manager;
 
-public partial class MusicManager(ILogger logger)
+public partial class MusicManager(ILogger logger, LibraryOptions options)
 {
-    private readonly CoverExtractor _coverExtractor = new(logger);
+    private readonly CoverExtractor _coverExtractor = new(logger, options.CoverDirectory);
+    private readonly LibraryDatabase _database = new(options);
 
     /// <summary>
     ///     Serialises admin edits against each other and against their own file writes.
@@ -38,17 +35,6 @@ public partial class MusicManager(ILogger logger)
 
     private ILogger Logger { get; } = logger;
 
-    public static string Domain =>
-        Environment.GetEnvironmentVariable("DOMAIN", EnvironmentVariableTarget.Process) ?? string.Empty;
-
-    public static string StorageDirectory =>
-        Environment.GetEnvironmentVariable("STORAGE", EnvironmentVariableTarget.Process) ?? "./";
-
-    // TrimEnd because DOMAIN is written with a trailing slash as often as not, and concatenating it
-    // straight onto "/Album_Covers" produced "https://host//Album_Covers/<hash>.jpg" — a URL that
-    // renders in a browser but that Cover.cs's HttpClient fetch and any strict client both choke on.
-    public static string AlbumCoverLocation => Domain.TrimEnd('/') + "/Album_Covers";
-
     /// <summary>
     ///     The current tag-reading pass. Bump it when the scanner learns to read a tag it did not before:
     ///     every entry stamped below this is re-read once on the next load, and stamped. Pass 1 is the
@@ -62,15 +48,13 @@ public partial class MusicManager(ILogger logger)
     public async Task Initialize()
     {
         Logger.Information("Initializing MusicManager");
-        var storage = Environment.GetEnvironmentVariable("STORAGE", EnvironmentVariableTarget.Process);
-        if (storage is not null)
+        if (options.Storage is { } storage)
         {
             Logger.Debug("Ensuring storage directory exists: {Storage}", storage);
             Directory.CreateDirectory(storage);
         }
 
-        var albumCovers = Environment.GetEnvironmentVariable("ALBUM_COVERS", EnvironmentVariableTarget.Process);
-        if (albumCovers is not null)
+        if (options.AlbumCovers is { } albumCovers)
         {
             Logger.Debug("Ensuring album covers directory exists: {AlbumCovers}", albumCovers);
             Directory.CreateDirectory(albumCovers);
@@ -119,7 +103,7 @@ public partial class MusicManager(ILogger logger)
         try
         {
             await Load();
-            Logger.Debug("Extracting covers from {StorageDirectory}", StorageDirectory);
+            Logger.Debug("Extracting covers from {StorageDirectory}", options.StorageDirectory);
             ExtractCovers();
         }
         finally
@@ -131,15 +115,16 @@ public partial class MusicManager(ILogger logger)
 
     protected async Task Load()
     {
-        Logger.Debug("Loading music from {StorageDirectory}", StorageDirectory);
-        var folders = Directory.EnumerateDirectories(StorageDirectory, "*", SearchOption.AllDirectories).ToList();
+        Logger.Debug("Loading music from {StorageDirectory}", options.StorageDirectory);
+        var folders = Directory.EnumerateDirectories(options.StorageDirectory, "*", SearchOption.AllDirectories)
+            .ToList();
         Logger.Debug("Found {Count} folders in storage", folders.Count);
 
-        var stored = ReadLibrary();
+        var stored = _database.ReadLibrary();
         var parsed = new ConcurrentBag<(string Folder, List<MusicInfo> Entries, bool Changed)>();
         await Parallel.ForEachAsync(folders, async (folder, _) =>
         {
-            var relative = Path.GetRelativePath(StorageDirectory, folder).Replace('\\', '/');
+            var relative = Path.GetRelativePath(options.StorageDirectory, folder).Replace('\\', '/');
             var (entries, changed) = await ParseArtistFolder(folder, stored.GetValueOrDefault(relative) ?? []);
             parsed.Add((relative, entries, changed));
         });
@@ -149,8 +134,8 @@ public partial class MusicManager(ILogger logger)
         var changed = parsed.Where(folder => folder.Changed).ToList();
         if (changed.Count > 0)
         {
-            Write(changed.SelectMany(folder => folder.Entries), changed.Select(folder => folder.Folder));
-            Logger.Information("Wrote {Count} folder(s) to {Library}", changed.Count, LibraryDatabase);
+            _database.Write(changed.SelectMany(folder => folder.Entries), changed.Select(folder => folder.Folder));
+            Logger.Information("Wrote {Count} folder(s) to {Library}", changed.Count, _database.Path);
         }
 
         // ponytail: folder order is no longer stable; nothing downstream depends on it (search scores, random shuffles).
@@ -159,10 +144,10 @@ public partial class MusicManager(ILogger logger)
         // An entry whose file is gone -- converted to another format beside it, moved, deleted by hand -- is
         // a search hit that answers every play with a 404. It stays in library.db, ID and all, and comes
         // back at the next boot if the file does.
-        var missing = songs.RemoveAll(song => !File.Exists(StorageDirectory + "/" + song.RelativeLocation));
+        var missing = songs.RemoveAll(song => !File.Exists(options.StorageDirectory + "/" + song.RelativeLocation));
         if (missing > 0) Logger.Warning("Left out {Count} entries whose file is gone", missing);
 
-        songs.ForEach(s => s.CoverUrl = s.CoverUrl?.Replace("$[DOMAIN]", AlbumCoverLocation));
+        songs.ForEach(s => s.CoverUrl = options.Served(s.CoverUrl));
 
         Songs = songs;
     }
@@ -262,23 +247,24 @@ public partial class MusicManager(ILogger logger)
         var covered = new ConcurrentBag<MusicInfo>();
         Parallel.ForEach(Songs.Where(song => string.IsNullOrWhiteSpace(song.CoverUrl)), song =>
         {
-            if (_coverExtractor.ExportCover(StorageDirectory + "/" + song.RelativeLocation) is not { } cover) return;
+            if (_coverExtractor.ExportCover(options.StorageDirectory + "/" + song.RelativeLocation) is not { } cover)
+                return;
 
-            // The substituted form, as Load leaves every other entry; MusicInfo.StoredCoverUrl puts the
+            // The substituted form, as Load leaves every other entry; LibraryOptions.Stored puts the
             // placeholder back on the way into the row.
-            song.CoverUrl = $"{AlbumCoverLocation}/{cover}";
+            song.CoverUrl = $"{options.AlbumCoverLocation}/{cover}";
             covered.Add(song);
         });
 
         if (covered.IsEmpty) return;
 
-        Write(covered);
+        _database.Write(covered);
         Logger.Information("Extracted {Count} cover(s)", covered.Count);
     }
 
-    private static void RereadTags(MusicInfo entry)
+    private void RereadTags(MusicInfo entry)
     {
-        var path = StorageDirectory + "/" + entry.RelativeLocation;
+        var path = options.StorageDirectory + "/" + entry.RelativeLocation;
         if (!File.Exists(path)) return;
 
         var tagged = MediaInfo.GetInformation(path);
@@ -298,9 +284,9 @@ public partial class MusicManager(ILogger logger)
     ///     Every pass, whatever the entry is stamped with: passes 4 and 5 changed what the first three read, so
     ///     they all run again over it.
     /// </remarks>
-    private static void Backfill(MusicInfo entry)
+    private void Backfill(MusicInfo entry)
     {
-        var path = StorageDirectory + "/" + entry.RelativeLocation;
+        var path = options.StorageDirectory + "/" + entry.RelativeLocation;
         if (!File.Exists(path)) return;
 
         var fresh = MediaInfo.GetInformation(path);
@@ -324,15 +310,15 @@ public partial class MusicManager(ILogger logger)
             entry.CoverUrl = null;
     }
 
-    private static IEnumerable<string> NewFiles(List<MusicInfo> existing, List<string> files)
+    private IEnumerable<string> NewFiles(List<MusicInfo> existing, List<string> files)
     {
         return files.Where(location =>
             existing.All(m => m.RelativeLocation != RelativeLocation(location)));
     }
 
-    private static string RelativeLocation(string location)
+    private string RelativeLocation(string location)
     {
-        return Path.GetRelativePath(StorageDirectory, location);
+        return Path.GetRelativePath(options.StorageDirectory, location);
     }
 
     /// <summary>
@@ -348,7 +334,7 @@ public partial class MusicManager(ILogger logger)
             split.Length > 1 ? split[^2] : string.Empty);
     }
 
-    private static MusicInfo ParseFile(string location)
+    private MusicInfo ParseFile(string location)
     {
         var (title, author, folder) = PathNames(location);
 
@@ -535,7 +521,7 @@ public partial class MusicManager(ILogger logger)
 
         foreach (var song in songs)
         {
-            if (song.RelativeLocation is { } location) folders.Add(FolderOf(location));
+            if (song.RelativeLocation is { } location) folders.Add(LibraryDatabase.FolderOf(location));
             if (string.IsNullOrWhiteSpace(song.Album)) withoutAlbum++;
             if (song.Artists.Count == 0) withoutArtist++;
             if (song.LyricsType is not null) withLyrics++;
@@ -552,7 +538,7 @@ public partial class MusicManager(ILogger logger)
             withLyrics,
             synchronized,
             scanning = Volatile.Read(ref _scanning) == 1,
-            storage = StorageDirectory
+            storage = options.StorageDirectory
         };
     }
 
@@ -596,7 +582,7 @@ public partial class MusicManager(ILogger logger)
             if (artists is not null) entry.Artists = Distinct(artists);
             if (album is not null) entry.Album = album.Trim() is { Length: > 0 } name ? name : null;
 
-            Write([entry]);
+            _database.Write([entry]);
             Logger.Information("Admin edited {ID}: {Title} — {Artist}", id, entry.Title, entry.Artist);
 
             return (entry, null);
@@ -661,7 +647,7 @@ public partial class MusicManager(ILogger logger)
         if (!IsAudioBasedOnFileExtension(extension)) return (null, $"'{extension}' is not a playable extension.");
 
         var folder = cleanArtist.Length == 0 ? UnknownArtistFolder : cleanArtist;
-        var directory = Path.Combine(StorageDirectory, ImportFolder, folder);
+        var directory = Path.Combine(options.StorageDirectory, ImportFolder, folder);
         var filename = $"{folder} - {cleanTitle}{extension}";
         var location = $"{directory}/{filename}";
 
@@ -688,15 +674,15 @@ public partial class MusicManager(ILogger logger)
 
             // The file's own artwork first, the source's only when it has none. The substituted form,
             // not the $[DOMAIN] placeholder: this entry is going straight into the in-memory library,
-            // and MusicInfo.StoredCoverUrl puts the placeholder back on the way to disk.
+            // and LibraryOptions.Stored puts the placeholder back on the way to disk.
             var artwork = _coverExtractor.ExportCover(location) ??
                           (cover is { Length: > 0 } ? _coverExtractor.StoreCover(cover) : null);
-            if (artwork is not null) entry.CoverUrl = $"{AlbumCoverLocation}/{artwork}";
+            if (artwork is not null) entry.CoverUrl = $"{options.AlbumCoverLocation}/{artwork}";
 
             // Copy-on-write rather than Add: SearchById and Browse read this list from other threads and
             // from AsParallel, and growing it underneath them is the classic torn-enumeration crash.
             Songs = [.. Songs, entry];
-            Write([entry]);
+            _database.Write([entry]);
 
             Logger.Information("Imported {Title} - {Artist} as {Location}", entry.Title, entry.Artist, location);
             return (entry, null);
@@ -732,140 +718,6 @@ public partial class MusicManager(ILogger logger)
         }
 
         return result;
-    }
-
-    /// <summary><c>library.db</c>, at the root of the library it indexes.</summary>
-    private static string LibraryDatabase => Path.Combine(StorageDirectory, "library.db");
-
-    /// <summary>
-    ///     A connection to <see cref="LibraryDatabase" />, with its tables made if this is the first. Every
-    ///     time rather than once, because <c>STORAGE</c> is read every time too, and the check is one pragma.
-    /// </summary>
-    private static SqliteConnection Open()
-    {
-        var db = Database.Open(Database.At(LibraryDatabase));
-        Database.Upgrade(db, SchemaVersion, transaction => db.Execute(Schema, transaction: transaction));
-        return db;
-    }
-
-    /// <summary>Every row, by the folder it sits in.</summary>
-    private static Dictionary<string, List<MusicInfo>> ReadLibrary()
-    {
-        using var db = Open();
-
-        // CoverUrl straight into CoverUrl, placeholder and all: Load substitutes it, as it did reading Info.json.
-        var songs = db.Query<MusicInfo>("""
-                SELECT RelativeLocation, Id, Album, Scan, CoverUrl, LyricsType, LyricsSource, LyricsChecked, Length
-                FROM songs
-                """)
-            .ToDictionary(song => song.RelativeLocation!, StringComparer.Ordinal);
-        foreach (var titles in db.Query<NameRow>(
-                         "SELECT RelativeLocation, Title AS Name FROM song_titles ORDER BY RelativeLocation, Position")
-                     .GroupBy(row => row.RelativeLocation))
-            songs[titles.Key].Titles = [.. titles.Select(row => row.Name)];
-        foreach (var artists in db.Query<NameRow>(
-                         "SELECT RelativeLocation, Artist AS Name FROM song_artists ORDER BY RelativeLocation, Position")
-                     .GroupBy(row => row.RelativeLocation))
-            songs[artists.Key].Artists = [.. artists.Select(row => row.Name)];
-
-        return songs.Values.GroupBy(song => FolderOf(song.RelativeLocation!), StringComparer.Ordinal)
-            .ToDictionary(folder => folder.Key, folder => folder.ToList(), StringComparer.Ordinal);
-    }
-
-    /// <summary>
-    ///     Writes <paramref name="entries" /> as they now are, after dropping every row in
-    ///     <paramref name="folders" />, in one transaction. Each entry is deleted and inserted again rather
-    ///     than diffed: the delete cascades to its titles and artists, so the rows always match the entry.
-    /// </summary>
-    /// <param name="entries">Entries with a <see cref="MusicInfo.RelativeLocation" />, which is the key.</param>
-    /// <param name="folders">Folders whose rows are replaced wholesale, so an entry the scan dropped goes too.</param>
-    private static void Write(IEnumerable<MusicInfo> entries, IEnumerable<string>? folders = null)
-    {
-        using var db = Open();
-        using var transaction = db.BeginTransaction();
-
-        db.Execute("DELETE FROM songs WHERE Folder = @folder", (folders ?? []).Select(folder => new { folder }),
-            transaction);
-
-        foreach (var entry in entries)
-        {
-            db.Execute("DELETE FROM songs WHERE RelativeLocation = @RelativeLocation", new { entry.RelativeLocation },
-                transaction);
-            db.Execute("""
-                INSERT INTO songs (RelativeLocation, Folder, Id, Album, Scan, CoverUrl, LyricsType, LyricsSource,
-                                   LyricsChecked, Length)
-                VALUES (@RelativeLocation, @Folder, @Id, @Album, @Scan, @CoverUrl, @LyricsType, @LyricsSource,
-                        @LyricsChecked, @Length)
-                """, new
-            {
-                entry.RelativeLocation,
-                Folder = FolderOf(entry.RelativeLocation!),
-                entry.Id,
-                entry.Album,
-                entry.Scan,
-                CoverUrl = entry.StoredCoverUrl,
-                // by name, the way Info.json held them, so reordering an enum relabels nothing
-                LyricsType = entry.LyricsType?.ToString(),
-                LyricsSource = entry.LyricsSource?.ToString(),
-                entry.LyricsChecked,
-                entry.Length
-            }, transaction);
-            db.Execute("INSERT INTO song_titles (RelativeLocation, Position, Title) VALUES (@Location, @Position, @Name)",
-                entry.Titles.Select((name, position) => new { Location = entry.RelativeLocation, Position = position, Name = name }),
-                transaction);
-            db.Execute("INSERT INTO song_artists (RelativeLocation, Position, Artist) VALUES (@Location, @Position, @Name)",
-                entry.Artists.Select((name, position) => new { Location = entry.RelativeLocation, Position = position, Name = name }),
-                transaction);
-        }
-
-        transaction.Commit();
-    }
-
-    /// <summary><c>PRAGMA user_version</c> once the tables exist. Each folder's Info.json is imported by the scan.</summary>
-    private const int SchemaVersion = 1;
-
-    /// <summary>
-    ///     One row per indexed file, keyed by where it is. Titles and artists are ordered lists — the first of
-    ///     each leads — so each is its own table with a position.
-    /// </summary>
-    private const string Schema = """
-        CREATE TABLE IF NOT EXISTS songs (
-            RelativeLocation TEXT PRIMARY KEY,
-            Folder TEXT NOT NULL,
-            Id TEXT,
-            Album TEXT,
-            Scan INTEGER NOT NULL,
-            CoverUrl TEXT,
-            LyricsType TEXT,
-            LyricsSource TEXT,
-            LyricsChecked TEXT,
-            Length REAL NOT NULL
-        ) STRICT;
-        CREATE INDEX IF NOT EXISTS songs_by_folder ON songs (Folder);
-
-        CREATE TABLE IF NOT EXISTS song_titles (
-            RelativeLocation TEXT NOT NULL REFERENCES songs (RelativeLocation) ON DELETE CASCADE,
-            Position INTEGER NOT NULL,
-            Title TEXT NOT NULL,
-            PRIMARY KEY (RelativeLocation, Position)
-        ) STRICT;
-
-        CREATE TABLE IF NOT EXISTS song_artists (
-            RelativeLocation TEXT NOT NULL REFERENCES songs (RelativeLocation) ON DELETE CASCADE,
-            Position INTEGER NOT NULL,
-            Artist TEXT NOT NULL,
-            PRIMARY KEY (RelativeLocation, Position)
-        ) STRICT;
-        """;
-
-    private sealed record NameRow(string RelativeLocation, string Name);
-
-    /// <summary>The folder part of a relative location, in the '/' form the rest of this file uses.</summary>
-    private static string FolderOf(string relativeLocation)
-    {
-        var normalized = relativeLocation.Replace('\\', '/');
-        var slash = normalized.LastIndexOf('/');
-        return slash < 0 ? string.Empty : normalized[..slash];
     }
 
     [GeneratedRegex(@"\(.*?\)")]
@@ -910,7 +762,9 @@ public partial class MusicManager(ILogger logger)
         // The artist picks the folder; the playlist picks the tracks. Distinct because an artist can sit
         // under more than one folder — a second genre, a compilation.
         foreach (var folder in GetArtistSongs(artist)
-                     .Select(song => song.RelativeLocation is { } location ? FolderOf(location) : string.Empty)
+                     .Select(song => song.RelativeLocation is { } location
+                         ? LibraryDatabase.FolderOf(location)
+                         : string.Empty)
                      .Where(folder => folder.Length > 0).Distinct(StringComparer.Ordinal))
         {
             if (PlaylistFor(folder, wanted) is not { } playlist) continue;
@@ -930,9 +784,9 @@ public partial class MusicManager(ILogger logger)
     ///     Index the playlists at <see cref="Load" /> if album pages ever get hot — the cost of that is
     ///     invalidating the index on every rescan.
     /// </remarks>
-    private static string? PlaylistFor(string folder, string album)
+    private string? PlaylistFor(string folder, string album)
     {
-        var directory = Path.Combine(StorageDirectory, folder);
+        var directory = Path.Combine(options.StorageDirectory, folder);
         if (!Directory.Exists(directory)) return null;
 
         // The album name comes from a client, so it is never built into a path: the folder's playlists are
@@ -978,6 +832,7 @@ public partial class MusicManager(ILogger logger)
     /// </summary>
     private IEnumerable<MusicInfo> SongsIn(string folder)
     {
-        return Songs.Where(song => song.RelativeLocation is { } location && FolderOf(location) == folder);
+        return Songs.Where(song =>
+            song.RelativeLocation is { } location && LibraryDatabase.FolderOf(location) == folder);
     }
 }

@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace Gaida.Core.FFmpeg;
+namespace Gaida.Infrastructure.FFmpeg;
 
 public static class FFmpegEncoder
 {

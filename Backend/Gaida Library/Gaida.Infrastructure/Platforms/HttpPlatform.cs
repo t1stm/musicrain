@@ -3,13 +3,14 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Gaida.Core;
+using Gaida.Core.Platforms;
 using Gaida.Core.Platforms.Optional.Supports;
 using Gaida.Core.Streams;
 using Gaida.Core.Utils;
-using JetBrains.Annotations;
 using Serilog;
 
-namespace Gaida.Core.Platforms;
+namespace Gaida.Infrastructure.Platforms;
 
 /// <summary>
 ///     A platform pod reached over HTTP instead of in-process. Every route answers 404 when the pod does not
@@ -251,57 +252,6 @@ public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist,
         }
     }
 }
-
-/// <summary>A search/resolve/playlist/random result as a pod hands it over — no <c>contentUrl</c>, no public host.</summary>
-public sealed class PodResultDto
-{
-    public string? Id { get; init; }
-    public string? Name { get; init; }
-    public string? Artist { get; init; }
-    public string? Album { get; init; }
-    public string? Duration { get; init; }
-    public string? ThumbnailUrl { get; init; }
-    public string? OriginalTitle { get; init; }
-    public string? OriginalArtist { get; init; }
-}
-
-[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed class PodBrowseFolderDto
-{
-    public string? Name { get; set; }
-    public int Songs { get; set; }
-}
-
-[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed class PodBrowseDto
-{
-    public List<PodBrowseFolderDto>? Folders { get; set; }
-    public List<PodResultDto>? Files { get; set; }
-}
-
-[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed class PodVariantDto
-{
-    public string? Match { get; set; }
-    public double Score { get; set; }
-    public int DurationDeltaSeconds { get; set; }
-    public List<string>? YouTubeTags { get; set; }
-    public List<string>? LibraryTags { get; set; }
-    public PodResultDto? Result { get; set; }
-}
-
-internal sealed class ClassifyDto
-{
-    public string? Kind { get; init; }
-    public string? Id { get; init; }
-    public string? Error { get; init; }
-}
-
-/// <summary>
-///     One pod's answer to <c>/classify</c>: what it thinks the query is, or its own error for a claimed-but-invalid
-///     one.
-/// </summary>
-public readonly record struct ClassifyClaim(QueryType Kind, string Query, string? Error);
 
 public sealed class HttpResult : PlatformResult
 {

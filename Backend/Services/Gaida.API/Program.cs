@@ -1,16 +1,13 @@
 using Gaida.Admin;
 using Gaida.API;
-using Gaida.Core;
 using Serilog;
-using Serilog.Core;
 using Serilog.Templates;
 using Serilog.Templates.Themes;
 
-// `dotnet run -- selftest` runs the pure-logic check below without needing a listening host —
-// mirrors Gaida.Pods.MusicDatabase/Program.cs's RunSelfCheck.
+// `dotnet run -- --self-check` runs the pure-logic check in SelfCheck.cs without needing a listening host.
 if (args.Contains("--self-check"))
 {
-    RunSelfCheck();
+    SelfCheck.Run();
     return;
 }
 
@@ -36,9 +33,12 @@ builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => poli
     .AllowAnyHeader()
     .AllowAnyMethod()));
 
+builder.Services.AddHttpClient(ThumbnailCache.Client, http => http.Timeout = TimeSpan.FromSeconds(15));
+
 builder.Services.AddSingleton(Log.Logger);
 builder.Services.AddSingleton<ManagerService>();
 builder.Services.AddSingleton<PlayableResolver>();
+builder.Services.AddSingleton<ThumbnailCache>();
 
 var app = builder.Build();
 
@@ -57,21 +57,3 @@ app.UseAuthorization();
 app.MapControllers();
 app.Run();
 return;
-
-// The one runnable check: `dotnet run --project Gaida.API -- selftest`. Exercises the classify
-// fan-out's fallback rule (nobody claims → keyword search) without a listening host or any pods up.
-static void RunSelfCheck()
-{
-    var manager = new AudioManager(Logger.None);
-    var claim = manager.ClassifyAsync("some random text").GetAwaiter().GetResult();
-    Assert(claim is { Kind: QueryType.Keywords, Error: null, Query: "some random text" },
-        "classify: no platform pod claiming the query falls back to a keyword search");
-
-    Console.WriteLine("selftest OK");
-    return;
-
-    void Assert(bool condition, string message)
-    {
-        if (!condition) throw new Exception($"selftest failed: {message}");
-    }
-}

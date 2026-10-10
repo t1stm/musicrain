@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Gaida Library\Gaida.Core\Gaida.Core.csproj"/>
+    <ProjectReference Include="..\..\Gaida Library\Gaida.Infrastructure\Gaida.Infrastructure.csproj"/>
   </ItemGroup>
 
   <ItemGroup>

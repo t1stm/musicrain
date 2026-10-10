@@ -6,11 +6,11 @@ using Gaida.Core.Platforms;
 using Gaida.Core.Streams;
 using Gaida.Platforms.MusicDatabase;
 using Gaida.Platforms.MusicDatabase.Manager;
-using JetBrains.Annotations;
+using Gaida.Pods.MusicDatabase;
 using Microsoft.Data.Sqlite;
 using Serilog;
 
-// `dotnet run -- selftest` runs the pure-logic check below without needing a library or a
+// `dotnet run -- --self-check` runs the pure-logic check below without needing a library or a
 // listening host — see RunSelfCheck.
 if (args.Contains("--self-check"))
 {
@@ -25,23 +25,19 @@ Log.Logger = new LoggerConfiguration()
 
 var builder = WebApplication.CreateBuilder(args);
 
-// MusicManager (and CoverExtractor beneath it) read these as process environment variables,
-// not through IConfiguration — see Gaida.API/Program.cs:18 for the pattern this mirrors.
-foreach (var key in (string[])["DOMAIN", "STORAGE", "ALBUM_COVERS"])
-    Environment.SetEnvironmentVariable(key, builder.Configuration[key]);
-
 builder.Services.AddSerilog();
 builder.Services.AddSingleton(Log.Logger);
 
-// The one service this pod talks to, and only from the admin surface: /Admin/import-deezer pulls a
-// track's metadata and bytes out of the Deezer pod. Unset, that route answers 400 and nothing else
-// here notices — the library pod has no other reason to make an outbound request.
-var deezerUrl = builder.Configuration["DEEZER_URL"]?.TrimEnd('/');
-builder.Services.AddHttpClient("deezer", http => http.Timeout = TimeSpan.FromMinutes(5));
+// An empty value is the same as an unset one, as it was when these travelled as environment variables.
+var library = new LibraryOptions(Setting("STORAGE"), Setting("ALBUM_COVERS"), Setting("DOMAIN"));
 
-var platform = new MusicDatabase(Log.Logger);
+builder.Services.AddHttpClient(DeezerImport.Client, http => http.Timeout = TimeSpan.FromMinutes(5));
+
+var platform = new MusicDatabase(Log.Logger, library);
 platform.Initialize(); // kicks off MusicManager.Initialize() (library scan) in the background
 builder.Services.AddSingleton(platform);
+builder.Services.AddSingleton(services => new DeezerImport(services.GetRequiredService<IHttpClientFactory>(),
+    builder.Configuration["DEEZER_URL"]?.TrimEnd('/'), platform, Log.Logger));
 
 var app = builder.Build();
 
@@ -77,58 +73,11 @@ admin?.MapPost("/rescan", IResult (MusicDatabase db) => db.TryRescan()
     ? Results.Accepted()
     : Results.Conflict(new ErrorDto("A scan is already running.")));
 
-// Pulls one Deezer track into the library. The Deezer pod owns the download and its cache; this end
-// owns the storage, so the bytes come over the wire rather than the volume being shared. The entry is
-// left exactly as its tags describe it -- the Library tab above is where an operator fixes it up.
-admin?.MapPost("/import-deezer", async Task<IResult> (string? id, MusicDatabase db,
-    IHttpClientFactory factory, CancellationToken ct) =>
+// Pulls one Deezer track into the library — see DeezerImport.
+admin?.MapPost("/import-deezer", async Task<IResult> (string? id, DeezerImport deezer, CancellationToken ct) =>
 {
-    if (string.IsNullOrWhiteSpace(id)) return Results.BadRequest(new ErrorDto("A Deezer track ID is required."));
-    if (string.IsNullOrWhiteSpace(deezerUrl))
-        return Results.BadRequest(new ErrorDto("DEEZER_URL is not configured on this pod."));
-
-    var http = factory.CreateClient("deezer");
-    var query = $"?id={Uri.EscapeDataString(id)}";
-
-    PodResultDto? metadata;
-    try
-    {
-        metadata = await http.GetFromJsonAsync<PodResultDto>($"{deezerUrl}/resolve{query}", ct);
-    }
-    catch (Exception exception) when (exception is not OperationCanceledException)
-    {
-        Log.Warning(exception, "Deezer would not describe {ID}", id);
-        return Results.BadRequest(new ErrorDto("The Deezer pod does not know that track."));
-    }
-
-    if (metadata is null) return Results.BadRequest(new ErrorDto("The Deezer pod does not know that track."));
-
-    // ResponseHeadersRead, so the body streams into the library file instead of through a byte array
-    // the size of a FLAC first.
-    using var audio = await http.GetAsync($"{deezerUrl}/content{query}", HttpCompletionOption.ResponseHeadersRead, ct);
-    if (!audio.IsSuccessStatusCode)
-        return Results.BadRequest(new ErrorDto(
-            "The Deezer pod has no audio for that track — it needs a working DEEZER_ARL."));
-
-    // The content type, not the filename: the pod sets both, and only one of them is a contract
-    // Gaida.API already relies on (Content.cs relays it verbatim).
-    var extension = ExtensionFor(audio.Content.Headers.ContentType?.MediaType);
-    if (extension is null)
-        return Results.BadRequest(new ErrorDto(
-            $"The Deezer pod sent {audio.Content.Headers.ContentType?.MediaType ?? "no content type"}."));
-
-    // Deezer's own artwork, for the usual case of a download with no embedded picture. Fetched before
-    // the body so a cover that will not load costs nothing — a track is worth importing without one.
-    var cover = await CoverBytesAsync(http, metadata.ThumbnailUrl, ct);
-
-    await using var body = await audio.Content.ReadAsStreamAsync(ct);
-    var (entry, error) = await db.ImportAsync(metadata.Artist ?? "", metadata.Name ?? "", metadata.Album,
-        extension, body, cover, ct);
-
-    if (error is not null) return Results.BadRequest(new ErrorDto(error));
-
-    Log.Information("Imported Deezer track {ID} as {Entry}", id, entry!.Id);
-    return Results.Ok(LibraryRow(entry));
+    var (entry, error) = await deezer.ImportAsync(id, ct);
+    return entry is null ? Results.BadRequest(new ErrorDto(error!)) : Results.Ok(LibraryRow(entry));
 });
 
 app.MapGet("/classify", IResult (string? query) =>
@@ -317,32 +266,10 @@ return;
 
 // ── Admin helpers ──────────────────────────────────────────────────────────────────────────────
 
-// The cover image a pod's thumbnailUrl points at, or null for anything that does not fetch. Never
-// throws: artwork is the one part of an import worth losing rather than failing over.
-static async Task<byte[]?> CoverBytesAsync(HttpClient http, string? url, CancellationToken ct)
+string? Setting(string key)
 {
-    if (string.IsNullOrWhiteSpace(url)) return null;
-
-    try
-    {
-        var bytes = await http.GetByteArrayAsync(url, ct);
-        return bytes.Length > 0 ? bytes : null;
-    }
-    catch (Exception exception) when (exception is not OperationCanceledException)
-    {
-        Log.Warning(exception, "Could not fetch the cover at {Url}", url);
-        return null;
-    }
+    return builder.Configuration[key] is { Length: > 0 } value ? value : null;
 }
-
-// The library extension for what the Deezer pod says it is sending, or null for anything this
-// library does not index. Deezer only ever serves these two — see Gaida.Pods.Deezer/stream.py.
-static string? ExtensionFor(string? contentType) => contentType switch
-{
-    "audio/flac" => ".flac",
-    "audio/mpeg" => ".mp3",
-    _ => null
-};
 
 static List<string>? Variants(HttpRequest request, string name)
 {
@@ -470,7 +397,7 @@ static async Task PumpToResponse(StreamSpreader spreader, HttpResponse response,
     await reader.CopyToAsync(response.Body, ct);
 }
 
-// ── The one runnable check: `dotnet run --project Gaida.Pods.MusicDatabase -- selftest`. ──
+// ── The one runnable check: `dotnet run --project Gaida.Pods.MusicDatabase -- --self-check`. ──
 // Exercises the pure /classify and /variant logic above without needing a library on disk or a
 // listening host. Throws (nonzero exit) the moment any assertion fails.
 static async Task RunSelfCheck()
@@ -528,12 +455,12 @@ static async Task ImportCheck(Action<bool, string> assert)
     var root = Path.Combine(Path.GetTempPath(), "gaida-local-import-" + Guid.NewGuid().ToString("n"));
     Directory.CreateDirectory(root);
 
-    Environment.SetEnvironmentVariable("STORAGE", root, EnvironmentVariableTarget.Process);
-    Environment.SetEnvironmentVariable("DOMAIN", "https://music.example.com", EnvironmentVariableTarget.Process);
+    var covers = Path.Combine(root, "covers");
+    var options = new LibraryOptions(root, covers, "https://music.example.com");
 
     try
     {
-        var database = new MusicDatabase(Serilog.Core.Logger.None);
+        var database = new MusicDatabase(Serilog.Core.Logger.None, options);
         await database.InitializeAsync();
 
         var (entry, error) = await database.ImportAsync("Daft Punk", "Harder, Better, Faster, Stronger",
@@ -574,8 +501,6 @@ static async Task ImportCheck(Action<bool, string> assert)
 
         // The cover a source supplied, for a file carrying none of its own. Content-addressed, so the
         // name is the hash and importing the same artwork twice writes one file.
-        var covers = Path.Combine(root, "covers");
-        Environment.SetEnvironmentVariable("ALBUM_COVERS", covers, EnvironmentVariableTarget.Process);
 
         var (art, artError) = await database.ImportAsync("Daft Punk", "Aerodynamic", null, ".mp3",
             new MemoryStream([4, 5, 6]), "not really a jpeg"u8.ToArray());
@@ -600,12 +525,11 @@ static async Task RescanCheck(Action<bool, string> assert)
     Directory.CreateDirectory(folder);
     await File.WriteAllBytesAsync(Path.Combine(folder, "Queen - Bohemian Rhapsody.mp3"), new byte[4096]);
 
-    Environment.SetEnvironmentVariable("STORAGE", root, EnvironmentVariableTarget.Process);
-    Environment.SetEnvironmentVariable("ALBUM_COVERS", Path.Combine(root, "covers"), EnvironmentVariableTarget.Process);
+    var options = new LibraryOptions(root, Path.Combine(root, "covers"));
 
     try
     {
-        var database = new MusicDatabase(Serilog.Core.Logger.None);
+        var database = new MusicDatabase(Serilog.Core.Logger.None, options);
         await database.InitializeAsync();
 
         var before = database.FindForAdmin("Queen", 10);
@@ -654,11 +578,11 @@ static async Task BackfillCheck(Action<bool, string> assert)
         """);
     await File.WriteAllBytesAsync(Path.Combine(folder, "Duran Duran - Come Undone.mp3"), new byte[4096]);
 
-    Environment.SetEnvironmentVariable("STORAGE", root, EnvironmentVariableTarget.Process);
+    var options = new LibraryOptions(root);
 
     try
     {
-        var database = new MusicDatabase(Serilog.Core.Logger.None);
+        var database = new MusicDatabase(Serilog.Core.Logger.None, options);
         await database.InitializeAsync();
 
         var songs = database.FindForAdmin("Duran Duran", 10);
@@ -675,7 +599,7 @@ static async Task BackfillCheck(Action<bool, string> assert)
 
         // Imported once: what the file says now is not read again.
         await File.WriteAllTextAsync(info, "[]");
-        var again = new MusicDatabase(Serilog.Core.Logger.None);
+        var again = new MusicDatabase(Serilog.Core.Logger.None, options);
         await again.InitializeAsync();
         assert(again.FindForAdmin("Duran Duran", 10).SingleOrDefault()?.Id == "ducome-un",
             "backfill: a restart reads library.db, not the Info.json it was imported from");
@@ -703,12 +627,11 @@ static async Task EditCheck(Action<bool, string> assert)
         """);
     await File.WriteAllBytesAsync(Path.Combine(folder, "Queen - You_re My Best Friend.mp3"), new byte[4096]);
 
-    Environment.SetEnvironmentVariable("STORAGE", root, EnvironmentVariableTarget.Process);
-    Environment.SetEnvironmentVariable("DOMAIN", "https://music.example.com", EnvironmentVariableTarget.Process);
+    var options = new LibraryOptions(root, Domain: "https://music.example.com");
 
     try
     {
-        var database = new MusicDatabase(Serilog.Core.Logger.None);
+        var database = new MusicDatabase(Serilog.Core.Logger.None, options);
         await database.InitializeAsync();
 
         var before = database.FindForAdmin("Queen", 10);
@@ -745,9 +668,6 @@ static async Task EditCheck(Action<bool, string> assert)
     }
 }
 
-// ── DTO shapes. Deliberately not shared with Gaida.API/Contracts/DiscoveryContracts.cs: this pod
-// doesn't know the public host (no contentUrl), and Gaida.API adds fields (contentUrl) this must not. ──
-
 // Every row library.db holds, as "column=value" lines: what the self-checks search where they used to
 // read Info.json back.
 static string Stored(string root)
@@ -768,63 +688,3 @@ static string Stored(string root)
 
     return text.ToString();
 }
-
-[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed record ResultDto(
-    string Id,
-    string? Name,
-    string? Artist,
-    string? Album,
-    string Duration,
-    string? ThumbnailUrl,
-    string? OriginalTitle,
-    string? OriginalArtist,
-    // Only /resolve fills these, and only stih reads them — see LYRICS_1_LIBRARY_PLAN.md.
-    string? RelativeLocation = null,
-    string? LyricsType = null,
-    string? LyricsSource = null);
-
-/// <summary>One track stih's sweep has not found words for yet.</summary>
-[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed record MissingLyricsDto(
-    string Id,
-    string? Title,
-    string? Artist,
-    string? Album,
-    string Duration,
-    string? RelativeLocation);
-
-/// <summary>What one track's lyrics state became, after a stamp.</summary>
-[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed record LyricsRowDto(string Id, string? Type, string? Source, string? Checked);
-
-[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed record LibraryRowDto(
-    string Id,
-    IReadOnlyList<string> Titles,
-    IReadOnlyList<string> Artists,
-    string? Album,
-    string? Location,
-    string Duration,
-    string? CoverUrl);
-
-[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed record ClassifyDto(string? Kind, string? Id, string? Error);
-
-[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed record ErrorDto(string Error);
-
-[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed record BrowseFolderDto(string Name, string Path, int Songs);
-
-[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed record BrowseDto(string Path, IReadOnlyList<BrowseFolderDto> Folders, IReadOnlyList<ResultDto> Files);
-
-[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed record VariantDto(
-    string Match,
-    double Score,
-    int DurationDeltaSeconds,
-    IReadOnlyList<string> YouTubeTags,
-    IReadOnlyList<string> LibraryTags,
-    ResultDto Result);

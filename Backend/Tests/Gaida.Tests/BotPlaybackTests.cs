@@ -421,9 +421,9 @@ public class BotPlaybackTests
         // registered under the wrong type only fails when somebody types a command. This catches it
         // against the registrations Program.cs actually uses, not a copy of them.
         var logger = Serilog.Core.Logger.None;
-        var api = new GaidaClient(logger);
+        var api = new GaidaClient(logger, "http://localhost:5340");
 
-        var services = BotServices.Register(new ServiceCollection(), logger, api, new PlayerController(api, logger, new BotEventLog()));
+        var services = BotServices.Register(new ServiceCollection(), logger, api, new PlayerController(api, logger, new BotEventLog(), new PlaybackSettings()));
         var provider = services.BuildServiceProvider();
 
         var commands = ActivatorUtilities.CreateInstance<PlaybackCommands>(provider);

@@ -10,7 +10,7 @@ namespace Gaida.Bot.Players;
 /// next request. The master account is the only one that listens for commands; the others exist to
 /// be bodies in voice channels, each owning the statusbar for the player it is running.
 /// </summary>
-public sealed class PlayerController(GaidaClient api, ILogger logger, BotEventLog events)
+public sealed class PlayerController(GaidaClient api, ILogger logger, BotEventLog events, PlaybackSettings settings)
 {
     private readonly List<Player> _players = [];
 
@@ -69,6 +69,7 @@ public sealed class PlayerController(GaidaClient api, ILogger logger, BotEventLo
                     Api = api,
                     Logger = logger,
                     Controller = this,
+                    Settings = settings,
                     Guild = guild,
                     VoiceChannel = ownVoiceChannel,
                     Channel = ownTextChannel

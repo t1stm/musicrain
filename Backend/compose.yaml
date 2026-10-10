@@ -64,7 +64,7 @@ services:
       <<: *env
       STORAGE: /music
       ALBUM_COVERS: /covers
-      # Public prefix substituted into MusicInfo.CoverUrl (MusicManager.cs:58). Needs the scheme:
+      # Public prefix substituted into MusicInfo.CoverUrl (LibraryOptions.cs). Needs the scheme:
       # the value becomes an absolute thumbnailUrl that Cover.cs fetches with HttpClient, and a
       # bare "example.com/" is not a URL it can resolve.
       DOMAIN: ${PUBLIC_DOMAIN:-http://localhost}
@@ -98,7 +98,7 @@ services:
       # YouTubeCacher — the search cache. A YouTube.json beside it is imported on the first start and
       # then left alone, so an older image pointed at this volume still finds its cache.
       YOUTUBE_CACHE_DB: /cache/YouTube.db
-      YOUTUBE_CACHE: /webm                    # GetterLocalCache / YouTubeCacheProvider
+      YOUTUBE_CACHE: /webm                    # GetterLocalCache
     volumes:
       - ${YOUTUBE_CACHE_DB_PATH:-./data/youtube-cache}:/cache
       # The existing webm cache — 25463 files, 90G; pointing this anywhere else starts empty
@@ -186,7 +186,7 @@ services:
       Resolve__Concurrency: ${RESOLVE_CONCURRENCY:-4}
       PublicApiBaseUrl: ${PUBLIC_API_BASE_URL:-http://localhost:5340}
       THUMBNAIL_CACHE: /thumbnails
-      # Content.cs:86-99 — the platform name lives here rather than in code.
+      # Content.RandomResults — the platform name lives here rather than in code.
       Random__Shares__youtube: ${YOUTUBE_RANDOM_SHARE:-0.4}
     ports:
       # Host ports are the 534x block; the container always listens on 8080.

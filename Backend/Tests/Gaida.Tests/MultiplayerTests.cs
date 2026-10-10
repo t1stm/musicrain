@@ -17,7 +17,7 @@ public class MultiplayerManagerTests
     [Fact]
     public async Task CreateNewRoomRegistersRoomAndRaisesChangeEvent()
     {
-        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
+        var manager = new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance);
         var changeCount = 0;
         manager.RoomsChanged += () =>
         {
@@ -38,7 +38,7 @@ public class MultiplayerManagerTests
     [Fact]
     public async Task TheLastMemberLeavingTakesTheRoomWithThem()
     {
-        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
+        var manager = new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance);
         var roomId = await manager.CreateNewRoom();
         var room = Assert.IsType<Room>(manager.GetRoom(roomId));
         var changeCount = 0;
@@ -68,7 +68,7 @@ public class MultiplayerManagerTests
     [Fact]
     public async Task ARoomNobodyEverJoinedStays()
     {
-        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
+        var manager = new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance);
         var roomId = await manager.CreateNewRoom();
         var room = Assert.IsType<Room>(manager.GetRoom(roomId));
 
@@ -82,7 +82,7 @@ public class MultiplayerManagerTests
     [Fact]
     public async Task UpdatingRoomInfoRaisesManagerChangeEvent()
     {
-        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
+        var manager = new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance);
         var roomId = await manager.CreateNewRoom();
         var room = Assert.IsType<Room>(manager.GetRoom(roomId));
         var socket = new RecordingWebSocket();
@@ -104,7 +104,7 @@ public class MultiplayerManagerTests
     [Fact]
     public async Task AListenerThatFailsDoesNotSilenceTheOthers()
     {
-        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
+        var manager = new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance);
         var heard = 0;
         manager.RoomsChanged += async () =>
         {
@@ -127,7 +127,7 @@ public class MultiplayerManagerTests
     public async Task AnnouncementsReachAListenerOneAtATime()
     {
         // Every listener is one room-list socket, and a WebSocket takes one send at a time.
-        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
+        var manager = new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance);
         var gate = new TaskCompletionSource();
         int running = 0, most = 0, calls = 0;
         manager.RoomsChanged += async () =>
@@ -878,7 +878,7 @@ public class MultiplayerControllerTests
     [Fact]
     public async Task CreateRoomReturnsTheRegisteredRoom()
     {
-        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
+        var manager = new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance);
         var controller = Controller(manager);
 
         var result = await controller.CreateRoom();
@@ -891,7 +891,7 @@ public class MultiplayerControllerTests
     [Fact]
     public async Task WebSocketEndpointsRejectRegularHttpRequests()
     {
-        var controller = Controller(new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance));
+        var controller = Controller(new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance));
 
         Assert.IsType<BadRequestResult>(await controller.Rooms());
         Assert.IsType<BadRequestResult>(await controller.Join(Guid.NewGuid().ToString(), null));
@@ -900,7 +900,7 @@ public class MultiplayerControllerTests
     [Fact]
     public async Task AJoinThatFaultsStillTakesTheUserBackOutOfTheRoom()
     {
-        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
+        var manager = new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance);
         var roomId = await manager.CreateNewRoom();
         var room = manager.GetRoom(roomId)!;
 
@@ -920,7 +920,7 @@ public class MultiplayerControllerTests
     [Fact]
     public async Task AJoinWhoseReceiveFailsStillTakesTheUserBackOutOfTheRoom()
     {
-        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
+        var manager = new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance);
         var roomId = await manager.CreateNewRoom();
         var room = manager.GetRoom(roomId)!;
 

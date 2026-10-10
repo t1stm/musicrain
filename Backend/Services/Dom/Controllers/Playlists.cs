@@ -10,7 +10,7 @@ namespace Dom.Controllers;
 ///     A playlist you may not see answers <c>404</c>, never <c>403</c> — a 403 confirms it exists.
 ///     One you can see but may not change answers <c>403</c>: it is no secret that it exists.
 /// </remarks>
-public class Playlists(DomStore store, IConfiguration config) : ControllerBase
+public class Playlists(DomStore store, CoverFiles covers) : ControllerBase
 {
     /// <summary>What a cover may be. Anything else is a file the browser would not draw anyway.</summary>
     private static readonly Dictionary<string, string> CoverTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -22,8 +22,6 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
 
     /// <summary>2 MB. nginx already allows ten, so this is the rule, not the limit it hits first.</summary>
     private const long MaxCoverBytes = 2 * 1024 * 1024;
-
-    private string CoverDir => config["Dom:CoverDir"] ?? "covers";
 
     [HttpGet("/Audio/Playlists/Public")]
     public IActionResult PublicPlaylists() => new JsonResult(store.Public().Select(Summary));
@@ -121,7 +119,7 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
         if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
 
         var (deleted, coverFile) = store.Delete(user, id);
-        if (coverFile is not null) Forget(coverFile);
+        if (coverFile is not null) covers.Forget(coverFile);
 
         return deleted ? NoContent() : NotFound();
     }
@@ -148,14 +146,9 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
         var playlist = store.Visible(id, user);
         if (playlist is null || playlist.Owner != user.Username) return NotFound();
 
-        Directory.CreateDirectory(CoverDir);
-        var name = $"{playlist.Id}.{extension}";
-        await using (var target = System.IO.File.Create(Path.Combine(CoverDir, name)))
-        {
-            await file.CopyToAsync(target, HttpContext.RequestAborted);
-        }
+        var name = await covers.SaveAsync(playlist.Id, extension, file, HttpContext.RequestAborted);
 
-        if (playlist.CoverFile is not null && playlist.CoverFile != name) Forget(playlist.CoverFile);
+        if (playlist.CoverFile is not null && playlist.CoverFile != name) covers.Forget(playlist.CoverFile);
         store.SetCover(user, playlist.Id, name);
 
         return new JsonResult(new { coverUrl = $"/Audio/Playlists/{playlist.Id}/Cover" });
@@ -172,12 +165,11 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
         var playlist = store.Visible(id, store.Resolve(Api.Bearer(Request)));
         if (playlist?.CoverFile is null) return NotFound();
 
-        var path = Path.Combine(CoverDir, playlist.CoverFile);
-        if (!System.IO.File.Exists(path)) return NotFound();
+        if (covers.Find(playlist.CoverFile) is not { } path) return NotFound();
 
         Response.Headers.CacheControl = "public, max-age=604800";
 
-        return PhysicalFile(Path.GetFullPath(path), MimeFor(playlist.CoverFile));
+        return PhysicalFile(path, MimeFor(playlist.CoverFile));
     }
 
     private static string MimeFor(string file) => Path.GetExtension(file).ToLowerInvariant() switch
@@ -186,19 +178,6 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
         ".webp" => "image/webp",
         _ => "image/jpeg"
     };
-
-    /// <summary>A cover nothing points at any more. A failure here is a stray file, never an error.</summary>
-    private void Forget(string coverFile)
-    {
-        try
-        {
-            System.IO.File.Delete(Path.Combine(CoverDir, coverFile));
-        }
-        catch (IOException)
-        {
-            // ponytail: a leftover cover costs a few kilobytes; failing the delete would cost the user
-        }
-    }
 
     /// <summary>What a card needs, and nothing more.</summary>
     private static object Summary(Playlist playlist) => new

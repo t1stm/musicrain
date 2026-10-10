@@ -1,5 +1,4 @@
 using Gaida.API.Contracts;
-using Gaida.Core.Platforms;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gaida.API.Controllers;
@@ -23,7 +22,7 @@ public class Browse(IConfiguration configuration, IHostEnvironment environment) 
         // whatever the client sent.
         var folder = (path ?? string.Empty).Replace('\\', '/').Trim('/');
 
-        if (managerService.Manager.PlatformFor("audio://") is not HttpPlatform local)
+        if (managerService.Pod(Prefix.Local) is not { } local)
             return Ok(new BrowseDto(folder, [], []));
 
         var (folders, files) = await local.BrowseAsync(folder, HttpContext.RequestAborted);
@@ -54,7 +53,7 @@ public class Browse(IConfiguration configuration, IHostEnvironment environment) 
     {
         var folder = (path ?? string.Empty).Replace('\\', '/').Trim('/');
 
-        if (managerService.Manager.PlatformFor("audio://") is not HttpPlatform local)
+        if (managerService.Pod(Prefix.Local) is not { } local)
             return Ok(Array.Empty<SearchResultDto>());
 
         return Ok(this.Mapped(local.BrowseTracksAsync(folder, HttpContext.RequestAborted), configuration,

@@ -1,10 +1,10 @@
 using System.Diagnostics;
-using Gaida.Core.FFmpeg;
 using Gaida.Core.Platforms;
-using Gaida.Core.Platforms.Cross_Platform;
 using Gaida.Core.Streams;
 using Gaida.Platforms.MusicDatabase;
+using Gaida.Infrastructure.FFmpeg;
 using Gaida.Platforms.MusicDatabase.Getters;
+using Gaida.Platforms.YouTube.Getters;
 using Serilog.Core;
 
 namespace Pods.Tests;

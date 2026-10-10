@@ -2,8 +2,11 @@ using System.Collections.Concurrent;
 
 namespace Selo.Multiplayer;
 
-public class MultiplayerManager(HttpClient gaida, ILogger<MultiplayerManager> logger)
+public class MultiplayerManager(IHttpClientFactory http, ILogger<MultiplayerManager> logger)
 {
+    /// <summary>The named client a room resolves an <c>add</c> through: Gaida.API's public search.</summary>
+    public const string Gaida = "gaida";
+
     // concurrent so the room-list socket can serialise the collection while another request
     // creates a room, which the dictionary-plus-semaphore pair never actually guarded
     private readonly ConcurrentDictionary<Guid, Room> _rooms = new();
@@ -21,7 +24,7 @@ public class MultiplayerManager(HttpClient gaida, ILogger<MultiplayerManager> lo
     {
         var guid = Guid.NewGuid();
 
-        _rooms.TryAdd(guid, new Room(guid, gaida, logger)
+        _rooms.TryAdd(guid, new Room(guid, http.CreateClient(Gaida), logger)
         {
             OnInfoModified = () => _ = AnnounceAsync(),
             OnEmptied = () => RemoveRoom(guid)

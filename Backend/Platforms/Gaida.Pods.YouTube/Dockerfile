@@ -23,7 +23,7 @@ RUN dotnet publish "Platforms/Gaida.Pods.YouTube/Gaida.Pods.YouTube.csproj" -c R
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
-# GetterYtDlp (Gaida.Core/Platforms/Cross Platform/Getter_YtDLP.cs) shells out to yt-dlp on PATH.
+# GetterYtDlp (Gaida.Platforms.YouTube/Getters/Getter_YtDLP.cs) shells out to yt-dlp on PATH.
 # The standalone Linux binary bundles its own Python, so no system python3 is needed.
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
     && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \

@@ -14,7 +14,7 @@ internal static class Admin
         var lyrics = app.Services.GetRequiredService<Lyrics>();
         var lrcLib = app.Services.GetRequiredService<LrcLib>();
         var tracks = app.Services.GetRequiredService<Tracks>();
-        var sweep = app.Services.GetServices<IHostedService>().OfType<Sweep>().FirstOrDefault();
+        var sweep = app.Services.GetRequiredService<Sweep>();
 
         app.MapAdmin(object? () => new
         {
@@ -22,7 +22,7 @@ internal static class Admin
             index = index.Snapshot(),
             files = lyrics.Snapshot(),
             lrclib = lrcLib.Snapshot(),
-            sweep = sweep?.Snapshot(),
+            sweep = sweep.Snapshot(),
             pods = new { lastError = tracks.LastError }
         });
     }

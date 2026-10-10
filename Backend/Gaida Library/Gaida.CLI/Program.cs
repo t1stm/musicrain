@@ -11,8 +11,8 @@ var logger = new LoggerConfiguration()
 
 var audioManager = new AudioManager(logger);
 
-audioManager.RegisterPlatform(new YouTube(logger));
-audioManager.RegisterPlatform(new MusicDatabase(logger));
+audioManager.RegisterPlatform(new YouTube(logger, new YouTubeOptions()));
+audioManager.RegisterPlatform(new MusicDatabase(logger, new LibraryOptions()));
 
 // https://www.youtube.com/watch?v=dQw4w9WgXcQ
 var result = await audioManager.SearchId("yt://dQw4w9WgXcQ");

@@ -42,8 +42,8 @@ public partial class MusicManager
     // right, and the wrong answers start at 0.783 (Rammstein's "Heirate Mich" answered with "Bestrafe
     // mich"), so strong sits just above them. Below that, with the 20-second gate on, the band down to
     // 0.72 runs roughly eight right to three wrong — honest enough for a prompt that says "possibly".
-    public static double StrongMatch = 0.80;
-    public static double WeakMatch = 0.72;
+    public double StrongMatch { get; init; } = 0.80;
+    public double WeakMatch { get; init; } = 0.72;
 
     /// <summary>
     ///     The library's answer to a YouTube result: the same recording, a plain copy of a tagged upload, or

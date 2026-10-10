@@ -20,7 +20,7 @@ public class YouTubeDownloadTests(ITestOutputHelper output)
         output.WriteLine("Starting download test.");
         var audioManager = new AudioManager(Logger.None);
 
-        audioManager.RegisterPlatform(new YouTube(Logger.None));
+        audioManager.RegisterPlatform(new YouTube(Logger.None, new YouTubeOptions()));
 
         var result = await audioManager.SearchId("yt://dQw4w9WgXcQ");
         Assert.True(result is not null, "YouTube search for 'dQw4w9WgXcQ' failed.");

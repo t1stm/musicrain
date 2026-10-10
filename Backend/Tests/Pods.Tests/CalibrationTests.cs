@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Dapper;
+using Gaida.Platforms.MusicDatabase;
 using Gaida.Platforms.MusicDatabase.Manager;
 using Gaida.Sqlite;
 
@@ -30,72 +31,58 @@ public class CalibrationTests
     [Fact]
     public async Task CalibrationPass()
     {
-        // Both named outright, never defaulted: LyricsTests sets STORAGE for the whole process, and any test that
-        // initializes the YouTube platform creates ./cache/YouTube.db, so between them a default would run this
-        // pass mid-suite with its thresholds at zero.
+        // Both named outright, never defaulted: any test that initializes the YouTube platform creates
+        // ./cache/YouTube.db, so a default would run this pass mid-suite.
         var storage = Environment.GetEnvironmentVariable("STORAGE");
         var cachePath = Environment.GetEnvironmentVariable("YOUTUBE_CACHE_DB");
         if (storage is null || cachePath is null || !File.Exists(cachePath)) return;
 
         // Every candidate has to reach the CSV, including the ones the verdict would drop, or the score at
         // which the wrong answers start is exactly the thing the pass cannot see.
-        var strong = MusicManager.StrongMatch;
-        var weak = MusicManager.WeakMatch;
-        MusicManager.StrongMatch = 0;
-        MusicManager.WeakMatch = 0;
+        var manager = new CalibrationMusicManager(new LibraryOptions(storage)) { StrongMatch = 0, WeakMatch = 0 };
+        await manager.LoadLibrary();
 
-        try
+        var output = Environment.GetEnvironmentVariable("VARIANT_CALIBRATION_CSV") ?? "variants.csv";
+        var csv = new StringBuilder("score,verdict,ytTags,libTags,deltaSeconds,youTubeTitle,libraryTitle\n");
+        var scored = 0;
+
+        await using var cache = Database.Open(Database.At(cachePath));
+
+        // The cache runs to a few hundred thousand entries and each one is a full library scan, so the
+        // pass reads a fixed-seed sample by default. VARIANT_CALIBRATION_LIMIT=0 reads all of it.
+        var limit = int.TryParse(Environment.GetEnvironmentVariable("VARIANT_CALIBRATION_LIMIT"), out var parsed)
+            ? parsed
+            : 2000;
+        var entries = (await cache.QueryAsync<(string? Name, string? Artist, string? Duration)>(
+            "SELECT Name, Artist, Duration FROM results ORDER BY rowid")).ToArray();
+        if (limit > 0 && entries.Length > limit)
         {
-            var manager = new CalibrationMusicManager();
-            await manager.LoadLibrary();
-
-            var output = Environment.GetEnvironmentVariable("VARIANT_CALIBRATION_CSV") ?? "variants.csv";
-            var csv = new StringBuilder("score,verdict,ytTags,libTags,deltaSeconds,youTubeTitle,libraryTitle\n");
-            var scored = 0;
-
-            await using var cache = Database.Open(Database.At(cachePath));
-
-            // The cache runs to a few hundred thousand entries and each one is a full library scan, so the
-            // pass reads a fixed-seed sample by default. VARIANT_CALIBRATION_LIMIT=0 reads all of it.
-            var limit = int.TryParse(Environment.GetEnvironmentVariable("VARIANT_CALIBRATION_LIMIT"), out var parsed)
-                ? parsed
-                : 2000;
-            var entries = (await cache.QueryAsync<(string? Name, string? Artist, string? Duration)>(
-                "SELECT Name, Artist, Duration FROM results ORDER BY rowid")).ToArray();
-            if (limit > 0 && entries.Length > limit)
-            {
-                new Random(1).Shuffle(entries);
-                entries = entries[..limit];
-            }
-
-            foreach (var entry in entries)
-            {
-                var name = entry.Name ?? string.Empty;
-                if (name.Length == 0) continue;
-
-                var length = TimeSpan.TryParse(entry.Duration, CultureInfo.InvariantCulture, out var duration)
-                    ? duration
-                    : TimeSpan.Zero;
-                var match = manager.FindLocalVariant(name, entry.Artist ?? string.Empty, length);
-                if (match is null) continue;
-
-                scored++;
-                csv.Append(CultureInfo.InvariantCulture,
-                        $"{match.Score:F3},{match.Kind},{string.Join(' ', match.YouTubeTags)},")
-                    .Append(CultureInfo.InvariantCulture,
-                        $"{string.Join(' ', match.LibraryTags)},{match.DurationDelta.TotalSeconds:F0},")
-                    .Append(CultureInfo.InvariantCulture,
-                        $"{Quote(name)},{Quote($"{match.Song.DisplayArtist} - {match.Song.DisplayTitle}")}\n");
-            }
-
-            await File.WriteAllTextAsync(output, csv.ToString());
-            Assert.True(scored > 0, $"The YouTube cache at {cachePath} produced no candidates to calibrate on.");
+            new Random(1).Shuffle(entries);
+            entries = entries[..limit];
         }
-        finally
+
+        foreach (var entry in entries)
         {
-            MusicManager.StrongMatch = strong;
-            MusicManager.WeakMatch = weak;
+            var name = entry.Name ?? string.Empty;
+            if (name.Length == 0) continue;
+
+            var length = TimeSpan.TryParse(entry.Duration, CultureInfo.InvariantCulture, out var duration)
+                ? duration
+                : TimeSpan.Zero;
+            var match = manager.FindLocalVariant(name, entry.Artist ?? string.Empty, length);
+            if (match is null) continue;
+
+            scored++;
+            csv.Append(CultureInfo.InvariantCulture,
+                    $"{match.Score:F3},{match.Kind},{string.Join(' ', match.YouTubeTags)},")
+                .Append(CultureInfo.InvariantCulture,
+                    $"{string.Join(' ', match.LibraryTags)},{match.DurationDelta.TotalSeconds:F0},")
+                .Append(CultureInfo.InvariantCulture,
+                    $"{Quote(name)},{Quote($"{match.Song.DisplayArtist} - {match.Song.DisplayTitle}")}\n");
         }
+
+        await File.WriteAllTextAsync(output, csv.ToString());
+        Assert.True(scored > 0, $"The YouTube cache at {cachePath} produced no candidates to calibrate on.");
     }
 
     private static string Quote(string? text)
@@ -104,7 +91,8 @@ public class CalibrationTests
     }
 
     /// <summary>Loads the real library without the cover extraction pass, which writes files this does not want.</summary>
-    private sealed class CalibrationMusicManager() : MusicManager(Serilog.Core.Logger.None)
+    private sealed class CalibrationMusicManager(LibraryOptions options)
+        : MusicManager(Serilog.Core.Logger.None, options)
     {
         public Task LoadLibrary()
         {

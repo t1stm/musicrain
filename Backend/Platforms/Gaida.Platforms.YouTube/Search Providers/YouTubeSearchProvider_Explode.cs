@@ -8,17 +8,16 @@ using YoutubeExplode.Common;
 
 namespace Gaida.Platforms.YouTube.Search_Providers;
 
-public sealed class YouTubeSearchProviderExplode(ILogger logger) : SearchProvider(logger),
+public sealed class YouTubeSearchProviderExplode(ILogger logger, YoutubeClient client) : SearchProvider(logger),
     ISupportsId, ISupportsPlaylist, ISupportsSearch
 {
     private const int MaxKeywordResults = 15;
-    public static YoutubeClient Client { get; } = new();
     public override string PlatformIdentifier => "yt://";
     public override int Priority => 40;
 
     public async Task<PlatformResult?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
     {
-        var video = await Client.Videos.GetAsync(id, cancellationToken);
+        var video = await client.Videos.GetAsync(id, cancellationToken);
 
         return new YouTubeResult
         {
@@ -40,7 +39,7 @@ public sealed class YouTubeSearchProviderExplode(ILogger logger) : SearchProvide
 
         if (string.IsNullOrWhiteSpace(playlistId)) yield break;
 
-        await foreach (var batch in Client.Playlists.GetVideoBatchesAsync(playlistId, cancellationToken))
+        await foreach (var batch in client.Playlists.GetVideoBatchesAsync(playlistId, cancellationToken))
             foreach (var video in batch.Items)
                 yield return new YouTubeResult
                 {
@@ -57,7 +56,7 @@ public sealed class YouTubeSearchProviderExplode(ILogger logger) : SearchProvide
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var returned = 0;
-        await foreach (var video in Client.Search.GetVideosAsync(keywords, cancellationToken))
+        await foreach (var video in client.Search.GetVideosAsync(keywords, cancellationToken))
         {
             yield return new YouTubeResult
             {

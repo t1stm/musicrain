@@ -3,8 +3,10 @@ using System.Runtime.CompilerServices;
 using Gaida.Core.Platforms;
 using Gaida.Core.Streams;
 using Gaida.Core.Utils;
+using Gaida.Platforms.YouTube;
 using Gaida.Pods.YouTube;
 using Serilog;
+using ILogger = Serilog.ILogger;
 using YouTubePlatform = Gaida.Platforms.YouTube.YouTube;
 
 if (args.Contains("--self-check"))
@@ -20,12 +22,8 @@ Log.Logger = new LoggerConfiguration()
 
 var builder = WebApplication.CreateBuilder(args);
 
-// The platform layer reads these as process environment variables; configuration supplies the defaults.
-// See Gaida.API/Program.cs:18 for the same pattern.
-foreach (var key in (string[])["YOUTUBE_CACHE_DB", "YOUTUBE_CACHE"])
-    Environment.SetEnvironmentVariable(key, builder.Configuration[key]);
-
 builder.Services.AddSerilog();
+builder.Services.AddSingleton(Log.Logger);
 
 var app = builder.Build();
 
@@ -36,7 +34,9 @@ app.MapAdmin(() => new { service = "gaida-youtube" });
 // One instance for the process lifetime: this pod owns exactly one platform. Initialize() opens the
 // search cache (YouTubeSearchProviderCached.Initialize) and orders the content downloaders
 // by priority (GetterLocalCache 99 > GetterYouTubeExplode 40 > GetterYtDlp 20).
-var youTube = new YouTubePlatform(Log.Logger);
+// An empty value is the same as an unset one, as it was when these travelled as environment variables.
+var youTube = new YouTubePlatform(Log.Logger,
+    new YouTubeOptions(Setting("YOUTUBE_CACHE_DB"), Setting("YOUTUBE_CACHE")));
 youTube.Initialize();
 
 app.MapGet("/classify", (string? query) =>
@@ -63,19 +63,19 @@ app.MapGet("/resolve", async (string? id, CancellationToken ct) =>
 // and flushes as it goes, so a caller reading the body incrementally sees each track without waiting for
 // the last one. A playlist is the case that pays for it: YouTubeExplode fetches it a batch at a time.
 app.MapGet("/search",
-    IResult (string? q, CancellationToken ct) => string.IsNullOrWhiteSpace(q)
+    IResult (string? q, ILogger logger, CancellationToken ct) => string.IsNullOrWhiteSpace(q)
         ? Results.Ok(Array.Empty<ResultDto>())
-        : Results.Ok(Mapped(youTube.SearchKeywords(q, ct), ct)));
+        : Results.Ok(Mapped(youTube.SearchKeywords(q, ct), logger, ct)));
 
 app.MapGet("/playlist",
-    IResult (string? url, CancellationToken ct) => string.IsNullOrWhiteSpace(url)
+    IResult (string? url, ILogger logger, CancellationToken ct) => string.IsNullOrWhiteSpace(url)
         ? Results.Ok(Array.Empty<ResultDto>())
-        : Results.Ok(Mapped(youTube.SearchPlaylist(url, ct), ct)));
+        : Results.Ok(Mapped(youTube.SearchPlaylist(url, ct), logger, ct)));
 
 app.MapGet("/random",
-    IResult (int count, CancellationToken ct) => count < 1
+    IResult (int count, ILogger logger, CancellationToken ct) => count < 1
         ? Results.Ok(Array.Empty<ResultDto>())
-        : Results.Ok(Mapped(youTube.GetRandomResults(count, ct), ct)));
+        : Results.Ok(Mapped(youTube.GetRandomResults(count, ct), logger, ct)));
 
 app.MapGet("/content", async (string? id, HttpContext http, CancellationToken ct) =>
 {
@@ -105,10 +105,15 @@ static string StripScheme(string id)
 }
 
 // Guarded exactly where Collect had it: a provider that throws halfway ends the array cleanly.
-static async IAsyncEnumerable<ResultDto> Mapped(IAsyncEnumerable<PlatformResult> source,
+string? Setting(string key)
+{
+    return builder.Configuration[key] is { Length: > 0 } value ? value : null;
+}
+
+static async IAsyncEnumerable<ResultDto> Mapped(IAsyncEnumerable<PlatformResult> source, ILogger logger,
     [EnumeratorCancellation] CancellationToken ct)
 {
-    await foreach (var result in source.Guarded(Log.Logger, nameof(YouTubePlatform), ct))
+    await foreach (var result in source.Guarded(logger, nameof(YouTubePlatform), ct))
         if (ResultMapper.Map(result) is { } dto)
             yield return dto;
 }

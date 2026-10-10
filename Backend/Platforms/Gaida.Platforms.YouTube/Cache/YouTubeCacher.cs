@@ -26,15 +26,13 @@ public class YouTubeCacher
 
     /// <param name="logger">Where the cache reports what it did.</param>
     /// <param name="path">
-    ///     Where the database lives, <c>YOUTUBE_CACHE_DB</c> by default. That variable named the JSON file
-    ///     before, so whatever extension it carries, the database is the <c>.db</c> beside it and the JSON
-    ///     is the legacy import.
+    ///     Where the database lives. Whatever extension it carries, the database is the <c>.db</c> beside it
+    ///     and a <c>.json</c> there is the legacy import — see <see cref="YouTubeOptions.CacheDatabase" />.
     /// </param>
-    public YouTubeCacher(ILogger logger, string? path = null)
+    public YouTubeCacher(ILogger logger, string path)
     {
         Logger = logger.ForContext<YouTubeCacher>();
-        _path = Path.ChangeExtension(
-            path ?? Environment.GetEnvironmentVariable("YOUTUBE_CACHE_DB") ?? "./cache/YouTube.db", ".db");
+        _path = Path.ChangeExtension(path, ".db");
         _connectionString = Database.At(_path);
     }
 

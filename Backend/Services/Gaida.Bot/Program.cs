@@ -75,9 +75,14 @@ var bots = botsConfig.OrderByDescending(bot => bot == master).ToArray();
 
 // Shared by every account: one registry of players, one client for the running Gaida instance, and
 // one audit trail of everything the bot does, which Oko reads out of /Admin/snapshot.
-var api = new GaidaClient(logger);
+var api = new GaidaClient(logger, Environment.GetEnvironmentVariable("GAIDA_API_BASE_URL") ?? "http://localhost:5340");
 var events = new BotEventLog();
-var controller = new PlayerController(api, logger, events);
+var playback = new PlaybackSettings(
+    int.TryParse(Environment.GetEnvironmentVariable("GAIDA_OPUS_BITRATE"), out var bitrate) ? bitrate : null,
+    int.TryParse(Environment.GetEnvironmentVariable("GAIDA_STATUSBAR_INTERVAL_MS"), out var interval)
+        ? interval
+        : PlaybackSettings.DefaultStatusbarIntervalMs);
+var controller = new PlayerController(api, logger, events, playback);
 
 // The one thing the bot writes down. Same shape as CONFIGURATION_LOCATION: a path, defaulted for
 // `dotnet run` and pointed at a volume in compose. Read once here and applied at connect, so an

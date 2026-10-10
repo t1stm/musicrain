@@ -13,7 +13,7 @@ public partial class MusicManager
     ///     authority rather than the index.
     /// </summary>
     /// <returns><c>true</c> when the entry changed and its folder needs saving.</returns>
-    internal static bool ReconcileLyrics(MusicInfo entry)
+    internal bool ReconcileLyrics(MusicInfo entry)
     {
         // Synchronized wins when both exist: a timed file contains the plain words too. The .txt is left
         // where it is — deleting a listener's file is not this method's business.
@@ -32,10 +32,10 @@ public partial class MusicManager
         return true;
     }
 
-    private static bool Exists(MusicInfo entry, LyricsKind kind)
+    private bool Exists(MusicInfo entry, LyricsKind kind)
     {
         return entry.LyricsPathFor(kind) is { } relative &&
-               File.Exists(Path.Combine(StorageDirectory, relative));
+               File.Exists(Path.Combine(options.StorageDirectory, relative));
     }
 
     /// <summary>Records what stih found, or that it found nothing. Never overwrites existing lyrics.</summary>
@@ -63,7 +63,7 @@ public partial class MusicManager
             entry.LyricsSource = kind is null ? null : source;
             if (kind is null) entry.LyricsChecked = DateOnly.FromDateTime(DateTime.UtcNow);
 
-            Write([entry]);
+            _database.Write([entry]);
             Logger.Information("Stamped lyrics on {ID}: {Kind} from {Source}", id, kind, source);
 
             return (entry, null);

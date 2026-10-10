@@ -36,6 +36,7 @@ public sealed class Player
     public required GaidaClient Api { get; init; }
     public required ILogger Logger { get; init; }
     public required PlayerController Controller { get; init; }
+    public PlaybackSettings Settings { get; init; } = new();
 
     public Playlist Queue { get; } = new();
     public Statusbar Statusbar { get; } = new();
@@ -69,7 +70,7 @@ public sealed class Player
     {
         get
         {
-            if (int.TryParse(Environment.GetEnvironmentVariable("GAIDA_OPUS_BITRATE"), out var configured))
+            if (Settings.Bitrate is { } configured)
             {
                 return Math.Clamp(configured, 8, 256);
             }

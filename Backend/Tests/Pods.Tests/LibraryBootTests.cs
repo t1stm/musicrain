@@ -7,14 +7,12 @@ using Serilog.Events;
 namespace Pods.Tests;
 
 /// <summary>The scan the pod starts at boot and does not wait for: a failure has to say so somewhere.</summary>
-[Collection("STORAGE")]
 public class LibraryBootTests : IDisposable
 {
     private readonly string _notADirectory = Path.GetTempFileName();
 
     public void Dispose()
     {
-        Environment.SetEnvironmentVariable("STORAGE", null, EnvironmentVariableTarget.Process);
         File.Delete(_notADirectory);
         GC.SuppressFinalize(this);
     }
@@ -23,11 +21,10 @@ public class LibraryBootTests : IDisposable
     public async Task ABootScanThatFailsIsLogged()
     {
         // A file where the library should be: the scan cannot even create its directory.
-        Environment.SetEnvironmentVariable("STORAGE", _notADirectory, EnvironmentVariableTarget.Process);
         var sink = new CollectingSink();
         var logger = new LoggerConfiguration().WriteTo.Sink(sink).CreateLogger();
 
-        new MusicDatabase(logger).Initialize();
+        new MusicDatabase(logger, new LibraryOptions(_notADirectory)).Initialize();
 
         for (var waited = 0; waited < 50 && !sink.Events.Any(e => e.Level >= LogEventLevel.Error); waited++)
             await Task.Delay(100);

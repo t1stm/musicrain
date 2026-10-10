@@ -1,8 +1,9 @@
 using System.Diagnostics;
+using Gaida.Core.Platforms;
 using Gaida.Core.Streams;
 using Serilog;
 
-namespace Gaida.Core.Platforms.Cross_Platform;
+namespace Gaida.Platforms.YouTube.Getters;
 
 public sealed class GetterYtDlp(ILogger logger) : ContentGetter(logger)
 {

@@ -151,7 +151,7 @@ public class MusicManagerTests
 
     private sealed class TestMusicManager : MusicManager
     {
-        public TestMusicManager(params MusicInfo[] songs) : base(Serilog.Core.Logger.None)
+        public TestMusicManager(params MusicInfo[] songs) : base(Serilog.Core.Logger.None, new LibraryOptions())
         {
             Songs = [.. songs];
         }

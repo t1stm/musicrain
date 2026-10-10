@@ -16,10 +16,6 @@ public sealed class Statusbar
 {
     private const char EmptyBlock = '□', FullBlock = '■';
 
-    private static readonly int DefaultUpdateDelay =
-        int.TryParse(Environment.GetEnvironmentVariable("GAIDA_STATUSBAR_INTERVAL_MS"), out var configured)
-            ? configured
-            : 3200;
 
     /// <summary>Cell indices of the five dots in the unknown-length animation.</summary>
     private readonly int[] _animationCells = [0, 1, 2, 3, 4];
@@ -30,7 +26,10 @@ public sealed class Statusbar
 
     private bool Stopped { get; set; }
     private StatusbarMode Mode { get; set; } = StatusbarMode.Stopped;
-    private int UpdateDelay { get; set; } = DefaultUpdateDelay;
+    private int UpdateDelay { get; set; } = PlaybackSettings.DefaultStatusbarIntervalMs;
+
+    /// <summary>The least time between edits: the player's setting, once there is a player.</summary>
+    private int DefaultUpdateDelay => Player?.Settings.StatusbarIntervalMs ?? PlaybackSettings.DefaultStatusbarIntervalMs;
 
     private void Stop() => Stopped = true;
 
@@ -56,6 +55,7 @@ public sealed class Statusbar
 
         Stopped = false;
         Mode = StatusbarMode.Playing;
+        UpdateDelay = DefaultUpdateDelay;
         var stopwatch = new Stopwatch();
 
         while (!Stopped)

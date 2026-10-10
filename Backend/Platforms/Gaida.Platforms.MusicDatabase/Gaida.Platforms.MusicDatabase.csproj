@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Gaida Library\Gaida.Core\Gaida.Core.csproj"/>
+    <ProjectReference Include="..\..\Gaida Library\Gaida.Infrastructure\Gaida.Infrastructure.csproj"/>
     <ProjectReference Include="..\..\Gaida Library\Gaida.Sqlite\Gaida.Sqlite.csproj"/>
   </ItemGroup>
 

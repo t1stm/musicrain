@@ -83,36 +83,17 @@ public class MusicInfo : IJsonOnDeserialized
     public int Scan { get; set; }
 
     /// <summary>
-    ///     The absolute cover URL, as everything downstream wants it. Not serialized — see
-    ///     <see cref="StoredCoverUrl" />.
+    ///     The absolute cover URL, as everything downstream wants it. Not serialized — an Info.json carried the
+    ///     stored form, which <see cref="StoredCoverUrl" /> reads and <see cref="LibraryOptions.Served" /> turns
+    ///     back into this.
     /// </summary>
     [JsonIgnore]
     public string? CoverUrl { get; set; }
 
-    /// <summary>
-    ///     What <c>CoverUrl</c> looks like stored: the host is a <c>$[DOMAIN]</c> placeholder, which
-    ///     <see cref="MusicManager.Load" /> substitutes on the way in.
-    /// </summary>
-    /// <remarks>
-    ///     The substitution used to be one-way, which was harmless while only the loader wrote the index —
-    ///     it writes entries it has not substituted yet. An admin edit saves an entry that has been, and
-    ///     without this it would bake this host's domain into the library's rows, so the covers would
-    ///     break the next time <c>DOMAIN</c> changed. Round-tripping it here is one property instead of a
-    ///     rule every writer has to remember.
-    /// </remarks>
+    /// <summary>The cover as an older version's Info.json held it, <c>$[DOMAIN]</c> placeholder and all.</summary>
     [JsonPropertyName("CoverUrl")]
     public string? StoredCoverUrl
     {
-        get
-        {
-            var host = MusicManager.AlbumCoverLocation;
-
-            // With DOMAIN unset that is a bare "/Album_Covers", which is a prefix of far too much to
-            // go substituting blindly.
-            return CoverUrl is null || MusicManager.Domain.Length == 0
-                ? CoverUrl
-                : CoverUrl.Replace(host, "$[DOMAIN]");
-        }
         init => CoverUrl = value;
     }
 
@@ -389,7 +370,9 @@ public class MusicInfo : IJsonOnDeserialized
         return new SearchVariants([.. titles], [.. artists], tags);
     }
 
-    public MusicResult ToMusicResult(IReadOnlyList<ContentGetter> getters)
+    /// <param name="getters">The platform's downloaders, which play the result.</param>
+    /// <param name="storageDirectory">The library root this entry's <see cref="RelativeLocation" /> is under.</param>
+    public MusicResult ToMusicResult(IReadOnlyList<ContentGetter> getters, string storageDirectory)
     {
         return new MusicResult
         {
@@ -399,7 +382,7 @@ public class MusicInfo : IJsonOnDeserialized
             Artist = DisplayArtist,
             Album = Album,
             Duration = Duration,
-            Path = MusicManager.StorageDirectory + "/" + RelativeLocation,
+            Path = storageDirectory + "/" + RelativeLocation,
             ThumbnailUrl = CoverUrl,
             OriginalTitle = Title,
             OriginalArtist = Artist

@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using Gaida.API.Contracts;
 using Gaida.Core;
-using Gaida.Core.FFmpeg;
-using Gaida.Core.Platforms;
 using Gaida.Core.Utils;
+using Gaida.Infrastructure.FFmpeg;
+using Gaida.Infrastructure.Platforms;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Gaida.API.Controllers;
@@ -28,13 +28,12 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
         if (string.IsNullOrWhiteSpace(query)) return Ok(Array.Empty<SearchResultDto>());
         logger.LogInformation("Searching for {Query}", query);
 
-        var manager = managerService.Manager;
         var cancellationToken = HttpContext.RequestAborted;
 
         ClassifyClaim claim;
         try
         {
-            claim = await manager.ClassifyAsync(query, cancellationToken);
+            claim = await managerService.ClassifyAsync(query, cancellationToken);
             if (claim.Error is not null)
             {
                 // A pod recognised the query as its own but rejected it (e.g. a malformed yt:// id). Discovery
@@ -46,7 +45,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
 
             if (claim.Kind == QueryType.Id)
             {
-                var mapped = await LookUp(claim.Query, manager, resolver, cancellationToken);
+                var mapped = await LookUp(claim.Query, resolver, cancellationToken);
                 return Ok(mapped is null ? Array.Empty<SearchResultDto>() : [mapped]);
             }
         }
@@ -61,22 +60,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
             return Ok(Array.Empty<SearchResultDto>());
         }
 
-        // Both of these are already guarded per platform inside AudioManager, so one unreachable pod
-        // shortens the stream instead of tearing the response.
-        var results = claim.Kind == QueryType.Playlist
-            ? manager.SearchPlaylist(claim.Query, cancellationToken)
-            : manager.SearchKeywords(claim.Query, cancellationToken);
-
-        // Every stream goes through the resolver, not just a metadata-only playlist: the Spotify pod answers
-        // keyword searches too, so a name can now arrive in the middle of an ordinary search rather than only
-        // from a playlist. Results that are already playable pass straight through without holding the stream
-        // up — see SelectParallel — so an ordinary search pays nothing for this.
-        results = resolver.Resolve(results, cancellationToken)
-            // A Spotify hit resolved against YouTube lands on the video YouTube itself just returned, one
-            // entry earlier in this same stream. Without this the client renders it twice.
-            .DistinctBy(result => result.Id);
-
-        return Ok(this.Mapped(results, configuration, environment));
+        return Ok(this.Mapped(resolver.Discover(claim, cancellationToken), configuration, environment));
     }
 
     /// <summary>
@@ -91,15 +75,13 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
     [Produces("application/json")]
     [ProducesResponseType<IReadOnlyList<ResolvedDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorBody>(StatusCodes.Status400BadRequest)]
-    public IActionResult Resolve([FromQuery] string[] id, [FromServices] ManagerService managerService,
-        [FromServices] PlayableResolver resolver)
+    public IActionResult Resolve([FromQuery] string[] id, [FromServices] PlayableResolver resolver)
     {
         if (id.Length is 0 or > 50 || id.Any(one => !one.Contains("://", StringComparison.Ordinal)))
             return BadRequest(new ApiErrorBody(new ApiError("invalid_query",
                 "Send 1 to 50 ids, each like audio://… or yt://….")));
 
         logger.LogInformation("Resolving {Count} ids", id.Length);
-        var manager = managerService.Manager;
 
         // The same budget the resolver keeps, since most of these are a YouTube or Deezer lookup.
         return Ok(id.Distinct(StringComparer.Ordinal).AsAsync().SelectParallel<string, ResolvedDto>(
@@ -107,7 +89,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
             {
                 try
                 {
-                    return await LookUp(one, manager, resolver, cancellationToken) is { } result
+                    return await LookUp(one, resolver, cancellationToken) is { } result
                         ? new ResolvedDto(one, result)
                         : null;
                 }
@@ -120,15 +102,10 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
     }
 
     /// <summary>One ID, made playable and mapped; <c>null</c> when nothing has it.</summary>
-    private async Task<SearchResultDto?> LookUp(string id, AudioManager manager, PlayableResolver resolver,
+    private async Task<SearchResultDto?> LookUp(string id, PlayableResolver resolver,
         CancellationToken cancellationToken)
     {
-        var found = await manager.SearchId(id, cancellationToken);
-
-        // A Spotify link resolves to a name, not to audio — the playable track is whatever the
-        // library or YouTube has for it.
-        if (found is not null) found = await resolver.ResolveOne(found, cancellationToken);
-
+        var found = await resolver.LookUpAsync(id, cancellationToken);
         return found is null ? null : DiscoveryResultMapper.Map(found, Request, configuration, environment);
     }
 
@@ -148,28 +125,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
             return BadRequest(new ApiErrorBody(new ApiError("invalid_share", "youTubeShare must be between 0 and 1.")));
 
         logger.LogInformation("Returning {Count} random results with a {Share} YouTube share", count, share);
-        var manager = managerService.Manager;
-        var cancellationToken = HttpContext.RequestAborted;
-
-        // Randomized rounding preserves the requested share over time while allowing either source
-        // to be selected for small requests (for example, count=1 chooses YouTube 40% of the time).
-        var exactYouTubeCount = count * share;
-        var youTubeCount = (int)Math.Floor(exactYouTubeCount);
-        if (Random.Shared.NextDouble() < exactYouTubeCount - youTubeCount)
-            youTubeCount++;
-
-        var youTube = manager.PlatformFor("yt://") is HttpPlatform youTubePlatform
-            ? youTubePlatform.GetRandomResults(youTubeCount, cancellationToken)
-            : Array.Empty<PlatformResult>().AsAsync();
-
-        // ponytail: local is asked for the full count rather than the shortfall. It answers from an in-memory
-        // shuffle, so over-asking is free, and whatever YouTube turns out to be short of is already on its
-        // way — which is the only way a backfill can work when neither source has finished yet.
-        var local = manager.PlatformFor("audio://") is HttpPlatform localPlatform
-            ? localPlatform.GetRandomResults(count, cancellationToken)
-            : Array.Empty<PlatformResult>().AsAsync();
-
-        return Ok(this.Mapped(youTube.RandomMerge(youTubeCount, local, count, cancellationToken),
+        return Ok(this.Mapped(managerService.RandomResults(count, share, HttpContext.RequestAborted),
             configuration, environment));
     }
 
@@ -182,7 +138,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
         logger.LogInformation("Downloading Raw '{ID}'", id);
 
         var start = Stopwatch.GetTimestamp();
-        var platform = PlatformFor(managerService.Manager, id);
+        var platform = PlatformFor(managerService, id);
         if (platform is null) return NotFound();
 
         // No format hint: a raw request names no codec, so a pod with a choice serves whatever it
@@ -212,7 +168,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
         if (Encoding(codec) is not { } encoding) return BadRequest($"Unknown codec '{codec}'");
         var (contentType, ffmpegCodec, ffmpegOutputFormat) = encoding;
 
-        var platform = PlatformFor(managerService.Manager, id);
+        var platform = PlatformFor(managerService, id);
         if (platform is null) return NotFound("Search resulted in error");
 
         // Encoding FLAC out of a lossy source is a bigger file that sounds no better, so a pod that can
@@ -253,11 +209,11 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
     }
 
     /// <summary>The platform pod that owns <paramref name="id" />'s protocol prefix, or <c>null</c> when none does.</summary>
-    private static HttpPlatform? PlatformFor(AudioManager manager, string id)
+    private static HttpPlatform? PlatformFor(ManagerService managerService, string id)
     {
         var separator = id.IndexOf("://", StringComparison.Ordinal);
         if (separator < 1) return null;
-        return manager.PlatformFor(id[..(separator + 3)]) as HttpPlatform;
+        return managerService.Pod(id[..(separator + 3)]);
     }
 
     /// <summary>The ID without its platform protocol, safe to put in a header.</summary>

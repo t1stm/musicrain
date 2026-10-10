@@ -11,7 +11,7 @@ namespace Gaida.Bot.Gaida;
 [SuppressMessage("Microsoft.Design", "CA1001:TypesThatOwnDisposableFieldsShouldBeDisposable",
     Justification = "One instance is shared by every account and lives as long as the process; there is no " +
                     "point in the run at which disposing it would be correct.")]
-public sealed class GaidaClient(ILogger logger, string? baseUrl = null)
+public sealed class GaidaClient(ILogger logger, string baseUrl)
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
 
@@ -19,8 +19,7 @@ public sealed class GaidaClient(ILogger logger, string? baseUrl = null)
     // default 100s would cut every song off mid-play.
     private readonly HttpClient _http = new() { Timeout = Timeout.InfiniteTimeSpan };
 
-    public string BaseUrl { get; } = (baseUrl ?? Environment.GetEnvironmentVariable("GAIDA_API_BASE_URL")
-        ?? "http://localhost:5340").TrimEnd('/');
+    public string BaseUrl { get; } = baseUrl.TrimEnd('/');
 
     /// <summary>
     /// What a pasted value is: a local ID, a video, a playlist, or ordinary text to search. This is

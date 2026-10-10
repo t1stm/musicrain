@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using Gaida.Core.FFmpeg;
+using Gaida.Infrastructure.FFmpeg;
 using Gaida.Core.Platforms;
 using Gaida.Core.Streams;
 using Gaida.Platforms.MusicDatabase.Manager;

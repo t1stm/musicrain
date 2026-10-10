@@ -4,10 +4,11 @@ using Serilog;
 
 namespace Gaida.Platforms.MusicDatabase.Manager;
 
-public class CoverExtractor(ILogger logger)
+/// <param name="logger">Where unreadable files are reported.</param>
+/// <param name="exportLocation">The covers directory, <c>ALBUM_COVERS</c>.</param>
+public class CoverExtractor(ILogger logger, string exportLocation)
 {
     private static readonly Lock ExportLock = new();
-    private string _exportLocation = "./Album_Covers";
 
     /// <summary>
     ///     Writes the embedded cover of one audio file into the export directory, deduplicated by content.
@@ -19,9 +20,6 @@ public class CoverExtractor(ILogger logger)
     /// <returns>The cover's file name (<c>&lt;hash&gt;.jpg</c>), or <c>null</c> when the file carries none.</returns>
     public string? ExportCover(string location)
     {
-        _exportLocation = Environment.GetEnvironmentVariable("ALBUM_COVERS", EnvironmentVariableTarget.Process) ??
-                         _exportLocation;
-
         // A file that has been deleted since the last scan is not an error worth a crash.
         if (!File.Exists(location)) return null;
 
@@ -59,16 +57,13 @@ public class CoverExtractor(ILogger logger)
     /// <returns>The cover's file name (<c>&lt;hash&gt;.jpg</c>).</returns>
     public string StoreCover(byte[] image)
     {
-        _exportLocation = Environment.GetEnvironmentVariable("ALBUM_COVERS", EnvironmentVariableTarget.Process) ??
-                         _exportLocation;
-
         var name = $"{Convert.ToHexStringLower(SHA1.HashData(image))}.{ImageFiletype(image)}";
-        var filename = $"{_exportLocation}/{name}";
+        var filename = $"{exportLocation}/{name}";
 
         // ponytail: one lock for every cover write; they are rare and small, split it per-hash if that ever shows up.
         lock (ExportLock)
         {
-            Directory.CreateDirectory(_exportLocation);
+            Directory.CreateDirectory(exportLocation);
             if (!File.Exists(filename)) File.WriteAllBytes(filename, image);
         }
 
