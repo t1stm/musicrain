@@ -54,7 +54,7 @@ app.MapGet("/resolve", async (string? id, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(id)) return Results.NotFound();
 
-    var result = await youTube.GetByIdAsync(StripScheme(id), ct);
+    var result = await youTube.GetByIdAsync(PlatformId.StripPrefix(id), ct);
     var dto = result is null ? null : ResultMapper.Map(result);
     return dto is null ? Results.NotFound() : Results.Ok(dto);
 });
@@ -81,7 +81,7 @@ app.MapGet("/content", async (string? id, HttpContext http, CancellationToken ct
 {
     if (string.IsNullOrWhiteSpace(id)) return Results.NotFound();
 
-    var pureId = StripScheme(id);
+    var pureId = PlatformId.StripPrefix(id);
     var result = await youTube.GetByIdAsync(pureId, ct);
     if (result is null) return Results.NotFound();
 
@@ -91,18 +91,12 @@ app.MapGet("/content", async (string? id, HttpContext http, CancellationToken ct
     http.Response.ContentType = "audio/webm";
     http.Response.Headers.Append("Content-Disposition", $"attachment; filename={pureId}.webm");
 
-    await PumpToResponse(spreader, http.Response, ct);
+    await spreader.DrainToAsync(http.Response.Body, ct);
     return Results.Empty;
 });
 
 app.Run();
 return;
-
-static string StripScheme(string id)
-{
-    var separator = id.IndexOf("://", StringComparison.Ordinal);
-    return separator < 0 ? id : id[(separator + 3)..];
-}
 
 // Guarded exactly where Collect had it: a provider that throws halfway ends the array cleanly.
 string? Setting(string key)
@@ -118,12 +112,3 @@ static async IAsyncEnumerable<ResultDto> Mapped(IAsyncEnumerable<PlatformResult>
             yield return dto;
 }
 
-// Pumps a stream spreader into the response body until the source closes or the client leaves. The
-// download may still be writing while this drains it, so the reader follows the body as it grows
-// rather than stopping at whatever had arrived when it opened.
-static async Task PumpToResponse(StreamSpreader streamSpreader, HttpResponse response,
-    CancellationToken cancellationToken)
-{
-    await using var reader = streamSpreader.OpenRead();
-    await reader.CopyToAsync(response.Body, cancellationToken);
-}

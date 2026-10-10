@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using JetBrains.Annotations;
 
 namespace Moliv;
@@ -38,7 +39,7 @@ public sealed record PlayBody(
     ///     The row this body writes, or why it will not. The trust boundary: nothing here is believed
     ///     because the client sent it.
     /// </summary>
-    public (PlayRow? row, string? error) ToRow(string id, Caller caller, DateTimeOffset now)
+    public CheckedPlay ToRow(string id, Caller caller, DateTimeOffset now)
     {
         if (TrackId is not { Length: > 0 and <= 512 } track || !track.Contains("://", StringComparison.Ordinal))
             return (null, "trackId must look like audio://… and be at most 512 characters.");
@@ -65,6 +66,19 @@ public sealed record PlayBody(
         return (new PlayRow(id, caller.UserId, caller.DeviceId, track, started.ToUniversalTime(),
             UtcOffsetMinutes.Value, DurationMs.Value, played, StartReason, EndReason, SourceKind, SourceId,
             session.ToString(), SessionPosition.Value, Platform, DeviceKind, Shuffled.Value, now), null);
+    }
+}
+
+/// <summary>The row a body writes, or the reason it will not be written.</summary>
+public readonly record struct CheckedPlay(PlayRow? Row, string? Error)
+{
+    [MemberNotNullWhen(true, nameof(Row))]
+    [MemberNotNullWhen(false, nameof(Error))]
+    public bool Ok => Error is null;
+
+    public static implicit operator CheckedPlay((PlayRow? Row, string? Error) result)
+    {
+        return new CheckedPlay(result.Row, result.Error);
     }
 }
 
@@ -99,6 +113,8 @@ public static class Api
     /// <summary>The stack's error envelope: <c>{"error":{"code":"…","message":"…"}}</c>.</summary>
     public static IResult Error(int status, string code, string message) =>
         Results.Json(new ApiErrorBody(new ApiError(code, message)), statusCode: status);
+
+    public static IResult Invalid(string message) => Error(400, "invalid_request", message);
 
     /// <summary>
     ///     A page cursor: the last row's <c>StartedUtc|Id</c>, compared as a row value. Round-trip format,

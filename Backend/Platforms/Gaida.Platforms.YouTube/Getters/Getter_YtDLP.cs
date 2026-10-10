@@ -12,7 +12,13 @@ public sealed class GetterYtDlp(ILogger logger) : ContentGetter(logger)
     public override Task<StreamSpreader?> GetContentDataAsync(PlatformResult result,
         CancellationToken cancellationToken)
     {
-        var url = result.GetDownloadUrl();
+        if (result is not YouTubeResult youTubeResult)
+        {
+            Logger.Debug("Result is not a YouTubeResult");
+            return Task.FromResult<StreamSpreader?>(null);
+        }
+
+        var url = youTubeResult.GetDownloadUrl();
         var process = Process.Start(new ProcessStartInfo("yt-dlp")
         {
             ArgumentList = { "-q", "--no-warnings", "-r", "4.0M", "-f", "bestaudio", url, "-o", "-" },

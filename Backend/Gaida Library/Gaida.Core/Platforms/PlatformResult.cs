@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Gaida.Core.Platforms.Optional.Supports;
 using Gaida.Core.Streams;
+using Gaida.Core.Utils;
 
 namespace Gaida.Core.Platforms;
 
@@ -22,15 +23,9 @@ public abstract class PlatformResult
     [JsonInclude]
     public string? OriginalArtist { get; set; }
 
-    public abstract string GetDownloadUrl();
-
     public ReadOnlySpan<char> GetPureId()
     {
-        var span = Id.AsSpan();
-        Span<Range> ranges = stackalloc Range[2];
-
-        var count = span.Split(ranges, "://");
-        return count > 1 ? span[ranges[1]] : span;
+        return PlatformId.StripPrefix(Id);
     }
 
     /// <returns>The content stream, or <c>null</c> when no downloader could provide it.</returns>
@@ -40,7 +35,7 @@ public abstract class PlatformResult
         {
             var result = await downloader.GetContentDataAsync(this, token);
             if (result is null) continue;
-            if (this is ISupportsCaching caching) await caching.RunCacheProcess(result);
+            if (this is ISupportsCaching caching) caching.RunCacheProcess(result);
             return result;
         }
 

@@ -2,11 +2,10 @@ namespace Gaida.Core.Utils;
 
 public static class Generation
 {
-    private const string NormalChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    private const string BadChars = NormalChars + "_-.";
+    private const string Alphanumerics = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
-    public static string RandomString(int length, bool badSymbols = false)
+    public static string RandomString(int length)
     {
-        return new string(Random.Shared.GetItems<char>(badSymbols ? BadChars : NormalChars, length));
+        return new string(Random.Shared.GetItems<char>(Alphanumerics, length));
     }
 }

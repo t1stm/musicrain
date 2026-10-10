@@ -4,6 +4,5 @@ public enum StatusbarMode
 {
     Stopped,
     Playing,
-    Waiting,
-    Message
+    Waiting
 }

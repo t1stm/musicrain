@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using Gaida.Core.Utils;
 using ILogger = Serilog.ILogger;
 
 namespace Stih;
@@ -20,9 +21,11 @@ public sealed class Tracks(IHttpClientFactory factory, IConfiguration configurat
     ///     Which pod owns which prefix. Adding YouTube lyrics one day is one entry here and nothing else —
     ///     which is the whole reason resolution goes through the owning pod rather than through the caller.
     /// </summary>
+    public const string LocalPrefix = "audio://";
+
     private static readonly (string Prefix, string Setting)[] Owners =
     [
-        ("audio://", "Local:Url"),
+        (LocalPrefix, "Local:Url"),
         ("deezer://", "Deezer:Url")
     ];
 
@@ -47,8 +50,9 @@ public sealed class Tracks(IHttpClientFactory factory, IConfiguration configurat
     /// <summary>The platform segment an own-volume path lives under: <c>deezer</c> for <c>deezer://…</c>.</summary>
     public static string? PlatformOf(string id)
     {
-        var separator = id.IndexOf("://", StringComparison.Ordinal);
-        return separator > 0 ? id[..separator].ToLowerInvariant() : null;
+        return PlatformId.TrySplit(id, out var prefix, out _)
+            ? prefix[..^PlatformId.Separator.Length].ToLowerInvariant()
+            : null;
     }
 
     /// <summary>What a track is, or <c>null</c> when the owning pod has nothing to say about it.</summary>

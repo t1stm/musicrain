@@ -67,28 +67,7 @@ public static class AdminApi
         var feed = new AdminFeed();
         var expected = Encoding.UTF8.GetBytes(token);
 
-        app.Use(async (context, next) =>
-        {
-            // The admin routes are excluded from their own ring on purpose: /Admin/events recording itself
-            // would feed every SSE frame back into the stream that produced it.
-            if (context.Request.Path.StartsWithSegments("/Admin"))
-            {
-                await next();
-                return;
-            }
-
-            var started = Stopwatch.GetTimestamp();
-            try
-            {
-                await next();
-            }
-            finally
-            {
-                feed.Record(new RequestEntry(DateTimeOffset.UtcNow, context.Request.Method,
-                    context.Request.Path + context.Request.QueryString, context.Response.StatusCode,
-                    (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds));
-            }
-        });
+        app.Use((context, next) => RecordAsync(feed, context, next));
 
         var group = app.MapGroup("/Admin");
 
@@ -107,6 +86,31 @@ public static class AdminApi
             TypedResults.ServerSentEvents(feed.Subscribe(http.RequestAborted), "request"));
 
         return group;
+    }
+
+    /// <summary>
+    ///     Puts every request into the feed's ring once it has been answered. The admin routes are left out on
+    ///     purpose: /Admin/events recording itself would feed every SSE frame back into the stream that made it.
+    /// </summary>
+    private static async Task RecordAsync(AdminFeed feed, HttpContext context, Func<Task> next)
+    {
+        if (context.Request.Path.StartsWithSegments("/Admin"))
+        {
+            await next();
+            return;
+        }
+
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            await next();
+        }
+        finally
+        {
+            feed.Record(new RequestEntry(DateTimeOffset.UtcNow, context.Request.Method,
+                context.Request.Path + context.Request.QueryString, context.Response.StatusCode,
+                (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds));
+        }
     }
 
     /// <summary>

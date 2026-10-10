@@ -50,7 +50,7 @@ public class DomSettingsTests : IDisposable
         first.MergeSettings(user!, Patch("""{"quality":{"codec":"FLAC","bitrate":320}}"""));
 
         var reopened = Store();
-        var again = reopened.Resolve(reopened.Login("radost", Password).token!.Value)!;
+        var again = reopened.Resolve(reopened.Login("radost", Password).Value!.Token.Value)!;
 
         Assert.Equal("FLAC", (string?)reopened.Settings(again).settings!["quality"]!["codec"]);
     }
@@ -85,8 +85,8 @@ public class DomSettingsTests : IDisposable
         Assert.Null(store.Resolve(mine!.Value));
         Assert.Null(store.Resolve(other!.Value));
         Assert.Same(user, store.Resolve(fresh!.Value));
-        Assert.NotNull(store.Login("radost", "a different battery").token);
-        Assert.Equal("invalid_credentials", store.Login("radost", Password).error);
+        Assert.NotNull(store.Login("radost", "a different battery").Value?.Token);
+        Assert.Equal("invalid_credentials", store.Login("radost", Password).Refusal?.Code);
     }
 
     [Fact]
@@ -100,7 +100,7 @@ public class DomSettingsTests : IDisposable
         Assert.Equal("invalid_credentials", error);
         Assert.Null(fresh);
         Assert.NotNull(store.Resolve(mine!.Value));
-        Assert.NotNull(store.Login("radost", Password).token);
+        Assert.NotNull(store.Login("radost", Password).Value?.Token);
     }
 
     [Fact]
@@ -126,12 +126,12 @@ public class DomSettingsTests : IDisposable
         var (_, user, _, _) = store.Register("radost", Password);
         store.Create(user!, "Late shift", Visibility.Private, []);
 
-        Assert.Equal("invalid_credentials", store.Rename(user!, "not it at all", "boyan").error);
-        Assert.Equal((null, null), store.Rename(user!, Password, "boyan"));
+        Assert.Equal("invalid_credentials", store.Rename(user!, "not it at all", "boyan")?.Code);
+        Assert.Null(store.Rename(user!, Password, "boyan"));
 
         Assert.Equal("boyan", user!.Username);
         Assert.Single(store.Mine(user));
-        Assert.NotNull(store.Login("boyan", Password).token);
+        Assert.NotNull(store.Login("boyan", Password).Value?.Token);
     }
 
     [Fact]
@@ -142,7 +142,7 @@ public class DomSettingsTests : IDisposable
         var (playlist, _, _) = store.Create(user!, "Late shift", Visibility.Public, []);
         store.SetCover(user!, playlist!.Id, "cover.png");
 
-        Assert.Equal("invalid_credentials", store.DeleteAccount(user!, "not it at all").error);
+        Assert.Equal("invalid_credentials", store.DeleteAccount(user!, "not it at all").Refusal?.Code);
         Assert.NotNull(store.Resolve(token!.Value));
 
         var (error, _, covers) = store.DeleteAccount(user!, Password);
@@ -161,8 +161,8 @@ public class DomSettingsTests : IDisposable
         var (_, user, _, _) = store.Register("radost", Password);
         store.DeleteAccount(user!, Password);
 
-        Assert.Equal("unauthorized", store.Rename(user!, Password, "boyan").error);
-        Assert.Equal("unauthorized", store.ChangePassword(user!, Password, "a different battery").error);
+        Assert.Equal("unauthorized", store.Rename(user!, Password, "boyan")?.Code);
+        Assert.Equal("unauthorized", store.ChangePassword(user!, Password, "a different battery").Refusal?.Code);
         Assert.Equal(0, store.UserCount);
     }
 

@@ -96,6 +96,16 @@ public class StreamSpreader : Stream
             FileOptions.Asynchronous));
     }
 
+    /// <summary>
+    ///     Copies the body into <paramref name="destination" /> until it closes or the copy is cancelled. The writer
+    ///     may still be going: the reader follows the body as it grows rather than stopping at what had arrived.
+    /// </summary>
+    public async Task DrainToAsync(Stream destination, CancellationToken cancellationToken)
+    {
+        await using var reader = OpenRead();
+        await reader.CopyToAsync(destination, cancellationToken);
+    }
+
     public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer,
         CancellationToken cancellationToken = default)
     {

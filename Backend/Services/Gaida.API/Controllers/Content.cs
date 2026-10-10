@@ -147,7 +147,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
         if (upstream is null) return NotFound();
 
         RelayContentHeaders(upstream);
-        SetCacheHeaders($"raw-{FileId(id)}");
+        SetCacheHeaders($"raw-{PlatformId.FileId(id)}");
 
         await upstream.Content.CopyToAsync(Response.Body, HttpContext.RequestAborted);
 
@@ -166,7 +166,6 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
         logger.LogInformation("Downloading '{ID}' {Codec} {Bitrate}", id, codec, bitrate);
 
         if (Encoding(codec) is not { } encoding) return BadRequest($"Unknown codec '{codec}'");
-        var (contentType, ffmpegCodec, ffmpegOutputFormat) = encoding;
 
         var platform = PlatformFor(managerService, id);
         if (platform is null) return NotFound("Search resulted in error");
@@ -179,13 +178,13 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
         using var upstream = await platform.GetContentResponseAsync(id, sourceFormat, HttpContext.RequestAborted);
         if (upstream is null) return NotFound("Search resulted in error");
 
-        var fileId = FileId(id);
-        Response.ContentType = contentType;
-        Response.Headers.Append("Content-Disposition", $"inline; filename={fileId}.{ffmpegOutputFormat[3..]}");
-        SetCacheHeaders($"v2-{contentType}-{bitrate}-{fileId}");
+        var fileId = PlatformId.FileId(id);
+        Response.ContentType = encoding.ContentType;
+        Response.Headers.Append("Content-Disposition", $"inline; filename={fileId}.{encoding.Format}");
+        SetCacheHeaders($"v2-{encoding.ContentType}-{bitrate}-{fileId}");
 
         await using var source = await upstream.Content.ReadAsStreamAsync(HttpContext.RequestAborted);
-        var ffmpegArguments = $"{ffmpegCodec} -b:a {bitrate}k -vn -d copy {ffmpegOutputFormat}";
+        var ffmpegArguments = $"-c:a {encoding.Codec} -b:a {bitrate}k -vn -d copy -f {encoding.Format}";
         await FFmpegEncoder.EncodeAsync(source, Response.Body, ffmpegArguments, HttpContext.RequestAborted);
         return new EmptyResult();
     }
@@ -195,33 +194,29 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
     ///     this does not encode. There used to be a default, Opus in Matroska, but ffmpeg has no <c>mka</c>
     ///     muxer, so it failed every time — and a lowercase <c>opus</c> fell through to it.
     /// </summary>
-    public static (string ContentType, string FfmpegCodec, string OutputFormat)? Encoding(string codec)
+    public static AudioEncoding? Encoding(string codec)
     {
         return codec.ToUpperInvariant() switch
         {
-            "OPUS" => ("audio/ogg", "-c:a libopus", "-f ogg"),
-            "VORBIS" => ("audio/ogg", "-c:a libvorbis", "-f ogg"),
-            "AAC" => ("audio/aac", "-c:a aac", "-f adts"),
-            "FLAC" => ("audio/flac", "-c:a flac", "-f flac"),
-            "MP3" => ("audio/mpeg", "-c:a libmp3lame", "-f mp3"),
+            "OPUS" => new AudioEncoding("audio/ogg", "libopus", "ogg"),
+            "VORBIS" => new AudioEncoding("audio/ogg", "libvorbis", "ogg"),
+            "AAC" => new AudioEncoding("audio/aac", "aac", "adts"),
+            "FLAC" => new AudioEncoding("audio/flac", "flac", "flac"),
+            "MP3" => new AudioEncoding("audio/mpeg", "libmp3lame", "mp3"),
             _ => null
         };
     }
 
+    /// <summary>
+    ///     What a codec name encodes to: the response's content type, ffmpeg's encoder and its muxer. The muxer
+    ///     doubles as the file extension.
+    /// </summary>
+    public sealed record AudioEncoding(string ContentType, string Codec, string Format);
+
     /// <summary>The platform pod that owns <paramref name="id" />'s protocol prefix, or <c>null</c> when none does.</summary>
     private static HttpPlatform? PlatformFor(ManagerService managerService, string id)
     {
-        var separator = id.IndexOf("://", StringComparison.Ordinal);
-        if (separator < 1) return null;
-        return managerService.Pod(id[..(separator + 3)]);
-    }
-
-    /// <summary>The ID without its platform protocol, safe to put in a header.</summary>
-    private static string FileId(string id)
-    {
-        var separator = id.IndexOf("://", StringComparison.Ordinal);
-        var value = separator >= 0 ? id[(separator + 3)..] : id;
-        return Uri.EscapeDataString(value);
+        return PlatformId.TrySplit(id, out var prefix, out _) ? managerService.Pod(prefix) : null;
     }
 
     private void RelayContentHeaders(HttpResponseMessage upstream)

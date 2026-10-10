@@ -65,6 +65,21 @@ public sealed class Player
     /// <summary>Who is in the voice channel, for the button handler's "are you here" check.</summary>
     public IReadOnlyList<DiscordMember> VoiceUsers => VoiceChannel?.Users ?? [];
 
+    /// <summary>How long a player waits on an empty queue before it leaves.</summary>
+    public static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(15);
+
+    /// <summary>The kbps range the API is asked to encode within. Dunav refuses anything under its floor of 8.</summary>
+    private const int MinBitrate = 8, MaxBitrate = 256;
+
+    /// <summary>A voice channel's bitrate when the bot cannot see the channel's own, in bps.</summary>
+    private const int FallbackChannelBitrate = 112_000;
+
+    /// <summary>How long the play loop idles between checks once the queue has run out.</summary>
+    private const int EndOfQueuePollMs = 166;
+
+    /// <summary>Time left in a track when the next one's encode is warmed, and when its body is opened.</summary>
+    private static readonly TimeSpan PreloadAt = TimeSpan.FromSeconds(20), PrefetchAt = TimeSpan.FromSeconds(5);
+
     /// <summary>What the API is asked to encode at: the channel's own bitrate unless overridden.</summary>
     public int Bitrate
     {
@@ -72,10 +87,10 @@ public sealed class Player
         {
             if (Settings.Bitrate is { } configured)
             {
-                return Math.Clamp(configured, 8, 256);
+                return Math.Clamp(configured, MinBitrate, MaxBitrate);
             }
 
-            return Math.Clamp((VoiceChannel?.Bitrate ?? 112_000) / 1000, 8, 256);
+            return Math.Clamp((VoiceChannel?.Bitrate ?? FallbackChannelBitrate) / 1000, MinBitrate, MaxBitrate);
         }
     }
 
@@ -99,38 +114,15 @@ public sealed class Player
                     continue;
                 }
 
-                CurrentItem = Queue.GetCurrent();
-
-                if (CurrentItem is not null)
-                {
-                    WaitingStopwatch.Reset();
-                    _waitingToLeave = false;
-                    Statusbar.ChangeMode(StatusbarMode.Playing);
-                    await PlayTrackAsync(CurrentItem);
-                }
-
+                await PlayCurrentAsync();
                 if (Dead) break;
 
                 Stopwatch.Reset();
-
-                if (LoopStatus == LoopMode.One) Queue.Current--;
-                if (Queue.Current + 1 == Queue.Count && LoopStatus == LoopMode.WholeQueue)
-                {
-                    Queue.Current = -1;
-                }
+                ApplyLoopMode();
 
                 if (Queue.EndOfQueue)
                 {
-                    await Task.Delay(166);
-                    Statusbar.ChangeMode(StatusbarMode.Waiting);
-
-                    if (!_waitingToLeave)
-                    {
-                        _waitingToLeave = true;
-                        WaitingStopwatch.Restart();
-                    }
-
-                    if (WaitingStopwatch.Elapsed.TotalMinutes > 15) Dead = true;
+                    await IdleAsync();
                     continue;
                 }
 
@@ -146,18 +138,46 @@ public sealed class Player
         }
     }
 
+    private async Task PlayCurrentAsync()
+    {
+        CurrentItem = Queue.GetCurrent();
+        if (CurrentItem is null) return;
+
+        WaitingStopwatch.Reset();
+        _waitingToLeave = false;
+        Statusbar.ChangeMode(StatusbarMode.Playing);
+        await PlayTrackAsync(CurrentItem);
+    }
+
+    /// <summary>Repeat-one plays the track again; repeat-all wraps from the last track to the first.</summary>
+    private void ApplyLoopMode()
+    {
+        if (LoopStatus == LoopMode.One) Queue.Current--;
+        if (Queue.Current + 1 == Queue.Count && LoopStatus == LoopMode.WholeQueue) Queue.Current = -1;
+    }
+
+    /// <summary>One beat of waiting on an empty queue. The player ends once it has waited <see cref="IdleTimeout" />.</summary>
+    private async Task IdleAsync()
+    {
+        await Task.Delay(EndOfQueuePollMs);
+        Statusbar.ChangeMode(StatusbarMode.Waiting);
+
+        if (!_waitingToLeave)
+        {
+            _waitingToLeave = true;
+            WaitingStopwatch.Restart();
+        }
+
+        if (WaitingStopwatch.Elapsed > IdleTimeout) Dead = true;
+    }
+
     /// <summary>
     /// Feeds one track. No silence is signalled at the end: the next track's body is already open
     /// and starts feeding immediately, so the send queue never empties and the boundary is gapless.
     /// </summary>
     private async Task PlayTrackAsync(Track item)
     {
-        var previous = _trackCancellation;
-        _trackCancellation = CancellationTokenSource.CreateLinkedTokenSource(_dying.Token);
-        previous.Dispose();
-
-        var token = _trackCancellation.Token;
-
+        var token = NewTrackToken();
         _preloadedNext = false;
 
         HttpResponseMessage? response = null;
@@ -182,18 +202,7 @@ public sealed class Player
                 return;
             }
 
-            await using var stream = await response.Content.ReadAsStreamAsync(token);
-
-            Record("track", $"playing {item.DisplayName}", item.Requester?.Username);
-
-            Connection.SetDisconnectHandler(OnConnectionLostAsync);
-            _writer = Connection.CreateAudioWriter(AudioFormat.Opus);
-            var scanner = new OggGranuleScanner();
-
-            if (!Stopwatch.IsRunning) Stopwatch.Start();
-
-            await OggPacer.FeedAsync(stream, _writer, scanner, () => Stopwatch.Elapsed,
-                WaitWhilePausedAsync, _ => OnProgressAsync(item), token);
+            await FeedAsync(response, item, Connection, token);
         }
         catch (OperationCanceledException)
         {
@@ -208,6 +217,33 @@ public sealed class Player
             Loading = false;
             response?.Dispose();
         }
+    }
+
+    /// <summary>The cancellation for the track about to play, replacing the last one's. Dies with the player.</summary>
+    private CancellationToken NewTrackToken()
+    {
+        var previous = _trackCancellation;
+        _trackCancellation = CancellationTokenSource.CreateLinkedTokenSource(_dying.Token);
+        previous.Dispose();
+
+        return _trackCancellation.Token;
+    }
+
+    private async Task FeedAsync(HttpResponseMessage response, Track item, VoiceConnection connection,
+        CancellationToken token)
+    {
+        await using var stream = await response.Content.ReadAsStreamAsync(token);
+
+        Record("track", $"playing {item.DisplayName}", item.Requester?.Username);
+
+        connection.SetDisconnectHandler(OnConnectionLostAsync);
+        _writer = connection.CreateAudioWriter(AudioFormat.Opus);
+        var scanner = new OggGranuleScanner();
+
+        if (!Stopwatch.IsRunning) Stopwatch.Start();
+
+        await OggPacer.FeedAsync(stream, _writer, scanner, () => Stopwatch.Elapsed,
+            WaitWhilePausedAsync, _ => OnProgressAsync(item), token);
     }
 
     /// <summary>
@@ -233,7 +269,7 @@ public sealed class Player
 
         var remaining = item.Length - Stopwatch.Elapsed;
 
-        if (remaining > TimeSpan.FromSeconds(20)) return;
+        if (remaining > PreloadAt) return;
 
         var next = LoopStatus == LoopMode.One ? item : Queue.GetNext();
         if (next is null) return;
@@ -244,7 +280,7 @@ public sealed class Player
             _ = Api.PreloadAsync(next.Id, Bitrate, _dying.Token);
         }
 
-        if (remaining > TimeSpan.FromSeconds(5) || _prefetch is not null) return;
+        if (remaining > PrefetchAt || _prefetch is not null) return;
 
         _prefetchId = next.Id;
         _prefetch = Api.OpenAudioAsync(next.Id, Bitrate, _dying.Token);
@@ -342,18 +378,7 @@ public sealed class Player
     {
         try
         {
-            if (index == Queue.Current)
-            {
-                var removed = Queue.RemoveFromQueue(index);
-                Skip(0);
-                return removed;
-            }
-
-            if (index >= Queue.Current) return Queue.RemoveFromQueue(index);
-
-            var item = Queue.RemoveFromQueue(index);
-            Queue.Current -= 1;
-            return item;
+            return Removed(index, () => Queue.RemoveFromQueue(index));
         }
         catch (Exception e)
         {
@@ -367,26 +392,25 @@ public sealed class Player
         try
         {
             var item = Queue.GetWithString(name);
-            var index = Queue.IndexOf(item);
-
-            if (index == Queue.Current)
-            {
-                var removed = Queue.RemoveFromQueue(item);
-                Skip(0);
-                return removed;
-            }
-
-            if (index >= Queue.Current) return Queue.RemoveFromQueue(item);
-
-            var removedItem = Queue.RemoveFromQueue(item);
-            Queue.Current -= 1;
-            return removedItem;
+            return Removed(Queue.IndexOf(item), () => Queue.RemoveFromQueue(item));
         }
         catch (Exception e)
         {
             Logger.Warning(e, "Removing {Name} from the queue failed", name);
             return null;
         }
+    }
+
+    /// <summary>
+    ///     Takes the track at <paramref name="index" /> out and keeps <see cref="Playlist.Current" /> on what is
+    ///     playing: the current track going skips to the next, an earlier one going shifts the index down.
+    /// </summary>
+    private Track Removed(int index, Func<Track> remove)
+    {
+        var removed = remove();
+        if (index == Queue.Current) Skip(0);
+        else if (index < Queue.Current) Queue.Current -= 1;
+        return removed;
     }
 
     /// <summary>
@@ -438,7 +462,7 @@ public sealed class Player
 
             Logger.Information("Disconnecting from {Channel} in {Guild}", VoiceChannel?.Name,
                 Guild?.Name);
-            Record("leave", WaitingStopwatch.Elapsed.TotalMinutes > 15
+            Record("leave", WaitingStopwatch.Elapsed > IdleTimeout
                 ? "left after fifteen minutes with an empty queue"
                 : "left");
         }

@@ -30,29 +30,25 @@ public class Playlists(DomStore store, CoverFiles covers) : ControllerBase
     [HttpGet("/Audio/Playlists/Friends")]
     public IActionResult FriendsPlaylists()
     {
-        var user = store.Resolve(Api.Bearer(Request));
-
-        return user is null
-            ? Api.Error(401, "unauthorized", "Sign in first.")
-            : new JsonResult(store.FriendsPlaylists(user).Select(Summary));
+        return store.Caller(Request) is { } user
+            ? new JsonResult(store.FriendsPlaylists(user).Select(Summary))
+            : Api.SignInFirst();
     }
 
     /// <summary>Everything the caller can edit: what they own, and what friends let them change.</summary>
     [HttpGet("/Audio/Playlists/Mine")]
     public IActionResult Mine()
     {
-        var user = store.Resolve(Api.Bearer(Request));
-
-        return user is null
-            ? Api.Error(401, "unauthorized", "Sign in first.")
-            : new JsonResult(store.Mine(user).Select(Summary));
+        return store.Caller(Request) is { } user
+            ? new JsonResult(store.Mine(user).Select(Summary))
+            : Api.SignInFirst();
     }
 
     /// <summary>A bearer token is optional here: a public playlist is a link you can send anyone.</summary>
     [HttpGet("/Audio/Playlists/{id}")]
     public IActionResult One(string id)
     {
-        var playlist = store.Visible(id, store.Resolve(Api.Bearer(Request)));
+        var playlist = store.Visible(id, store.Caller(Request));
 
         return playlist is null ? NotFound() : new JsonResult(Full(playlist));
     }
@@ -60,35 +56,24 @@ public class Playlists(DomStore store, CoverFiles covers) : ControllerBase
     [HttpPost("/Audio/Playlists")]
     public IActionResult Create([FromBody] PlaylistBody? body)
     {
-        var user = store.Resolve(Api.Bearer(Request));
-        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
-        if (body is null) return Api.Error(400, "invalid_request", "Send a name.");
+        if (store.Caller(Request) is not { } user) return Api.SignInFirst();
+        if (body is null) return Api.Invalid("Send a name.");
 
-        var (playlist, error, message) = store.Create(user, body.Name, body.Visibility ?? Visibility.Private, body.Tracks);
+        var outcome = store.Create(user, body.Name, body.Visibility ?? Visibility.Private, body.Tracks);
 
-        return error is not null
-            ? Api.Error(400, error, message!)
-            : new JsonResult(Full(playlist!)) { StatusCode = 201 };
+        return outcome.Ok ? new JsonResult(Full(outcome.Value)) { StatusCode = 201 } : Api.Refuse(outcome.Refusal);
     }
 
     [HttpPatch("/Audio/Playlists/{id}")]
     public IActionResult Patch(string id, [FromBody] PlaylistBody? body)
     {
-        var user = store.Resolve(Api.Bearer(Request));
-        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
-        if (body is null) return Api.Error(400, "invalid_request", "Send something to change.");
+        if (store.Caller(Request) is not { } user) return Api.SignInFirst();
+        if (body is null) return Api.Invalid("Send something to change.");
 
-        var (playlist, error, message) = store.Update(user, id, body.Name, body.Visibility, body.Tracks,
-            body.Collaborators, body.Revision);
+        var outcome = store.Update(user, id, body.Name, body.Visibility, body.Tracks, body.Collaborators,
+            body.Revision);
 
-        return error switch
-        {
-            null => new JsonResult(Full(playlist!)),
-            "not_found" => NotFound(),
-            "forbidden" => Api.Error(403, error, message!),
-            "stale" => Api.Error(409, error, message!),
-            _ => Api.Error(400, error, message!)
-        };
+        return outcome.Ok ? new JsonResult(Full(outcome.Value)) : Api.Refuse(outcome.Refusal);
     }
 
     /// <summary>
@@ -98,25 +83,19 @@ public class Playlists(DomStore store, CoverFiles covers) : ControllerBase
     [HttpPost("/Audio/Playlists/{id}/Tracks")]
     public IActionResult Append(string id, [FromBody] TrackSnapshot? track)
     {
-        var user = store.Resolve(Api.Bearer(Request));
-        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+        if (store.Caller(Request) is not { } user) return Api.SignInFirst();
 
-        var (playlist, added, error, message) = store.Append(user, id, track);
+        var outcome = store.Append(user, id, track);
 
-        return error switch
-        {
-            null => new JsonResult(new { added, playlist = Summary(playlist!) }),
-            "not_found" => NotFound(),
-            "forbidden" => Api.Error(403, error, message!),
-            _ => Api.Error(400, error, message!)
-        };
+        return outcome.Ok
+            ? new JsonResult(new { added = outcome.Value.Added, playlist = Summary(outcome.Value.Playlist) })
+            : Api.Refuse(outcome.Refusal);
     }
 
     [HttpDelete("/Audio/Playlists/{id}")]
     public IActionResult Delete(string id)
     {
-        var user = store.Resolve(Api.Bearer(Request));
-        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+        if (store.Caller(Request) is not { } user) return Api.SignInFirst();
 
         var (deleted, coverFile) = store.Delete(user, id);
         if (coverFile is not null) covers.Forget(coverFile);
@@ -131,16 +110,15 @@ public class Playlists(DomStore store, CoverFiles covers) : ControllerBase
     [HttpPut("/Audio/Playlists/{id}/Cover")]
     public async Task<IActionResult> UploadCover(string id)
     {
-        var user = store.Resolve(Api.Bearer(Request));
-        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+        if (store.Caller(Request) is not { } user) return Api.SignInFirst();
         if (!Request.HasFormContentType || Request.Form.Files.Count == 0)
-            return Api.Error(400, "invalid_request", "Send an image as multipart form data.");
+            return Api.Invalid("Send an image as multipart form data.");
 
         var file = Request.Form.Files[0];
         if (!CoverTypes.TryGetValue(file.ContentType, out var extension))
-            return Api.Error(400, "invalid_request", "A cover is a PNG, a JPEG or a WebP.");
+            return Api.Invalid("A cover is a PNG, a JPEG or a WebP.");
         if (file.Length > MaxCoverBytes)
-            return Api.Error(400, "invalid_request", "A cover is at most 2 MB.");
+            return Api.Invalid("A cover is at most 2 MB.");
 
         // ownership decides before a byte is written; `id` never reaches the filesystem unchecked
         var playlist = store.Visible(id, user);
@@ -162,7 +140,7 @@ public class Playlists(DomStore store, CoverFiles covers) : ControllerBase
     public IActionResult Cover(string id)
     {
         // a private playlist's cover is as private as the playlist
-        var playlist = store.Visible(id, store.Resolve(Api.Bearer(Request)));
+        var playlist = store.Visible(id, store.Caller(Request));
         if (playlist?.CoverFile is null) return NotFound();
 
         if (covers.Find(playlist.CoverFile) is not { } path) return NotFound();
@@ -191,12 +169,15 @@ public class Playlists(DomStore store, CoverFiles covers) : ControllerBase
         duration = playlist.Duration.ToString("c"),
         // A path, not an absolute URL: inside the Discord activity the API is reachable only under
         // the frame's own /.proxy prefix, so the client is the one that knows its own base.
-        coverUrl = playlist.CoverFile is null ? null : $"/Audio/Playlists/{playlist.Id}/Cover",
+        coverUrl = CoverUrl(playlist),
         firstTrackId = playlist.Tracks.FirstOrDefault()?.Id,
         firstTrackThumbnailUrl = playlist.Tracks.FirstOrDefault()?.ThumbnailUrl,
         createdUtc = playlist.CreatedUtc,
         updatedUtc = playlist.UpdatedUtc
     };
+
+    private static string? CoverUrl(Playlist playlist) =>
+        playlist.CoverFile is null ? null : $"/Audio/Playlists/{playlist.Id}/Cover";
 
     /// <summary>The summary plus the tracks themselves.</summary>
     private static object Full(Playlist playlist) => new
@@ -209,7 +190,7 @@ public class Playlists(DomStore store, CoverFiles covers) : ControllerBase
         revision = playlist.Revision,
         trackCount = playlist.Tracks.Count,
         duration = playlist.Duration.ToString("c"),
-        coverUrl = playlist.CoverFile is null ? null : $"/Audio/Playlists/{playlist.Id}/Cover",
+        coverUrl = CoverUrl(playlist),
         firstTrackId = playlist.Tracks.FirstOrDefault()?.Id,
         firstTrackThumbnailUrl = playlist.Tracks.FirstOrDefault()?.ThumbnailUrl,
         createdUtc = playlist.CreatedUtc,

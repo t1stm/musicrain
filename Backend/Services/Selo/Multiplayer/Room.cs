@@ -10,10 +10,9 @@ public class Room
 {
     private readonly HttpClient _gaida;
     private readonly ILogger _logger;
-    [JsonIgnore] private readonly VirtualPlayer _player;
-    [JsonIgnore] private readonly MessageQueue _queue;
-
-    [JsonIgnore] private readonly UserStore _store;
+    private readonly VirtualPlayer _player;
+    private readonly MessageQueue _queue;
+    private readonly UserStore _store;
 
     public Room(Guid guid, HttpClient gaida, ILogger logger)
     {
@@ -130,7 +129,7 @@ public class Room
         // a socket can close without ever having joined, so let's just return in that case
         if (user is null) return;
 
-        await _store.RemoveUser(id);
+        _store.RemoveUser(id);
         await _queue.Send($"chat System %% User '{user.ChatUsername}' left from the session.");
         await SendMemberCount();
         await _player.UserLeft(id);

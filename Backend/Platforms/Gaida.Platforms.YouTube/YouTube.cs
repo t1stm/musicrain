@@ -35,10 +35,7 @@ public sealed class YouTube : Platform, ISupportsSearch, ISupportsPlaylist, ISup
         ];
     }
 
-    protected override HashSet<string> SearchIdIdentifiers => ["yt://"];
-
-    protected override List<SearchProvider> SearchProviders { get; set; }
-    protected override List<ContentGetter> ContentDownloaders { get; set; }
+    protected override HashSet<string> SearchIdIdentifiers { get; } = [YouTubeResult.Prefix];
 
     public async IAsyncEnumerable<PlatformResult> SearchPlaylist(string playlist,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)

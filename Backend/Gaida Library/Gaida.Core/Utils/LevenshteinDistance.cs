@@ -8,6 +8,17 @@ public static class LevenshteinDistance
             str is null ? null : string.Concat(str.Where(char.IsLetterOrDigit)).ToLowerInvariant();
     }
 
+    /// <summary>
+    ///     How alike two strings are, from 0 to 1. Length-relative, unlike an absolute edit budget: a long
+    ///     transliterated title accumulates several ambiguous letters (ю→yu|iu, я→ya|ia, щ→sht|sh) and a fixed
+    ///     distance rejects it.
+    /// </summary>
+    public static double Similarity(string a, string b)
+    {
+        if (a.Length == 0 || b.Length == 0) return 0;
+        return 1d - (double)ComputeStrict(a, b) / Math.Max(a.Length, b.Length);
+    }
+
     public static int ComputeStrict(ReadOnlySpan<char> s, ReadOnlySpan<char> t)
     {
         var n = s.Length;

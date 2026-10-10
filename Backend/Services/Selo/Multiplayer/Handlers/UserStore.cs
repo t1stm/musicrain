@@ -28,10 +28,9 @@ public class UserStore
         return task is null ? new ValueTask<User>(user) : Added(task, user);
     }
 
-    public Task RemoveUser(string id)
+    public void RemoveUser(string id)
     {
         Users.TryRemove(id, out _);
-        return Task.CompletedTask;
     }
 
     /// <returns>The user, or null when this id was never in the store.</returns>

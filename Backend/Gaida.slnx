@@ -1,6 +1,5 @@
 <Solution>
   <Folder Name="/Gaida Library/">
-    <Project Path="Gaida Library/Gaida.CLI/Gaida.CLI.csproj" />
     <Project Path="Gaida Library/Gaida.Admin/Gaida.Admin.csproj" />
     <Project Path="Gaida Library/Gaida.Core/Gaida.Core.csproj" />
     <Project Path="Gaida Library/Gaida.Infrastructure/Gaida.Infrastructure.csproj" />

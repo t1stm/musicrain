@@ -36,16 +36,14 @@ public class AudioManager(ILogger logger)
     {
         Logger.Information("Searching for ID: {ID}", id);
         var normalizedId = id.Trim();
-        var separator = normalizedId.IndexOf("://", StringComparison.Ordinal);
-        if (separator < 1)
+        if (!PlatformId.TrySplit(normalizedId, out var identifier, out var value))
         {
             Logger.Warning("ID does not contain a platform protocol: {ID}", normalizedId);
             return Task.FromResult<PlatformResult?>(null);
         }
 
-        var identifier = normalizedId[..(separator + 3)];
         if (SearchIdLookup.TryGetValue(identifier.AsSpan(), out var platform))
-            return platform.GetByIdAsync(normalizedId[(separator + 3)..], cancellationToken);
+            return platform.GetByIdAsync(value, cancellationToken);
 
         Logger.Warning("No platform found for identifier: {Identifier}", identifier);
         return Task.FromResult<PlatformResult?>(null);

@@ -23,6 +23,14 @@ namespace Gaida.Bot.Commands;
 [UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed class PlaybackCommands(PlayerController controller, GaidaClient api, ILogger logger)
 {
+    /// <summary>Discord's longest message, its most options in a select, and its longest option text.</summary>
+    private const int MessageLimit = 2000, SelectLimit = 25, OptionTextLimit = 100;
+
+    private const string SelectId = "dropdown";
+
+    /// <summary>What <c>"Lyrics for {query}: \n"</c> adds around the lyrics, give or take.</summary>
+    private const int LyricsPreambleLength = 19;
+
     [Command("play")]
     [TextAlias("p", "плаъ", "п", "udri", "удри")]
     public ValueTask PlayAsync(CommandContext ctx, [RemainingText] string search = "") =>
@@ -49,26 +57,10 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
             return;
         }
 
-        // A bare number moves that queue entry to the front instead of searching for it.
-        if (int.TryParse(search, out var index) && index >= 1)
-        {
-            if (index > player.Queue.Count)
-            {
-                await AcknowledgeAsync(ctx, player, Text.NumberBiggerThanQueueLength(index));
-            }
-            else
-            {
-                var moved = player.Queue.Items[index - 1];
-                player.Queue.RemoveFromQueue(moved);
-                player.Queue.AddToQueueNext(moved);
-                await AcknowledgeAsync(ctx, player,
-                    Text.PlayingItemAfterThis(player.Queue.IndexOf(moved) + 1, moved.DisplayName));
-                return;
-            }
-        }
+        if (await MovedToFrontAsync(ctx, player, search)) return;
 
         var items = new List<Track>();
-        await foreach (var track in TracksForAsync(search))
+        await foreach (var track in api.TracksForAsync(search))
         {
             track.Requester = ctx.Member;
             items.Add(track);
@@ -76,14 +68,36 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
 
         if (items.Count == 0)
         {
-            await AcknowledgeAsync(ctx, player, Text.NoResultsFound(search));
+            await Replies.AcknowledgeAsync(ctx, player, Text.NoResultsFound(search));
             return;
         }
 
         player.Queue.AddToQueueNext(items);
-        await AcknowledgeAsync(ctx, player, items.Count > 1
+        await Replies.AcknowledgeAsync(ctx, player, items.Count > 1
             ? Text.PlayingItemAfterThis(search)
             : Text.PlayingItemAfterThis(player.Queue.IndexOf(items[0]) + 1, items[0].DisplayName));
+    }
+
+    /// <summary>
+    /// A bare number moves that queue entry to the front instead of searching for it. One past the end
+    /// of the queue is said so, and then searched for like any other text.
+    /// </summary>
+    private static async ValueTask<bool> MovedToFrontAsync(CommandContext ctx, Player player, string search)
+    {
+        if (!int.TryParse(search, out var index) || index < 1) return false;
+
+        if (index > player.Queue.Count)
+        {
+            await Replies.AcknowledgeAsync(ctx, player, Text.NumberBiggerThanQueueLength(index));
+            return false;
+        }
+
+        var moved = player.Queue.Items[index - 1];
+        player.Queue.RemoveFromQueue(moved);
+        player.Queue.AddToQueueNext(moved);
+        await Replies.AcknowledgeAsync(ctx, player,
+            Text.PlayingItemAfterThis(player.Queue.IndexOf(moved) + 1, moved.DisplayName));
+        return true;
     }
 
     [Command("skip")]
@@ -94,7 +108,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         if (player is null) return;
 
         player.Skip(times);
-        await AcknowledgeAsync(ctx, player, Text.SkippingOneTime());
+        await Replies.AcknowledgeAsync(ctx, player, Text.SkippingOneTime());
     }
 
     [Command("previous")]
@@ -105,7 +119,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         if (player is null) return;
 
         player.Skip(-times);
-        await AcknowledgeAsync(ctx, player, Text.SkippingOneTimeBack());
+        await Replies.AcknowledgeAsync(ctx, player, Text.SkippingOneTimeBack());
     }
 
     [Command("pause")]
@@ -116,7 +130,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         if (player is null) return;
 
         player.Pause();
-        await AcknowledgeAsync(ctx, player, player.Paused ? Text.PausingThePlayer() : Text.UnpausingThePlayer());
+        await Replies.AcknowledgeAsync(ctx, player, player.Paused ? Text.PausingThePlayer() : Text.UnpausingThePlayer());
     }
 
     [Command("leave")]
@@ -137,7 +151,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         var player = await PlayerForAsync(ctx, "loop");
         if (player is null) return;
 
-        await AcknowledgeAsync(ctx, player, Text.LoopStatusUpdate(player.ToggleLoop()));
+        await Replies.AcknowledgeAsync(ctx, player, Text.LoopStatusUpdate(player.ToggleLoop()));
     }
 
     [Command("shuffle")]
@@ -157,7 +171,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
             player.Shuffle();
         }
 
-        await AcknowledgeAsync(ctx, player, Text.ShufflingTheQueue());
+        await Replies.AcknowledgeAsync(ctx, player, Text.ShufflingTheQueue());
     }
 
     [Command("remove")]
@@ -171,7 +185,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
             ? player.RemoveFromQueue(index - 1)
             : player.RemoveFromQueue(remove);
 
-        await AcknowledgeAsync(ctx, player,
+        await Replies.AcknowledgeAsync(ctx, player,
             item is null ? Text.FailedToRemove(remove) : Text.RemovingItem(item.DisplayName));
     }
 
@@ -185,7 +199,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         var parts = move.Split(' ');
         if (parts.Length > 1 && int.TryParse(parts[0], out var from) && int.TryParse(parts[1], out var to))
         {
-            await AcknowledgeAsync(ctx, player, player.Queue.Move(from - 1, to - 1, out var moved)
+            await Replies.AcknowledgeAsync(ctx, player, player.Queue.Move(from - 1, to - 1, out var moved)
                 ? Text.Moved(from, moved.DisplayName, to)
                 : Text.FailedToMove());
             return;
@@ -193,12 +207,12 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
 
         if (!move.Contains("!to"))
         {
-            await AcknowledgeAsync(ctx, player, Text.InvalidMoveFormat());
+            await Replies.AcknowledgeAsync(ctx, player, Text.InvalidMoveFormat());
             return;
         }
 
         var tracks = move.Split("!to");
-        await AcknowledgeAsync(ctx, player, player.Queue.Move(tracks[0], tracks[1], out var one, out var two)
+        await Replies.AcknowledgeAsync(ctx, player, player.Queue.Move(tracks[0], tracks[1], out var one, out var two)
             ? Text.SwitchedThePlacesOf(one.DisplayName, two.DisplayName)
             : Text.FailedToMove());
     }
@@ -211,7 +225,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         if (player is null) return;
 
         var item = player.GoToIndex(index - 1);
-        await AcknowledgeAsync(ctx, player, Text.GoingTo(index, item?.DisplayName));
+        await Replies.AcknowledgeAsync(ctx, player, Text.GoingTo(index, item?.DisplayName));
     }
 
     [Command("list")]
@@ -236,7 +250,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         if (player is null) return;
 
         player.Queue.Clear();
-        await AcknowledgeAsync(ctx, player, Text.CurrentQueue());
+        await Replies.AcknowledgeAsync(ctx, player, Text.CurrentQueue());
     }
 
     [Command("lyrics")]
@@ -244,55 +258,17 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
     {
         await ctx.DeferResponseAsync();
 
-        string id;
-        string query;
+        if (await LyricsTrackAsync(ctx, search) is not { } track) return;
 
-        if (string.IsNullOrWhiteSpace(search))
-        {
-            var channelId = ctx.Member?.VoiceState?.ChannelId;
-            if (channelId is null || ctx.Guild is null || !ctx.Guild.Channels.TryGetValue(channelId.Value, out var voice))
-            {
-                await RefuseAsync(ctx, Text.UserNotInChannelLyrics());
-                return;
-            }
-
-            var player = controller.GetPlayer(voice);
-            if (player?.CurrentItem is null)
-            {
-                await RefuseAsync(ctx, Text.BotNotInChannelLyrics());
-                return;
-            }
-
-            id = player.CurrentItem.Id;
-            query = player.CurrentItem.DisplayName;
-        }
-        else
-        {
-            Track? first = null;
-            await foreach (var track in api.SearchAsync(search))
-            {
-                first = track;
-                break;
-            }
-
-            if (first is null)
-            {
-                await RefuseAsync(ctx, Text.NoResultsFoundLyrics(search));
-                return;
-            }
-
-            id = first.Id;
-            query = first.DisplayName;
-        }
-
-        var lyrics = await api.LyricsAsync(id);
+        var query = track.DisplayName;
+        var lyrics = await api.LyricsAsync(track.Id);
         if (lyrics?.Text is null || string.IsNullOrWhiteSpace(lyrics.Text))
         {
-            await RefuseAsync(ctx, Text.NoResultsFoundLyrics(query));
+            await Replies.RefuseAsync(ctx, Text.NoResultsFoundLyrics(query));
             return;
         }
 
-        if (lyrics.Text.Length + query.Length + 19 > 2000)
+        if (lyrics.Text.Length + query.Length + LyricsPreambleLength > MessageLimit)
         {
             await ctx.RespondAsync(new DiscordMessageBuilder()
                 .WithContent(Text.LyricsLong().CodeBlocked())
@@ -301,6 +277,30 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         }
 
         await ctx.RespondAsync($"Lyrics for {query}: \n{lyrics.Text}");
+    }
+
+    /// <summary>What is playing in the caller's channel, or the first hit for what they typed. Refuses when neither.</summary>
+    private async Task<Track?> LyricsTrackAsync(CommandContext ctx, string search)
+    {
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            await foreach (var track in api.SearchAsync(search)) return track;
+
+            await Replies.RefuseAsync(ctx, Text.NoResultsFoundLyrics(search));
+            return null;
+        }
+
+        var channelId = ctx.Member?.VoiceState?.ChannelId;
+        if (channelId is null || ctx.Guild is null || !ctx.Guild.Channels.TryGetValue(channelId.Value, out var voice))
+        {
+            await Replies.RefuseAsync(ctx, Text.UserNotInChannelLyrics());
+            return null;
+        }
+
+        if (controller.GetPlayer(voice)?.CurrentItem is { } current) return current;
+
+        await Replies.RefuseAsync(ctx, Text.BotNotInChannelLyrics());
+        return null;
     }
 
     private async ValueTask PlayCoreAsync(CommandContext ctx, string search, bool select)
@@ -313,7 +313,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         var player = controller.GetPlayer(voice, ctx.Channel, true);
         if (player is null)
         {
-            await RefuseAsync(ctx, Text.NoFreeBotAccounts());
+            await Replies.RefuseAsync(ctx, Text.NoFreeBotAccounts());
             return;
         }
 
@@ -336,42 +336,57 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
             }
             else
             {
-                source = TracksForAsync(search);
+                source = api.TracksForAsync(search);
             }
 
-            var added = new List<Track>();
-
-            await foreach (var track in source)
-            {
-                track.Requester = ctx.Member;
-                player.Queue.AddToQueue(track);
-                added.Add(track);
-
-                if (!player.Started) await StartAsync(ctx, player);
-            }
+            var added = await QueueAsync(ctx, player, source);
 
             if (added.Count == 0)
             {
                 if (!startedBefore) controller.Remove(player);
-                await RefuseAsync(ctx, Text.NoResultsFound(search));
+                await Replies.RefuseAsync(ctx, Text.NoResultsFound(search));
                 return;
             }
 
-            if (startedBefore)
-            {
-                await AcknowledgeAsync(ctx, player, added.Count > 1
-                    ? Text.AddedItem(search)
-                    : Text.AddedItem($"({player.Queue.IndexOf(added[0]) + 1}) - {added[0].DisplayName}"));
-            }
-            else if (ctx is SlashCommandContext)
-            {
-                await ctx.RespondAsync(Text.AddedItem(added[0].DisplayName).CodeBlocked());
-            }
+            await ReportAddedAsync(ctx, player, search, added, startedBefore);
         }
         catch (Exception e)
         {
             logger.Error(e, "Playing {Search} failed", search);
             if (!player.Started) controller.Remove(player);
+        }
+    }
+
+    /// <summary>Queues every track as it arrives, starting the player on the first so playback need not wait for the rest.</summary>
+    private async Task<List<Track>> QueueAsync(CommandContext ctx, Player player, IAsyncEnumerable<Track> source)
+    {
+        var added = new List<Track>();
+
+        await foreach (var track in source)
+        {
+            track.Requester = ctx.Member;
+            player.Queue.AddToQueue(track);
+            added.Add(track);
+
+            if (!player.Started) await StartAsync(ctx, player);
+        }
+
+        return added;
+    }
+
+    /// <summary>A player that was already going says what joined its queue; a new one's statusbar says it for it.</summary>
+    private static async ValueTask ReportAddedAsync(CommandContext ctx, Player player, string search,
+        List<Track> added, bool startedBefore)
+    {
+        if (startedBefore)
+        {
+            await Replies.AcknowledgeAsync(ctx, player, added.Count > 1
+                ? Text.AddedItem(search)
+                : Text.AddedItem($"({player.Queue.IndexOf(added[0]) + 1}) - {added[0].DisplayName}"));
+        }
+        else if (ctx is SlashCommandContext)
+        {
+            await ctx.RespondAsync(Text.AddedItem(added[0].DisplayName).CodeBlocked());
         }
     }
 
@@ -382,25 +397,25 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         await foreach (var track in api.SearchAsync(search))
         {
             results.Add(track);
-            if (results.Count == 25) break;
+            if (results.Count == SelectLimit) break;
         }
 
         if (results.Count == 0)
         {
-            await RefuseAsync(ctx, Text.NoResultsFound(search));
+            await Replies.RefuseAsync(ctx, Text.NoResultsFound(search));
             return null;
         }
 
         var options = results.Select((track, idx) => new DiscordSelectComponentOption(
-            Truncate(track.Name, 100), idx.ToString(CultureInfo.InvariantCulture),
-            Truncate(track.Artist, 100))).ToList();
+            Truncate(track.Name, OptionTextLimit), idx.ToString(CultureInfo.InvariantCulture),
+            Truncate(track.Artist, OptionTextLimit))).ToList();
 
         var channel = player.Channel ?? ctx.Channel;
         var message = await channel.SendMessageAsync(new DiscordMessageBuilder()
             .WithContent(Text.SelectVideo().CodeBlocked())
-            .AddActionRowComponent(new DiscordSelectComponent("dropdown", null!, options)));
+            .AddActionRowComponent(new DiscordSelectComponent(SelectId, null!, options)));
 
-        var response = await message.WaitForSelectAsync(ctx.User, "dropdown", TimeSpan.FromSeconds(60));
+        var response = await message.WaitForSelectAsync(ctx.User, SelectId, TimeSpan.FromSeconds(60));
 
         if (response.TimedOut)
         {
@@ -419,64 +434,6 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         return values.Length > 0 && int.TryParse(values[0], out var index) && index < results.Count
             ? results[index]
             : null;
-    }
-
-    /// <summary>
-    /// What a query puts in the queue: every track of a playlist, the one track a link names, or
-    /// the single best hit for a search term. Only a playlist queues more than one thing.
-    /// </summary>
-    private async IAsyncEnumerable<Track> TracksForAsync(string search,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        var resolution = await api.ResolveAsync(search, cancellationToken);
-
-        // A link the resolver already turned into a track: no search needed at all.
-        if (resolution?.Result is not null)
-        {
-            yield return resolution.Result;
-            yield break;
-        }
-
-        if (resolution?.IsPlaylist is true)
-        {
-            await foreach (var track in api.SearchAsync(resolution.Query, cancellationToken)) yield return track;
-            yield break;
-        }
-
-        // Ordinary text, or a resolver that could not answer. Search streams its hits in the order
-        // the pods answer, not by relevance, so every hit has to be in before one can be picked.
-        var results = new List<Track>();
-        await foreach (var track in api.SearchAsync(resolution?.Query ?? search, cancellationToken)) results.Add(track);
-
-        var best = BestMatch(results, search);
-        if (best is not null) yield return best;
-    }
-
-    /// <summary>
-    /// The closest hit by edit distance against the title and against the title and artist in
-    /// either order, with the platform as the tie-break: the library, then Deezer, then YouTube.
-    /// </summary>
-    /// <remarks>
-    /// The artist on its own is deliberately not a candidate. Scoring it would let every track by
-    /// the right artist tie with the one that was actually asked for, and "rammstein sonne" would
-    /// come back with whichever Rammstein track a pod happened to answer with first.
-    /// </remarks>
-    internal static Track? BestMatch(List<Track> results, string search)
-    {
-        var term = search.Trim();
-
-        return results
-            .OrderBy(track => Math.Min(
-                LevenshteinDistance.ComputeLean(track.Name, term),
-                Math.Min(LevenshteinDistance.ComputeLean(track.DisplayName, term),
-                    LevenshteinDistance.ComputeLean($"{track.Artist} - {track.Name}", term))))
-            .ThenBy(track => track.Id switch
-            {
-                _ when track.Id.StartsWith("audio://", StringComparison.Ordinal) => 0,
-                _ when track.Id.StartsWith("deezer://", StringComparison.Ordinal) => 1,
-                _ => 2
-            })
-            .FirstOrDefault();
     }
 
     private static async IAsyncEnumerable<Track> One(Track track)
@@ -500,7 +457,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
             logger.Error(e, "Connecting to {Channel} failed", player.VoiceChannel?.Name);
             player.Started = false;
             controller.Remove(player);
-            await RefuseAsync(ctx, Text.DiscordDidTheFunny());
+            await Replies.RefuseAsync(ctx, Text.DiscordDidTheFunny());
         }
     }
 
@@ -513,7 +470,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         var player = controller.GetPlayer(voice);
         if (player is not null) return player;
 
-        await RefuseAsync(ctx, Text.BotIsNotInTheChannel());
+        await Replies.RefuseAsync(ctx, Text.BotIsNotInTheChannel());
         return null;
     }
 
@@ -526,52 +483,8 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
             return channel;
         }
 
-        await RefuseAsync(ctx, Text.EnterChannelBeforeCommand(command));
+        await Replies.RefuseAsync(ctx, Text.EnterChannelBeforeCommand(command));
         return null;
-    }
-
-    /// <summary>
-    /// A message with no player behind it: it comes from the account that received the command,
-    /// which is the master. Text commands keep the old bot's habit of answering in a DM.
-    /// </summary>
-    private static async ValueTask RefuseAsync(CommandContext ctx, string text)
-    {
-        if (ctx is SlashCommandContext)
-        {
-            await ctx.RespondAsync(text.CodeBlocked());
-            return;
-        }
-
-        try
-        {
-            if (ctx.Member is not null)
-            {
-                await ctx.Member.SendMessageAsync(text.CodeBlocked());
-                return;
-            }
-        }
-        catch (DiscordException)
-        {
-            // Closed DMs; fall through and say it in the channel.
-        }
-
-        await ctx.RespondAsync(text.CodeBlocked());
-    }
-
-    /// <summary>
-    /// A message about a player: it comes from that player's own account, so a guild running
-    /// several players spreads its rate limits. A slash command must be answered by the account
-    /// that received it, so that one answers for itself.
-    /// </summary>
-    private static async ValueTask AcknowledgeAsync(CommandContext ctx, Player? player, string text)
-    {
-        if (ctx is SlashCommandContext || player?.Channel is null)
-        {
-            await ctx.RespondAsync(text.CodeBlocked());
-            return;
-        }
-
-        await player.Channel.SendMessageAsync(text.CodeBlocked());
     }
 
     private static string Truncate(string value, int length) =>

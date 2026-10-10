@@ -19,24 +19,26 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
     [HttpPost("/Audio/Accounts/Register")]
     public IActionResult Register([FromBody] Credentials? body)
     {
-        if (body is null) return Api.Error(400, "invalid_request", "Send a username and a password.");
+        if (body is null) return Api.Invalid("Send a username and a password.");
 
-        var (token, user, error, message) = store.Register(body.Username ?? "", body.Password ?? "");
-        if (error is not null)
-            return Api.Error(error == "username_taken" ? 409 : 400, error, message!);
+        var outcome = store.Register(body.Username ?? "", body.Password ?? "");
+        if (!outcome.Ok) return Api.Refuse(outcome.Refusal);
 
-        logger.LogInformation("New account: {Username}", user!.Username);
+        logger.LogInformation("New account: {Username}", outcome.Value.User.Username);
 
-        return new JsonResult(Session(user, token!)) { StatusCode = 201 };
+        return new JsonResult(Session(outcome.Value.User, outcome.Value.Token)) { StatusCode = 201 };
     }
 
     [HttpPost("/Audio/Accounts/Login")]
     public IActionResult Login([FromBody] Credentials? body)
     {
-        if (body is null) return Api.Error(400, "invalid_request", "Send a username and a password.");
+        if (body is null) return Api.Invalid("Send a username and a password.");
 
-        var (token, user, error, message) = store.Login(body.Username ?? "", body.Password ?? "");
-        return error is not null ? Api.Error(401, error, message!) : new JsonResult(Session(user!, token!));
+        // Every refusal here is a 401, wrong password included: see Api.Refuse for why a change differs.
+        var outcome = store.Login(body.Username ?? "", body.Password ?? "");
+        return outcome.Ok
+            ? new JsonResult(Session(outcome.Value.User, outcome.Value.Token))
+            : Api.Error(401, outcome.Refusal);
     }
 
     /// <summary>
@@ -50,7 +52,7 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
         var token = Api.Bearer(Request);
         var user = store.Resolve(token);
         return user is null
-            ? Api.Error(401, "unauthorized", "Sign in first.")
+            ? Api.SignInFirst()
             : new JsonResult(new
             {
                 id = user.Id,
@@ -74,8 +76,7 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
     [HttpGet("/Audio/Accounts/Settings")]
     public IActionResult GetSettings()
     {
-        var user = store.Resolve(Api.Bearer(Request));
-        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+        if (store.Caller(Request) is not { } user) return Api.SignInFirst();
 
         var (settings, updatedUtc) = store.Settings(user);
         return new JsonResult(new { settings, updatedUtc });
@@ -85,10 +86,9 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
     [HttpPatch("/Audio/Accounts/Settings")]
     public IActionResult PatchSettings([FromBody] JsonNode? body)
     {
-        var user = store.Resolve(Api.Bearer(Request));
-        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+        if (store.Caller(Request) is not { } user) return Api.SignInFirst();
         if (body is not JsonObject patch)
-            return Api.Error(400, "invalid_request", "Send the settings as a JSON object.");
+            return Api.Invalid("Send the settings as a JSON object.");
 
         var (settings, updatedUtc) = store.MergeSettings(user, patch);
         return new JsonResult(new { settings, updatedUtc });
@@ -100,7 +100,7 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
     {
         var token = Api.Bearer(Request);
         var user = store.Resolve(token);
-        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+        if (user is null) return Api.SignInFirst();
 
         return new JsonResult(new { revoked = store.SignOutEverywhere(user, token!) });
     }
@@ -112,27 +112,24 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
     [HttpPost("/Audio/Accounts/Password")]
     public IActionResult Password([FromBody] PasswordChange? body)
     {
-        var user = store.Resolve(Api.Bearer(Request));
-        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
-        if (body is null) return Api.Error(400, "invalid_request", "Send the current password and a new one.");
+        if (store.Caller(Request) is not { } user) return Api.SignInFirst();
+        if (body is null) return Api.Invalid("Send the current password and a new one.");
 
-        var (token, error, message) = store.ChangePassword(user, body.Current, body.Password);
-        if (error is not null) return Refusal(error, message!);
+        var outcome = store.ChangePassword(user, body.Current, body.Password);
+        if (!outcome.Ok) return Api.Refuse(outcome.Refusal);
 
         logger.LogInformation("{Username} changed their password", user.Username);
-        return new JsonResult(Session(user, token!));
+        return new JsonResult(Session(user, outcome.Value));
     }
 
     [HttpPost("/Audio/Accounts/Rename")]
     public IActionResult Rename([FromBody] Credentials? body)
     {
-        var user = store.Resolve(Api.Bearer(Request));
-        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
-        if (body is null) return Api.Error(400, "invalid_request", "Send the new username and your password.");
+        if (store.Caller(Request) is not { } user) return Api.SignInFirst();
+        if (body is null) return Api.Invalid("Send the new username and your password.");
 
         var previous = user.Username;
-        var (error, message) = store.Rename(user, body.Password, body.Username);
-        if (error is not null) return Refusal(error, message!);
+        if (store.Rename(user, body.Password, body.Username) is { } refusal) return Api.Refuse(refusal);
 
         logger.LogInformation("{Previous} is now {Username}", previous, user.Username);
         return new JsonResult(new { username = user.Username });
@@ -145,13 +142,12 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
     [HttpPost("/Audio/Accounts/Delete")]
     public async Task<IActionResult> Delete([FromBody] Confirmation? body)
     {
-        var user = store.Resolve(Api.Bearer(Request));
-        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+        if (store.Caller(Request) is not { } user) return Api.SignInFirst();
 
-        var (error, message, covers) = store.DeleteAccount(user, body?.Password);
-        if (error is not null) return Refusal(error, message!);
+        var outcome = store.DeleteAccount(user, body?.Password);
+        if (!outcome.Ok) return Api.Refuse(outcome.Refusal);
 
-        await cleanup.AfterDeleteAsync(user.Id, covers);
+        await cleanup.AfterDeleteAsync(user.Id, outcome.Value);
 
         return NoContent();
     }
@@ -163,17 +159,14 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
     [HttpGet("/Audio/Accounts/Friends")]
     public IActionResult Friends()
     {
-        var user = store.Resolve(Api.Bearer(Request));
-
-        return user is null ? Api.Error(401, "unauthorized", "Sign in first.") : new JsonResult(store.Friends(user));
+        return store.Caller(Request) is { } user ? new JsonResult(store.Friends(user)) : Api.SignInFirst();
     }
 
     /// <summary>Ends a friendship on both sides.</summary>
     [HttpDelete("/Audio/Accounts/Friends/{username}")]
     public IActionResult Unfriend(string username)
     {
-        var user = store.Resolve(Api.Bearer(Request));
-        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+        if (store.Caller(Request) is not { } user) return Api.SignInFirst();
 
         return store.Unfriend(user, username) ? NoContent() : NotFound();
     }
@@ -182,18 +175,16 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
     [HttpPost("/Audio/Accounts/Invite")]
     public IActionResult OpenInvite()
     {
-        var user = store.Resolve(Api.Bearer(Request));
-        var invite = user is null ? null : store.OpenInvite(user);
-
-        return invite is null ? Api.Error(401, "unauthorized", "Sign in first.") : new JsonResult(Invitation(invite));
+        return store.Caller(Request) is { } user && store.OpenInvite(user) is { } invite
+            ? new JsonResult(Invitation(invite))
+            : Api.SignInFirst();
     }
 
     /// <summary>The caller's live code and who has joined through it — what the inviter's screen polls. Never makes one.</summary>
     [HttpGet("/Audio/Accounts/Invite")]
     public IActionResult CurrentInvite()
     {
-        var user = store.Resolve(Api.Bearer(Request));
-        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+        if (store.Caller(Request) is not { } user) return Api.SignInFirst();
 
         return store.CurrentInvite(user) is { } invite ? new JsonResult(Invitation(invite)) : NotFound();
     }
@@ -202,8 +193,7 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
     [HttpDelete("/Audio/Accounts/Invite")]
     public IActionResult EndInvite()
     {
-        var user = store.Resolve(Api.Bearer(Request));
-        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+        if (store.Caller(Request) is not { } user) return Api.SignInFirst();
 
         store.EndInvite(user);
         return NoContent();
@@ -222,17 +212,13 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
     [HttpPost("/Audio/Accounts/Invite/Accept")]
     public IActionResult AcceptInvite([FromBody] CodeBody? body)
     {
-        var user = store.Resolve(Api.Bearer(Request));
-        if (user is null) return Api.Error(401, "unauthorized", "Sign in first.");
+        if (store.Caller(Request) is not { } user) return Api.SignInFirst();
 
-        var (friend, alreadyFriends, error, message) = store.AcceptInvite(user, body?.Code);
+        var outcome = store.AcceptInvite(user, body?.Code);
 
-        return error switch
-        {
-            null => new JsonResult(new { username = friend, alreadyFriends }),
-            "invalid_code" => Api.Error(404, error, message!),
-            _ => Refusal(error, message!)
-        };
+        return outcome.Ok
+            ? new JsonResult(new { username = outcome.Value.Friend, alreadyFriends = outcome.Value.AlreadyFriends })
+            : Api.Refuse(outcome.Refusal);
     }
 
     private static object Invitation(Invite invite) => new
@@ -241,18 +227,6 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
         expiresUtc = invite.ExpiresUtc,
         joined = invite.Joined
     };
-
-    /// <summary>
-    ///     A wrong password on a change is <c>403</c>, not the <c>401</c> <see cref="Login" /> uses: the
-    ///     token is fine, and a client reads <c>401</c> as "you are signed out".
-    /// </summary>
-    private static JsonResult Refusal(string error, string message) => Api.Error(error switch
-    {
-        "unauthorized" => 401,
-        "invalid_credentials" => 403,
-        "username_taken" => 409,
-        _ => 400
-    }, error, message);
 
     private static object Session(User user, Token token) => new
     {

@@ -20,9 +20,12 @@ namespace Dom.Store;
 public sealed class DomStore
 {
     /// <summary>What a password-gated change says when the password is wrong.</summary>
-    private const string WrongPassword = "That password is wrong.";
+    private static readonly Refusal WrongPassword = new(Failure.InvalidCredentials, "That password is wrong.");
 
-    private const string SignInFirst = "Sign in first.";
+    /// <summary>What every route that needs an account says to a caller without one.</summary>
+    public static readonly Refusal SignInFirst = new(Failure.Unauthorized, "Sign in first.");
+
+    private static readonly Refusal UsernameTaken = new(Failure.UsernameTaken, "That username is taken. Pick another.");
 
     private readonly Dictionary<string, User> _byToken = new(StringComparer.Ordinal);
     private readonly DomDatabase _database;
@@ -90,17 +93,16 @@ public sealed class DomStore
     ///     Creates an account and signs it in. Returns <c>username_taken</c> or an
     ///     <c>invalid_request</c> reason instead of a token when the input will not do.
     /// </summary>
-    public (Token? token, User? user, string? error, string? message) Register(string username, string password)
+    public Outcome<Session> Register(string username, string password)
     {
         if (!IsValidUsername(username, out var message) || !IsValidPassword(password, out message))
-            return (null, null, "invalid_request", message);
+            return new Refusal(Failure.InvalidRequest, message);
 
         var name = username.Trim();
 
         lock (_gate)
         {
-            if (_users.ContainsKey(User.Normalize(name)))
-                return (null, null, "username_taken", "That username is taken. Pick another.");
+            if (_users.ContainsKey(User.Normalize(name))) return UsernameTaken;
 
             var (salt, hash, iterations) = Passwords.Hash(password);
             var user = new User
@@ -117,7 +119,7 @@ public sealed class DomStore
             SaveLocked(users: [user]);
 
             _log.Information("Registered {Username}", user.Username);
-            return (token, user, null, null);
+            return new Session(user, token);
         }
     }
 
@@ -125,19 +127,17 @@ public sealed class DomStore
     ///     Signs in an existing account. One error for both a missing user and a wrong password: which
     ///     of the two it was is exactly what an attacker enumerating usernames wants to know.
     /// </summary>
-    public (Token? token, User? user, string? error, string? message) Login(string username, string password)
+    public Outcome<Session> Login(string username, string password)
     {
-        const string wrong = "Wrong username or password.";
-
         lock (_gate)
         {
             if (!_users.TryGetValue(User.Normalize(username), out var user) || !Passwords.Verify(user, password))
-                return (null, null, "invalid_credentials", wrong);
+                return new Refusal(Failure.InvalidCredentials, "Wrong username or password.");
 
             var token = IssueLocked(user);
             SaveLocked(users: [user]);
 
-            return (token, user, null, null);
+            return new Session(user, token);
         }
     }
 
@@ -257,10 +257,9 @@ public sealed class DomStore
     }
 
     /// <summary>Creates a playlist for <paramref name="owner" />, or says what is wrong with it.</summary>
-    public (Playlist? playlist, string? error, string? message) Create(
-        User owner, string? name, Visibility visibility, List<TrackSnapshot>? tracks)
+    public Outcome<Playlist> Create(User owner, string? name, Visibility visibility, List<TrackSnapshot>? tracks)
     {
-        if (!IsValidPlaylist(name, tracks, out var message)) return (null, "invalid_request", message);
+        if (!IsValidPlaylist(name, tracks, out var message)) return new Refusal(Failure.InvalidRequest, message);
 
         var now = DateTimeOffset.UtcNow;
         var playlist = new Playlist
@@ -283,7 +282,7 @@ public sealed class DomStore
         _log.Information("{Owner} created playlist {Name} ({Tracks} tracks)",
             owner.Username, playlist.Name, playlist.Tracks.Count);
 
-        return (playlist, null, null);
+        return playlist;
     }
 
     /// <summary>
@@ -296,35 +295,24 @@ public sealed class DomStore
     ///     that has moved on since is refused rather than overwritten — with collaborators, the
     ///     overwrite would silently delete somebody else's additions.
     /// </remarks>
-    public (Playlist? playlist, string? error, string? message) Update(
-        User caller, string id, string? name, Visibility? visibility, List<TrackSnapshot>? tracks,
-        List<string>? collaborators = null, int? revision = null)
+    public Outcome<Playlist> Update(User caller, string id, string? name, Visibility? visibility,
+        List<TrackSnapshot>? tracks, List<string>? collaborators = null, int? revision = null)
     {
-        if (!IsValidPlaylist(name ?? "unchanged", tracks, out var message)) return (null, "invalid_request", message);
+        if (!IsValidPlaylist(name ?? "unchanged", tracks, out var message))
+            return new Refusal(Failure.InvalidRequest, message);
 
         lock (_gate)
         {
-            var (playlist, owns, refusal) = EditableLocked(id, caller);
-            if (playlist is null) return (null, refusal, refusal == "forbidden" ? CannotEdit : "No such playlist.");
+            if (!TryEditableLocked(id, caller, out var playlist, out var owns, out var refusal)) return refusal;
 
             if (!owns && (name is not null || visibility is not null || collaborators is not null))
-                return (null, "forbidden", "Only the owner can change that.");
+                return new Refusal(Failure.Forbidden, "Only the owner can change that.");
 
             List<string>? team = null;
-            if (collaborators is not null)
-            {
-                team = [];
-                foreach (var wanted in collaborators.Where(c => !string.IsNullOrWhiteSpace(c)))
-                {
-                    // the stored spelling is the friend's own, whatever case the client sent
-                    var friend = caller.Friends.FirstOrDefault(f => Same(f, wanted));
-                    if (friend is null) return (null, "not_a_friend", $"{wanted.Trim()} isn’t your friend.");
-                    if (!team.Any(t => Same(t, friend))) team.Add(friend);
-                }
-            }
+            if (collaborators is not null && !TryTeam(caller, collaborators, out team, out refusal)) return refusal;
 
             if (tracks is not null && revision != playlist.Revision)
-                return (null, "stale", "Someone else changed this playlist. This is the latest.");
+                return new Refusal(Failure.Stale, "Someone else changed this playlist. This is the latest.");
 
             if (name is not null) playlist.Name = name.Trim();
             if (visibility is not null) playlist.Visibility = visibility.Value;
@@ -339,8 +327,34 @@ public sealed class DomStore
 
             SaveLocked(playlists: [playlist]);
 
-            return (playlist, null, null);
+            return playlist;
         }
+    }
+
+    /// <summary>
+    ///     The collaborators asked for, as the caller's friends spell themselves, each once. Refused at the first
+    ///     name that is not a friend.
+    /// </summary>
+    private static bool TryTeam(User caller, List<string> collaborators, [NotNullWhen(true)] out List<string>? team,
+        [NotNullWhen(false)] out Refusal? refusal)
+    {
+        team = [];
+        refusal = null;
+
+        foreach (var wanted in collaborators.Where(c => !string.IsNullOrWhiteSpace(c)))
+        {
+            var friend = caller.Friends.FirstOrDefault(f => Same(f, wanted));
+            if (friend is null)
+            {
+                team = null;
+                refusal = new Refusal(Failure.NotAFriend, $"{wanted.Trim()} isn’t your friend.");
+                return false;
+            }
+
+            if (!team.Any(t => Same(t, friend))) team.Add(friend);
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -348,19 +362,17 @@ public sealed class DomStore
     ///     <c>added</c> says which. Read and written under one lock, so an add from a track's menu
     ///     cannot undo an edit made somewhere else between a read and a <see cref="Update" />.
     /// </summary>
-    public (Playlist? playlist, bool added, string? error, string? message) Append(
-        User owner, string id, TrackSnapshot? track)
+    public Outcome<Appended> Append(User owner, string id, TrackSnapshot? track)
     {
         if (track is null || string.IsNullOrWhiteSpace(track.Id) || string.IsNullOrWhiteSpace(track.Name))
-            return (null, false, "invalid_request", "Every track needs an id and a name.");
+            return new Refusal(Failure.InvalidRequest, "Every track needs an id and a name.");
 
         var clean = Clean([track])[0];
 
         lock (_gate)
         {
-            var (playlist, owns, refusal) = EditableLocked(id, owner);
-            if (playlist is null) return (null, false, refusal, refusal == "forbidden" ? CannotEdit : "No such playlist.");
-            if (playlist.Tracks.Any(t => t.Id == clean.Id)) return (playlist, false, null, null);
+            if (!TryEditableLocked(id, owner, out var playlist, out var owns, out var refusal)) return refusal;
+            if (playlist.Tracks.Any(t => t.Id == clean.Id)) return new Appended(playlist, false);
 
             clean.AddedBy = owns ? null : owner.Username;
 
@@ -371,7 +383,7 @@ public sealed class DomStore
 
             SaveLocked(playlists: [playlist]);
 
-            return (playlist, true, null, null);
+            return new Appended(playlist, true);
         }
     }
 
@@ -451,18 +463,18 @@ public sealed class DomStore
     ///     Makes the caller and the code's owner friends, both sides under one lock. The code stays
     ///     live for the next person in the group.
     /// </summary>
-    public (string? friend, bool alreadyFriends, string? error, string? message) AcceptInvite(User caller, string? code)
+    public Outcome<Friendship> AcceptInvite(User caller, string? code)
     {
         lock (_gate)
         {
-            if (!LiveLocked(caller)) return (null, false, "unauthorized", SignInFirst);
+            if (!LiveLocked(caller)) return SignInFirst;
             if (FindInviteLocked(code) is not { } invite)
-                return (null, false, "invalid_code", "That code ran out or was ended. Ask for a new one.");
+                return new Refusal(Failure.InvalidCode, "That code ran out or was ended. Ask for a new one.");
 
             var inviter = invite.Owner;
             if (ReferenceEquals(inviter, caller))
-                return (null, false, "own_code", "That’s your own code. Show it to the people you want to add.");
-            if (IsFriend(caller, inviter.Username)) return (inviter.Username, true, null, null);
+                return new Refusal(Failure.OwnCode, "That’s your own code. Show it to the people you want to add.");
+            if (IsFriend(caller, inviter.Username)) return new Friendship(inviter.Username, true);
 
             caller.Friends = [.. caller.Friends, inviter.Username];
             inviter.Friends = [.. inviter.Friends, caller.Username];
@@ -471,7 +483,7 @@ public sealed class DomStore
             SaveLocked(users: [caller, inviter]);
             _log.Information("{Caller} and {Inviter} are friends", caller.Username, inviter.Username);
 
-            return (inviter.Username, false, null, null);
+            return new Friendship(inviter.Username, false);
         }
     }
 
@@ -543,21 +555,21 @@ public sealed class DomStore
     ///     issued against the old password, so they all go — including the caller's, which is why it
     ///     gets a fresh one under the same lock.
     /// </summary>
-    public (Token? token, string? error, string? message) ChangePassword(User user, string? current, string? password)
+    public Outcome<Token> ChangePassword(User user, string? current, string? password)
     {
-        if (!IsValidPassword(password, out var invalid)) return (null, "invalid_request", invalid);
+        if (!IsValidPassword(password, out var invalid)) return new Refusal(Failure.InvalidRequest, invalid);
 
         lock (_gate)
         {
-            if (!LiveLocked(user)) return (null, "unauthorized", SignInFirst);
-            if (!Passwords.Verify(user, current)) return (null, "invalid_credentials", WrongPassword);
+            if (!LiveLocked(user)) return SignInFirst;
+            if (!Passwords.Verify(user, current)) return WrongPassword;
 
             Passwords.Set(user, password);
             RevokeLocked(user);
             var token = IssueLocked(user);
 
             SaveLocked(users: [user]);
-            return (token, null, null);
+            return token;
         }
     }
 
@@ -584,29 +596,28 @@ public sealed class DomStore
         }
     }
 
-    public (string? error, string? message) Rename(User user, string? password, string? newName)
+    /// <returns>Why the rename was refused, or <c>null</c> when it happened.</returns>
+    public Refusal? Rename(User user, string? password, string? newName)
     {
         lock (_gate)
         {
-            if (!LiveLocked(user)) return ("unauthorized", SignInFirst);
-            return Passwords.Verify(user, password)
-                ? RenameLocked(user, newName)
-                : ("invalid_credentials", WrongPassword);
+            if (!LiveLocked(user)) return SignInFirst;
+            return Passwords.Verify(user, password) ? RenameLocked(user, newName) : WrongPassword;
         }
     }
 
     /// <summary>Deletes the account and everything it owns. Returns the cover files for the caller to unlink.</summary>
-    public (string? error, string? message, List<string> covers) DeleteAccount(User user, string? password)
+    public Outcome<List<string>> DeleteAccount(User user, string? password)
     {
         lock (_gate)
         {
-            if (!LiveLocked(user)) return ("unauthorized", SignInFirst, []);
-            if (!Passwords.Verify(user, password)) return ("invalid_credentials", WrongPassword, []);
+            if (!LiveLocked(user)) return SignInFirst;
+            if (!Passwords.Verify(user, password)) return WrongPassword;
 
             var (covers, _) = DeleteLocked(user);
             _log.Information("{Username} deleted their account", user.Username);
 
-            return (null, null, covers);
+            return covers;
         }
     }
 
@@ -622,8 +633,8 @@ public sealed class DomStore
         {
             if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, "No such account.");
 
-            var (_, message) = RenameLocked(user, newName);
-            return (message is null, message);
+            var refusal = RenameLocked(user, newName);
+            return (refusal is null, refusal?.Message);
         }
     }
 
@@ -666,14 +677,15 @@ public sealed class DomStore
     ///     Deletes an account and everything it owns. Returns the cover files left behind, which are
     ///     the caller's to unlink — the store owns the accounts file and nothing else on disk.
     /// </summary>
-    public (bool ok, string? id, List<string> covers, int _playlists) AdminDeleteUser(string username)
+    /// <returns>What went, or <c>null</c> when there is no such account.</returns>
+    public DeletedAccount? AdminDeleteUser(string username)
     {
         lock (_gate)
         {
-            if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, null, [], 0);
+            if (!_users.TryGetValue(User.Normalize(username), out var user)) return null;
 
             var (covers, deleted) = DeleteLocked(user);
-            return (true, user.Id, covers, deleted);
+            return new DeletedAccount(user.Id, covers, deleted);
         }
     }
 
@@ -729,7 +741,10 @@ public sealed class DomStore
     /// </summary>
     private bool LiveLocked(User user) => _users.TryGetValue(user.Key, out var live) && ReferenceEquals(live, user);
 
-    private const string CannotEdit = "Only its owner and the friends they share it with can change this playlist.";
+    private static readonly Refusal CannotEdit =
+        new(Failure.Forbidden, "Only its owner and the friends they share it with can change this playlist.");
+
+    private static readonly Refusal NoSuchPlaylist = new(Failure.NotFound, "No such playlist.");
 
     private static bool Same(string a, string b) => User.Normalize(a) == User.Normalize(b);
 
@@ -752,16 +767,28 @@ public sealed class DomStore
     }
 
     /// <summary>
-    ///     The playlist, if the caller may change its tracks. <c>not_found</c> when they cannot see it,
-    ///     <c>forbidden</c> when they can but it is not theirs to edit. Caller holds <see cref="_gate" />.
+    ///     The playlist, if the caller may change its tracks. Not found when they cannot see it, forbidden when
+    ///     they can but it is not theirs to edit. Caller holds <see cref="_gate" />.
     /// </summary>
-    private (Playlist? playlist, bool owns, string? error) EditableLocked(string id, User caller)
+    private bool TryEditableLocked(string id, User caller, [NotNullWhen(true)] out Playlist? playlist,
+        out bool owns, [NotNullWhen(false)] out Refusal? refusal)
     {
-        if (!_playlists.TryGetValue(id, out var playlist) || !CanSeeLocked(playlist, caller))
-            return (null, false, "not_found");
+        owns = false;
+        refusal = null;
 
-        var owns = playlist.OwnerKey == caller.Key;
-        return owns || Collaborates(playlist, caller) ? (playlist, owns, null) : (null, false, "forbidden");
+        if (!_playlists.TryGetValue(id, out playlist) || !CanSeeLocked(playlist, caller))
+        {
+            playlist = null;
+            refusal = NoSuchPlaylist;
+            return false;
+        }
+
+        owns = playlist.OwnerKey == caller.Key;
+        if (owns || Collaborates(playlist, caller)) return true;
+
+        playlist = null;
+        refusal = CannotEdit;
+        return false;
     }
 
     /// <summary>
@@ -816,15 +843,15 @@ public sealed class DomStore
     }
 
     /// <summary>Caller holds <see cref="_gate" />.</summary>
-    private (string? error, string? message) RenameLocked(User user, string? newName)
+    /// <returns>Why the rename was refused, or <c>null</c> when it happened.</returns>
+    private Refusal? RenameLocked(User user, string? newName)
     {
-        if (!IsValidUsername(newName, out var invalid)) return ("invalid_request", invalid);
+        if (!IsValidUsername(newName, out var invalid)) return new Refusal(Failure.InvalidRequest, invalid);
 
         var name = newName.Trim();
         var oldKey = user.Key;
         var newKey = User.Normalize(name);
-        if (newKey != oldKey && _users.ContainsKey(newKey))
-            return ("username_taken", "That username is taken. Pick another.");
+        if (newKey != oldKey && _users.ContainsKey(newKey)) return UsernameTaken;
 
         // Playlist.Owner holds the display name and OwnerKey derives from it, so the playlists
         // have to move with the account or every one of them orphans on rename.
@@ -858,7 +885,7 @@ public sealed class DomStore
 
         // the old key goes first: a rename that only changes case keeps the key, and its row comes straight back
         SaveLocked(users: [user, .. befriended], playlists: changed, goneUsers: [oldKey]);
-        return (null, null);
+        return null;
     }
 
     /// <summary>Caller holds <see cref="_gate" />. Returns the orphaned cover files and how many playlists went.</summary>

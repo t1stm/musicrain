@@ -20,7 +20,7 @@ internal static class SelfCheck
 
     private static bool Validation()
     {
-        bool Refused(PlayBody body) => body.ToRow("x", Anonymous, Now).error is not null;
+        bool Refused(PlayBody body) => body.ToRow("x", Anonymous, Now).Error is not null;
 
         var good = Body();
         var (row, error) = good.ToRow("x", Anonymous, Now);
@@ -40,13 +40,13 @@ internal static class SelfCheck
                & Check("a start past the outbox's horizon is refused",
                    Refused(good with { StartedUtc = Now.AddDays(-31) }))
                & Check("a start in another offset is stored at +00:00",
-                   good.ToRow("x", Anonymous, Now).row!.StartedUtc.Offset == TimeSpan.Zero &&
-                   (good with { StartedUtc = Now.ToOffset(TimeSpan.FromHours(3)) }).ToRow("x", Anonymous, Now).row!
+                   good.ToRow("x", Anonymous, Now).Row!.StartedUtc.Offset == TimeSpan.Zero &&
+                   (good with { StartedUtc = Now.ToOffset(TimeSpan.FromHours(3)) }).ToRow("x", Anonymous, Now).Row!
                    .StartedUtc.Offset == TimeSpan.Zero)
                & Check("time heard past the duration is clamped, not refused",
-                   (good with { PlayedMs = 999_999 }).ToRow("x", Anonymous, Now).row!.PlayedMs == 185_000)
+                   (good with { PlayedMs = 999_999 }).ToRow("x", Anonymous, Now).Row!.PlayedMs == 185_000)
                & Check("time heard with no known duration is kept",
-                   (good with { DurationMs = 0, PlayedMs = 999_999 }).ToRow("x", Anonymous, Now).row!.PlayedMs ==
+                   (good with { DurationMs = 0, PlayedMs = 999_999 }).ToRow("x", Anonymous, Now).Row!.PlayedMs ==
                    999_999);
     }
 

@@ -60,7 +60,7 @@ public static class Matching
             // A (Live) result for a plain track is the wrong recording however well the names score.
             if (!candidateTags.SetEquals(tags)) continue;
 
-            var score = TitleWeight * Similarity(title, candidateTitle) +
+            var score = TitleWeight * LevenshteinDistance.Similarity(title, candidateTitle) +
                         ArtistWeight * BestArtist(artists, candidate.ArtistName);
 
             if (score >= StrongMatch) scored.Add((candidate, score, delta));
@@ -109,18 +109,8 @@ public static class Matching
         if (artists.Length == 0) return 1;
 
         return Artists(candidate)
-            .SelectMany(_ => artists, (theirs, ours) => Similarity(ours, theirs))
+            .SelectMany(_ => artists, (theirs, ours) => LevenshteinDistance.Similarity(ours, theirs))
             .DefaultIfEmpty(0)
             .Max();
-    }
-
-    /// <summary>
-    ///     Length-relative, like the library's: a long transliterated title accumulates several ambiguous
-    ///     letters and a fixed distance rejects it.
-    /// </summary>
-    private static double Similarity(string a, string b)
-    {
-        if (a.Length == 0 || b.Length == 0) return 0;
-        return 1d - (double)LevenshteinDistance.ComputeStrict(a, b) / Math.Max(a.Length, b.Length);
     }
 }

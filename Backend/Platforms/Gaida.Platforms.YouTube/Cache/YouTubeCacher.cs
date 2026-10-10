@@ -76,7 +76,7 @@ public class YouTubeCacher
     {
         await using var db = Database.Open(_connectionString);
         return await db.QuerySingleOrDefaultAsync<YouTubeResult>(new CommandDefinition(
-            $"SELECT {Columns} FROM results WHERE Id = @id", new { id = "yt://" + id },
+            $"SELECT {Columns} FROM results WHERE Id = @id", new { id = YouTubeResult.Prefix + id },
             cancellationToken: cancellationToken));
     }
 

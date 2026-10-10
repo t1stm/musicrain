@@ -81,17 +81,7 @@ public sealed class Lyrics(
         var track = await tracks.ResolveAsync(id, ct);
         if (track is null) return null;
 
-        // A .lrc someone put in the folder by hand, and the path back from a lost index: gaida-local's
-        // own index already knows it is there, and the file is the authority either way.
-        if (track is { KnownType: { } known, RelativeLocation: not null } &&
-            LibraryPath(track.RelativeLocation, known) is { } beside && File.Exists(beside))
-        {
-            var existing = await File.ReadAllTextAsync(beside, ct);
-            index.Record(new LyricsRow(id, known, null, LyricsVolume.Library,
-                Relative(track.RelativeLocation, known), DateTimeOffset.UtcNow));
-
-            return Answer(existing, null, Matched(track));
-        }
+        if (await BesideAsync(id, track, ct) is { } beside) return beside;
 
         // 4. LRCLIB.
         var (found, clean) = await lrcLib.FindAsync(track, ct);
@@ -104,13 +94,30 @@ public sealed class Lyrics(
         }
 
         // 5a. Write, record, stamp, answer.
-        var content = found.SyncedLyrics ?? found.PlainLyrics ?? string.Empty;
-        var kind = found.SyncedLyrics is not null ? LyricsKind.Synchronized : LyricsKind.Unsynchronized;
+        var (content, kind) = found.Best();
 
         await StoreAsync(track, content, kind, LyricsOrigin.Lrclib, false, ct);
 
         return Answer(content, LyricsOrigin.Lrclib, new MatchedDto(
             found.TrackName ?? track.Title, found.ArtistName, (int)Math.Round(found.Duration ?? 0)));
+    }
+
+    /// <summary>
+    ///     A .lrc someone put in the folder by hand, and the path back from a lost index: gaida-local's own index
+    ///     already knows it is there, and the file is the authority either way. Recorded, so the next ask is an
+    ///     index hit.
+    /// </summary>
+    private async Task<LyricsDto?> BesideAsync(string id, Track track, CancellationToken ct)
+    {
+        if (track is not { KnownType: { } known, RelativeLocation: not null } ||
+            LibraryPath(track.RelativeLocation, known) is not { } beside || !File.Exists(beside))
+            return null;
+
+        var existing = await File.ReadAllTextAsync(beside, ct);
+        index.Record(new LyricsRow(id, known, null, LyricsVolume.Library,
+            Relative(track.RelativeLocation, known), DateTimeOffset.UtcNow));
+
+        return Answer(existing, null, Matched(track));
     }
 
     /// <summary>
@@ -189,7 +196,7 @@ public sealed class Lyrics(
     /// </remarks>
     private async Task StampAsync(Track track, LyricsKind? kind, LyricsOrigin? source, CancellationToken ct)
     {
-        if (!track.Id.StartsWith("audio://", StringComparison.OrdinalIgnoreCase)) return;
+        if (!track.Id.StartsWith(Tracks.LocalPrefix, StringComparison.OrdinalIgnoreCase)) return;
         if (tracks.OwnerOf(track.Id) is not { } url) return;
 
         var query = $"?id={Uri.EscapeDataString(track.Id)}";

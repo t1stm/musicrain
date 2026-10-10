@@ -141,7 +141,7 @@ public class LyricsTests : IDisposable
     [Fact]
     public async Task AnUnknownIdIsRefused()
     {
-        var (entry, error) = await Seeded().StampLyricsAsync("nobody", LyricsKind.Synchronized, LyricsOrigin.Lrclib);
+        var (entry, error, _) = await Seeded().StampLyricsAsync("nobody", LyricsKind.Synchronized, LyricsOrigin.Lrclib);
 
         Assert.Null(entry);
         Assert.Equal("No song with that ID.", error);
@@ -152,7 +152,7 @@ public class LyricsTests : IDisposable
     {
         var manager = Seeded(Entry("wants-them"));
 
-        var (entry, error) = await manager.StampLyricsAsync("wants-them", null, null);
+        var (entry, error, _) = await manager.StampLyricsAsync("wants-them", null, null);
 
         Assert.Null(error);
         Assert.Null(entry!.LyricsType);
@@ -164,7 +164,7 @@ public class LyricsTests : IDisposable
     {
         var manager = Seeded(Entry("has-them", kind: LyricsKind.Unsynchronized));
 
-        var (entry, error) = await manager.StampLyricsAsync("has-them", LyricsKind.Synchronized, LyricsOrigin.Lrclib);
+        var (entry, error, _) = await manager.StampLyricsAsync("has-them", LyricsKind.Synchronized, LyricsOrigin.Lrclib);
 
         Assert.Null(entry);
         Assert.Equal("That entry already has lyrics.", error);
@@ -175,7 +175,7 @@ public class LyricsTests : IDisposable
     {
         var manager = Seeded(Entry("wants-them"));
 
-        var (_, error) = await manager.StampLyricsAsync("wants-them", LyricsKind.Synchronized, LyricsOrigin.Deezer);
+        var (_, error, _) = await manager.StampLyricsAsync("wants-them", LyricsKind.Synchronized, LyricsOrigin.Deezer);
         Assert.Null(error);
 
         await using var db = Database.Open(Database.At(Path.Combine(_storage, "library.db")));

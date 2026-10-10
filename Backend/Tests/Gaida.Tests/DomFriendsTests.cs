@@ -20,8 +20,8 @@ public class DomFriendsTests : IDisposable
         var (kris, ana, boyan) = (User(store, "kris"), User(store, "ana"), User(store, "boyan"));
         var invite = store.OpenInvite(kris)!;
 
-        Assert.Null(store.AcceptInvite(ana, invite.Code).error);
-        Assert.Null(store.AcceptInvite(boyan, invite.Code).error);
+        Assert.Null(store.AcceptInvite(ana, invite.Code).Refusal?.Code);
+        Assert.Null(store.AcceptInvite(boyan, invite.Code).Refusal?.Code);
 
         Assert.Equal(["ana", "boyan"], store.Friends(kris));
         Assert.Equal(["kris"], store.Friends(ana));
@@ -54,14 +54,14 @@ public class DomFriendsTests : IDisposable
         var (kris, ana) = (User(store, "kris"), User(store, "ana"));
 
         var invite = store.OpenInvite(kris)!;
-        Assert.Equal("own_code", store.AcceptInvite(kris, invite.Code).error);
+        Assert.Equal("own_code", store.AcceptInvite(kris, invite.Code).Refusal?.Code);
 
         invite.ExpiresUtc = DateTimeOffset.UtcNow.AddSeconds(-1);
-        Assert.Equal("invalid_code", store.AcceptInvite(ana, invite.Code).error);
+        Assert.Equal("invalid_code", store.AcceptInvite(ana, invite.Code).Refusal?.Code);
 
         var ended = store.OpenInvite(kris)!;
         store.EndInvite(kris);
-        Assert.Equal("invalid_code", store.AcceptInvite(ana, ended.Code).error);
+        Assert.Equal("invalid_code", store.AcceptInvite(ana, ended.Code).Refusal?.Code);
         Assert.Null(store.PeekInvite(ended.Code));
 
         Assert.Empty(store.Friends(kris));
@@ -78,7 +78,7 @@ public class DomFriendsTests : IDisposable
         var typed = (code[..4] + "-" + code[4..]).ToLowerInvariant().Replace('0', 'o');
 
         Assert.Equal("kris", store.PeekInvite(typed)?.username);
-        Assert.Null(store.AcceptInvite(ana, typed).error);
+        Assert.Null(store.AcceptInvite(ana, typed).Refusal?.Code);
     }
 
     [Fact]
@@ -104,8 +104,8 @@ public class DomFriendsTests : IDisposable
         var (kris, ana, stranger) = (User(store, "kris"), User(store, "ana"), User(store, "stranger"));
         Befriend(store, kris, ana);
 
-        var friendsOnly = store.Create(kris, "Late shift", Visibility.Friends, []).playlist!;
-        var hidden = store.Create(kris, "Diary", Visibility.Private, []).playlist!;
+        var friendsOnly = store.Create(kris, "Late shift", Visibility.Friends, []).Value!;
+        var hidden = store.Create(kris, "Diary", Visibility.Private, []).Value!;
 
         Assert.NotNull(store.Visible(friendsOnly.Id, ana));
         Assert.Null(store.Visible(friendsOnly.Id, stranger));
@@ -122,7 +122,7 @@ public class DomFriendsTests : IDisposable
         var store = Store();
         var (kris, ana, stranger) = (User(store, "kris"), User(store, "ana"), User(store, "stranger"));
         Befriend(store, kris, ana);
-        var playlist = store.Create(kris, "Late shift", Visibility.Private, [Track("a")]).playlist!;
+        var playlist = store.Create(kris, "Late shift", Visibility.Private, [Track("a")]).Value!;
         store.Update(kris, playlist.Id, null, null, null, ["ANA"]);
 
         // a private playlist is still open to whoever can edit it, and in their Mine
@@ -134,14 +134,14 @@ public class DomFriendsTests : IDisposable
         store.Update(kris, playlist.Id, null, Visibility.Friends, null);
         Assert.Empty(store.FriendsPlaylists(ana));
 
-        Assert.True(store.Append(ana, playlist.Id, Track("b")).added);
-        Assert.Null(store.Update(ana, playlist.Id, null, null, [Track("b"), Track("a")], revision: playlist.Revision).error);
+        Assert.True(store.Append(ana, playlist.Id, Track("b")).Value!.Added);
+        Assert.Null(store.Update(ana, playlist.Id, null, null, [Track("b"), Track("a")], revision: playlist.Revision).Refusal?.Code);
 
-        Assert.Equal("forbidden", store.Update(ana, playlist.Id, "Mine now", null, null).error);
-        Assert.Equal("forbidden", store.Update(ana, playlist.Id, null, Visibility.Public, null).error);
-        Assert.Equal("forbidden", store.Update(ana, playlist.Id, null, null, null, []).error);
+        Assert.Equal("forbidden", store.Update(ana, playlist.Id, "Mine now", null, null).Refusal?.Code);
+        Assert.Equal("forbidden", store.Update(ana, playlist.Id, null, Visibility.Public, null).Refusal?.Code);
+        Assert.Equal("forbidden", store.Update(ana, playlist.Id, null, null, null, []).Refusal?.Code);
         Assert.False(store.Delete(ana, playlist.Id).deleted);
-        Assert.Equal("not_found", store.Append(stranger, playlist.Id, Track("c")).error);
+        Assert.Equal("not_found", store.Append(stranger, playlist.Id, Track("c")).Refusal?.Code);
     }
 
     [Fact]
@@ -150,7 +150,7 @@ public class DomFriendsTests : IDisposable
         var store = Store();
         var (kris, ana) = (User(store, "kris"), User(store, "ana"));
         Befriend(store, kris, ana);
-        var playlist = store.Create(kris, "Late shift", Visibility.Friends, [Track("a")]).playlist!;
+        var playlist = store.Create(kris, "Late shift", Visibility.Friends, [Track("a")]).Value!;
         store.Update(kris, playlist.Id, null, null, null, ["ana"]);
 
         store.Append(kris, playlist.Id, Track("b"));
@@ -171,7 +171,7 @@ public class DomFriendsTests : IDisposable
         var store = Store();
         var (kris, ana) = (User(store, "kris"), User(store, "ana"));
         Befriend(store, kris, ana);
-        var playlist = store.Create(kris, "Late shift", Visibility.Private, [Track("a")]).playlist!;
+        var playlist = store.Create(kris, "Late shift", Visibility.Private, [Track("a")]).Value!;
         store.Update(kris, playlist.Id, null, null, null, ["ana"]);
         var seen = playlist.Revision;
 
@@ -191,9 +191,9 @@ public class DomFriendsTests : IDisposable
         var store = Store();
         var kris = User(store, "kris");
         User(store, "stranger");
-        var playlist = store.Create(kris, "Late shift", Visibility.Private, []).playlist!;
+        var playlist = store.Create(kris, "Late shift", Visibility.Private, []).Value!;
 
-        Assert.Equal("not_a_friend", store.Update(kris, playlist.Id, null, null, null, ["stranger"]).error);
+        Assert.Equal("not_a_friend", store.Update(kris, playlist.Id, null, null, null, ["stranger"]).Refusal?.Code);
         Assert.Empty(playlist.Collaborators);
     }
 
@@ -203,8 +203,8 @@ public class DomFriendsTests : IDisposable
         var store = Store();
         var (kris, ana) = (User(store, "kris"), User(store, "ana"));
         Befriend(store, kris, ana);
-        var his = store.Create(kris, "Late shift", Visibility.Friends, []).playlist!;
-        var hers = store.Create(ana, "Sofia nights", Visibility.Friends, []).playlist!;
+        var his = store.Create(kris, "Late shift", Visibility.Friends, []).Value!;
+        var hers = store.Create(ana, "Sofia nights", Visibility.Friends, []).Value!;
         store.Update(kris, his.Id, null, null, null, ["ana"]);
         store.Update(ana, hers.Id, null, null, null, ["kris"]);
         store.Append(ana, his.Id, Track("a"));
@@ -225,11 +225,11 @@ public class DomFriendsTests : IDisposable
         var store = Store();
         var (kris, ana) = (User(store, "kris"), User(store, "ana"));
         Befriend(store, kris, ana);
-        var playlist = store.Create(kris, "Late shift", Visibility.Friends, []).playlist!;
+        var playlist = store.Create(kris, "Late shift", Visibility.Friends, []).Value!;
         store.Update(kris, playlist.Id, null, null, null, ["ana"]);
         store.Append(ana, playlist.Id, Track("a"));
 
-        Assert.Null(store.Rename(ana, "correct horse battery", "anka").error);
+        Assert.Null(store.Rename(ana, "correct horse battery", "anka")?.Code);
 
         Assert.Equal(["anka"], store.Friends(kris));
         Assert.Equal(["anka"], playlist.Collaborators);
@@ -243,7 +243,7 @@ public class DomFriendsTests : IDisposable
         var store = Store();
         var (kris, ana) = (User(store, "kris"), User(store, "ana"));
         Befriend(store, kris, ana);
-        var playlist = store.Create(kris, "Late shift", Visibility.Friends, []).playlist!;
+        var playlist = store.Create(kris, "Late shift", Visibility.Friends, []).Value!;
         store.Update(kris, playlist.Id, null, null, null, ["ana"]);
         store.Append(ana, playlist.Id, Track("a"));
         store.OpenInvite(ana);
@@ -261,12 +261,12 @@ public class DomFriendsTests : IDisposable
         var store = Store();
         var (kris, ana) = (User(store, "kris"), User(store, "ana"));
         Befriend(store, kris, ana);
-        var playlist = store.Create(kris, "Late shift", Visibility.Friends, []).playlist!;
+        var playlist = store.Create(kris, "Late shift", Visibility.Friends, []).Value!;
         store.Update(kris, playlist.Id, null, null, null, ["ana"]);
         store.Append(ana, playlist.Id, Track("a"));
 
         var reopened = Store();
-        var again = reopened.Login("ana", "correct horse battery").user!;
+        var again = reopened.Login("ana", "correct horse battery").Value!.User;
         var saved = reopened.Visible(playlist.Id, again)!;
 
         Assert.Equal(["kris"], reopened.Friends(again));
@@ -301,7 +301,7 @@ public class DomFriendsTests : IDisposable
     }
 
     private static void Befriend(DomStore store, User inviter, User friend) =>
-        Assert.Null(store.AcceptInvite(friend, store.OpenInvite(inviter)!.Code).error);
+        Assert.Null(store.AcceptInvite(friend, store.OpenInvite(inviter)!.Code).Refusal?.Code);
 
     private static User User(DomStore store, string username)
     {

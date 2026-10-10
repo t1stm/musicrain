@@ -7,7 +7,6 @@ namespace Gaida.Platforms.YouTube.Search_Providers;
 
 public class YouTubeSearchProviderCached(ILogger logger, YouTubeCacher cacher) : SearchProvider(logger), ISupportsId
 {
-    public override string PlatformIdentifier => "yt://";
     public override int Priority => 99;
 
     public async Task<PlatformResult?> GetByIdAsync(string id, CancellationToken cancellationToken = default)

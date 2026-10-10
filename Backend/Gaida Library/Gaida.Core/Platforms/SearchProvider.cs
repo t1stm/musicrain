@@ -13,7 +13,6 @@ public abstract class SearchProvider
 
     protected ILogger Logger { get; }
 
-    public abstract string PlatformIdentifier { get; }
     public abstract int Priority { get; }
     protected virtual List<ContentGetter> ContentDownloaders { get; set; } = [];
 

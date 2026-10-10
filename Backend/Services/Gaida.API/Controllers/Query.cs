@@ -110,8 +110,8 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
     /// </summary>
     private static readonly (string Scheme, string Kind)[] PlaylistSchemes =
     [
-        ("spotify-playlist://", "spotifyPlaylist"),
-        ("deezer-playlist://", "deezerPlaylist")
+        (Prefix.SpotifyPlaylist, "spotifyPlaylist"),
+        (Prefix.DeezerPlaylist, "deezerPlaylist")
     ];
 
     /// <summary>
@@ -148,10 +148,10 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
     {
         return id switch
         {
-            _ when id.StartsWith("audio://", StringComparison.Ordinal) => "local",
-            _ when id.StartsWith("yt://", StringComparison.Ordinal) => "youtubeVideo",
-            _ when id.StartsWith("spotify://", StringComparison.Ordinal) => "spotifyTrack",
-            _ when id.StartsWith("deezer://", StringComparison.Ordinal) => "deezerTrack",
+            _ when id.StartsWith(Prefix.Local, StringComparison.Ordinal) => "local",
+            _ when id.StartsWith(Prefix.YouTube, StringComparison.Ordinal) => "youtubeVideo",
+            _ when id.StartsWith(Prefix.Spotify, StringComparison.Ordinal) => "spotifyTrack",
+            _ when id.StartsWith(Prefix.Deezer, StringComparison.Ordinal) => "deezerTrack",
             _ => "id"
         };
     }
@@ -164,8 +164,8 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
     /// </summary>
     private static string? ExtractPlaylistId(string url)
     {
-        const string scheme = "yt-playlist://";
-        if (url.StartsWith(scheme, StringComparison.OrdinalIgnoreCase)) return url[scheme.Length..];
+        if (url.StartsWith(Prefix.YouTubePlaylist, StringComparison.OrdinalIgnoreCase))
+            return url[Prefix.YouTubePlaylist.Length..];
 
         var index = url.IndexOf("list=", StringComparison.Ordinal);
         if (index < 0) return null;

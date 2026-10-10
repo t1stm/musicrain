@@ -10,7 +10,6 @@ public class MusicSearchProvider(ILogger logger, LibraryOptions options) : Searc
     ISupportsId, ISupportsSearch, ISupportsRandomResults
 {
     private readonly MusicManager _musicManager = new(logger, options);
-    public override string PlatformIdentifier => "audio://";
     public override int Priority => 99;
 
     public Task<PlatformResult?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
@@ -53,38 +52,7 @@ public class MusicSearchProvider(ILogger logger, LibraryOptions options) : Searc
         return ToResults(_musicManager.BrowseTracks(path));
     }
 
-    /// <summary>The library scan, awaitable — <see cref="Initialize" /> starts it and does not wait.</summary>
-    public Task InitializeAsync() => _musicManager.Initialize();
-
-    /// <summary>Admin: the library as rows to edit.</summary>
-    public IReadOnlyList<MusicInfo> FindForAdmin(string? query, int take) => _musicManager.Find(query, take);
-
-    /// <summary>Admin: counts for the panel's overview.</summary>
-    public object Summary() => _musicManager.Summary();
-
-    /// <summary>Admin: read the library off disk again.</summary>
-    public bool TryRescan() => _musicManager.TryRescan();
-
-    /// <summary>Admin: rewrite one song's names and album.</summary>
-    public Task<(MusicInfo? entry, string? error)> EditAsync(string id, IReadOnlyList<string>? titles,
-        IReadOnlyList<string>? artists, string? album, CancellationToken cancellationToken = default) =>
-        _musicManager.EditAsync(id, titles, artists, album, cancellationToken);
-
-    public Task<(MusicInfo? entry, string? error)> ImportAsync(string artist, string title, string? album,
-        string extension, Stream content, byte[]? cover = null, CancellationToken cancellationToken = default) =>
-        _musicManager.ImportAsync(artist, title, album, extension, content, cover, cancellationToken);
-
-    /// <summary>The library entry behind an ID, with the fields <see cref="PlatformResult" /> does not carry.</summary>
-    public MusicInfo? FindEntry(string id) => _musicManager.SearchById(id);
-
-    /// <summary>stih: what it found, or that it found nothing.</summary>
-    public Task<(MusicInfo? entry, string? error)> StampLyricsAsync(string id, LyricsKind? kind, LyricsOrigin? source,
-        CancellationToken cancellationToken = default) =>
-        _musicManager.StampLyricsAsync(id, kind, source, cancellationToken);
-
-    /// <summary>stih: the sweep's work list.</summary>
-    public IReadOnlyList<MusicInfo> MissingLyrics(int take, DateOnly retryBefore) =>
-        _musicManager.MissingLyrics(take, retryBefore);
+    internal MusicManager Library => _musicManager;
 
     public (LocalMatch Match, PlatformResult Result)? FindLocalVariant(string name, string? artist, TimeSpan duration)
     {

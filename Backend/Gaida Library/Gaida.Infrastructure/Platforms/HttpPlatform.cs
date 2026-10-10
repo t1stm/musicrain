@@ -27,13 +27,10 @@ public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist,
         var getter = new HttpGetter(logger, http);
 
         SearchIdIdentifiers = [.. ids];
-        SearchProviders = [];
         ContentDownloaders = [getter];
     }
 
     protected override HashSet<string> SearchIdIdentifiers { get; }
-    protected override List<SearchProvider> SearchProviders { get; set; }
-    protected override List<ContentGetter> ContentDownloaders { get; set; }
 
     public IAsyncEnumerable<PlatformResult> SearchPlaylist(string playlist,
         CancellationToken cancellationToken = default)
@@ -253,13 +250,7 @@ public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist,
     }
 }
 
-public sealed class HttpResult : PlatformResult
-{
-    public override string GetDownloadUrl()
-    {
-        return Id;
-    }
-}
+public sealed class HttpResult : PlatformResult;
 
 /// <summary>Streams <c>/content?id=</c> into a spreader, mirroring every other <see cref="ContentGetter" />.</summary>
 public sealed class HttpGetter(ILogger logger, HttpClient http) : ContentGetter(logger)

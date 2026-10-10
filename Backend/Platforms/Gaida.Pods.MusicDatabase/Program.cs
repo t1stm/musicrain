@@ -1,9 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Gaida.Admin;
 using Gaida.Core.Platforms;
 using Gaida.Core.Streams;
+using Gaida.Core.Utils;
 using Gaida.Platforms.MusicDatabase;
 using Gaida.Platforms.MusicDatabase.Manager;
 using Gaida.Pods.MusicDatabase;
@@ -37,17 +39,17 @@ var platform = new MusicDatabase(Log.Logger, library);
 platform.Initialize(); // kicks off MusicManager.Initialize() (library scan) in the background
 builder.Services.AddSingleton(platform);
 builder.Services.AddSingleton(services => new DeezerImport(services.GetRequiredService<IHttpClientFactory>(),
-    builder.Configuration["DEEZER_URL"]?.TrimEnd('/'), platform, Log.Logger));
+    builder.Configuration["DEEZER_URL"]?.TrimEnd('/'), platform.Library, Log.Logger));
 
 var app = builder.Build();
 
 // Unlike the other pods, this one owns state an operator edits: the library's names and albums.
 // No-op without ADMIN_TOKEN. See ADMIN_PLAN.md.
-var admin = app.MapAdmin(platform.Summary);
+var admin = app.MapAdmin(platform.Library.Summary);
 
 // The rows to edit. A GET, so it goes through Oko's read proxy rather than its audited action one.
 admin?.MapGet("/library", IResult (string? q, int? take, MusicDatabase db) =>
-    Results.Ok(db.FindForAdmin(q, take ?? 100).Select(LibraryRow)));
+    Results.Ok(db.Library.Find(q, take ?? 100).Select(LibraryRow)));
 
 // Repeated `title=` / `artist=` parameters are the whole variant list, in order. A parameter that is
 // absent leaves that field alone; `album=` with no value clears it. Read off the query rather than
@@ -60,24 +62,19 @@ admin?.MapPost("/edit-song", async Task<IResult> (string id, HttpRequest request
     var artists = Variants(request, "artist");
     var album = request.Query.TryGetValue("album", out var value) ? value.ToString() : null;
 
-    var (entry, error) = await db.EditAsync(id, titles, artists, album, ct);
-    if (error is not null)
-        return error == "No song with that ID." ? Results.NotFound() : Results.BadRequest(new ErrorDto(error));
-
-    return Results.Ok(LibraryRow(entry!));
+    return Answer(await db.Library.EditAsync(id, titles, artists, album, ct), LibraryRow);
 });
 
 // Picks up files added to the library by hand since boot. 202 because it only starts the scan — the
 // snapshot's `scanning` flag and song count are where the result shows.
-admin?.MapPost("/rescan", IResult (MusicDatabase db) => db.TryRescan()
+admin?.MapPost("/rescan", IResult (MusicDatabase db) => db.Library.TryRescan()
     ? Results.Accepted()
     : Results.Conflict(new ErrorDto("A scan is already running.")));
 
 // Pulls one Deezer track into the library — see DeezerImport.
 admin?.MapPost("/import-deezer", async Task<IResult> (string? id, DeezerImport deezer, CancellationToken ct) =>
 {
-    var (entry, error) = await deezer.ImportAsync(id, ct);
-    return entry is null ? Results.BadRequest(new ErrorDto(error!)) : Results.Ok(LibraryRow(entry));
+    return Answer(await deezer.ImportAsync(id, ct), LibraryRow);
 });
 
 app.MapGet("/classify", IResult (string? query) =>
@@ -100,7 +97,7 @@ app.MapGet("/resolve", async Task<IResult> (string? id, MusicDatabase db, Cancel
     // stih writes the .lrc next to the audio on the shared volume, so it needs the path — and this is
     // the route it already has to call to learn the track's name and length. Gaida.API deserializes
     // into its own DTO and ignores fields it does not know, so none of this reaches the public API.
-    var entry = db.FindEntry(bare);
+    var entry = db.Library.SearchById(bare);
     return Results.Ok(entry is null
         ? mapped
         : mapped with
@@ -120,8 +117,8 @@ app.MapGet("/resolve", async Task<IResult> (string? id, MusicDatabase db, Cancel
 app.MapGet("/lyrics/missing", IResult (int? take, int? retryDays, MusicDatabase db) =>
 {
     var retryBefore = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-Math.Max(0, retryDays ?? 30));
-    return Results.Ok(db.MissingLyrics(take ?? 200, retryBefore).Select(song => new MissingLyricsDto(
-        "audio://" + song.Id,
+    return Results.Ok(db.Library.MissingLyrics(take ?? 200, retryBefore).Select(song => new MissingLyricsDto(
+        MusicResult.Prefix + song.Id,
         song.Title,
         song.Artist,
         song.Album,
@@ -141,12 +138,9 @@ app.MapPost("/lyrics/stamp", async Task<IResult> (string? id, string? type, stri
     if (!TryParseLyrics<LyricsOrigin>(source, out var origin))
         return Results.BadRequest(new ErrorDto($"'{source}' is not a lyrics source."));
 
-    var (entry, error) = await db.StampLyricsAsync(StripAudioPrefix(id), kind, origin, ct);
-    if (error is not null)
-        return error == "No song with that ID." ? Results.NotFound() : Results.BadRequest(new ErrorDto(error));
-
-    return Results.Ok(new LyricsRowDto("audio://" + entry!.Id, entry.LyricsType?.ToString(),
-        entry.LyricsSource?.ToString(), entry.LyricsChecked?.ToString("O")));
+    return Answer(await db.Library.StampLyricsAsync(StripAudioPrefix(id), kind, origin, ct),
+        entry => new LyricsRowDto(MusicResult.Prefix + entry.Id, entry.LyricsType?.ToString(),
+            entry.LyricsSource?.ToString(), entry.LyricsChecked?.ToString("O")));
 });
 
 // The routes hand back the sequence itself: ASP.NET serialises an IAsyncEnumerable element by element and
@@ -179,10 +173,10 @@ app.MapGet("/content", async Task<IResult> (string? id, MusicDatabase db, HttpRe
     var extension = result is MusicResult local
         ? WavPack.CorrectionFor(local.Path) is null ? Path.GetExtension(local.Path) : ".flac"
         : string.Empty;
-    response.ContentType = ContentTypeFor(extension);
-    response.Headers.Append("Content-Disposition", $"attachment; filename={FileId(id)}{extension}");
+    response.ContentType = AudioFiles.ContentTypeFor(extension);
+    response.Headers.Append("Content-Disposition", $"attachment; filename={PlatformId.FileId(id)}{extension}");
 
-    await PumpToResponse(spreader, response, ct);
+    await spreader.DrainToAsync(response.Body, ct);
     return Results.Empty;
 });
 
@@ -190,7 +184,7 @@ app.MapGet("/browse", IResult (string? path, MusicDatabase db) =>
 {
     // A path nobody has is an empty folder rather than a 404: nothing here reads the disk, so
     // "unknown" and "empty" are the same answer and the client renders both the same way.
-    var folder = (path ?? string.Empty).Replace('\\', '/').Trim('/');
+    var folder = FolderPath.Normalize(path);
     var (folders, files) = db.Browse(folder);
 
     var mappedFiles = new List<ResultDto>(files.Count);
@@ -248,7 +242,7 @@ app.MapGet("/variant", IResult (string? name, string? artist, string? duration, 
         return Results.BadRequest(new ErrorDto("A track name is required."));
 
     if (!TryParseDuration(duration, out var length, out var error))
-        return Results.BadRequest(new ErrorDto(error!));
+        return Results.BadRequest(new ErrorDto(error));
 
     var found = db.FindLocalVariant(name, artist, length);
     if (found is null) return Results.NoContent();
@@ -265,6 +259,13 @@ app.Run();
 return;
 
 // ── Admin helpers ──────────────────────────────────────────────────────────────────────────────
+
+// An edit, import or stamp as the admin surface and stih read it: the row, a 404 for an unknown song, a 400 else.
+static IResult Answer<T>(Change change, Func<MusicInfo, T> row)
+{
+    if (change.Ok) return Results.Ok(row(change.Entry));
+    return change.UnknownSong ? Results.NotFound() : Results.BadRequest(new ErrorDto(change.Error));
+}
 
 string? Setting(string key)
 {
@@ -321,23 +322,23 @@ static ResultDto? Map(PlatformResult result)
 static (bool Claimed, string? Id, string? Error) ClassifyAudio(string? query)
 {
     var trimmed = query?.Trim() ?? string.Empty;
-    if (!trimmed.StartsWith("audio://", StringComparison.OrdinalIgnoreCase))
+    if (!trimmed.StartsWith(MusicResult.Prefix, StringComparison.OrdinalIgnoreCase))
         return (false, null, null);
 
-    var id = trimmed["audio://".Length..];
+    var id = trimmed[MusicResult.Prefix.Length..];
     return string.IsNullOrWhiteSpace(id)
         ? (true, null, "An audio:// query must include an ID.")
-        : (true, "audio://" + id, null);
+        : (true, MusicResult.Prefix + id, null);
 }
 
 static string StripAudioPrefix(string id)
 {
-    return id.StartsWith("audio://", StringComparison.OrdinalIgnoreCase) ? id["audio://".Length..] : id;
+    return id.StartsWith(MusicResult.Prefix, StringComparison.OrdinalIgnoreCase) ? id[MusicResult.Prefix.Length..] : id;
 }
 
 // ── /variant helpers, also pulled out for RunSelfCheck. ──
 
-static bool TryParseDuration(string? duration, out TimeSpan length, out string? error)
+static bool TryParseDuration(string? duration, out TimeSpan length, [NotNullWhen(false)] out string? error)
 {
     length = TimeSpan.Zero;
     error = null;
@@ -356,45 +357,6 @@ static string MapKind(LocalMatchKind kind)
         LocalMatchKind.Variant => "variant",
         _ => "weak"
     };
-}
-
-// ── /content helpers. ──
-
-// The library holds .wv, .mp3, .ogg and .flac (see MUSICDB_FORMAT_PLAN.md), plus whatever else
-// MusicManager.IsAudioBasedOnFileExtension accepts. Gaida and Dunav relay this verbatim, so a wrong
-// value here breaks playback downstream.
-static string ContentTypeFor(string extension)
-{
-    return extension.ToLowerInvariant() switch
-    {
-        ".flac" => "audio/flac",
-        ".ogg" => "audio/ogg",
-        ".mp3" => "audio/mpeg",
-        ".wav" => "audio/wav",
-        ".mka" => "audio/mka",
-        ".adts" => "audio/aac",
-        ".wma" => "audio/x-ms-wma",
-        ".wv" => "audio/x-wavpack",
-        _ => "application/octet-stream"
-    };
-}
-
-// The ID without its platform protocol, safe to put in a header — mirrors
-// Gaida.API/Controllers/Content.cs's FileId.
-static string FileId(string id)
-{
-    var separator = id.IndexOf("://", StringComparison.Ordinal);
-    var value = separator >= 0 ? id[(separator + 3)..] : id;
-    return Uri.EscapeDataString(value);
-}
-
-// Pumps a stream spreader into the response body until the source closes or the client leaves. The
-// source (MusicGetter, a download) may still be writing while this drains it -- the reader follows
-// the body as it grows rather than stopping at whatever had arrived when it opened.
-static async Task PumpToResponse(StreamSpreader spreader, HttpResponse response, CancellationToken ct)
-{
-    await using var reader = spreader.OpenRead();
-    await reader.CopyToAsync(response.Body, ct);
 }
 
 // ── The one runnable check: `dotnet run --project Gaida.Pods.MusicDatabase -- --self-check`. ──
@@ -461,9 +423,9 @@ static async Task ImportCheck(Action<bool, string> assert)
     try
     {
         var database = new MusicDatabase(Serilog.Core.Logger.None, options);
-        await database.InitializeAsync();
+        await database.Library.Initialize();
 
-        var (entry, error) = await database.ImportAsync("Daft Punk", "Harder, Better, Faster, Stronger",
+        var (entry, error, _) = await database.Library.ImportAsync("Daft Punk", "Harder, Better, Faster, Stronger",
             "Discovery", ".mp3", new MemoryStream("not really audio"u8.ToArray()));
 
         assert(error is null && entry is not null, $"import: the import succeeded ({error})");
@@ -482,19 +444,19 @@ static async Task ImportCheck(Action<bool, string> assert)
 
         assert(Stored(root).Contains("Harder"), "import: the entry reached library.db, so it survives a restart");
 
-        var found = database.FindForAdmin("Harder", 10);
+        var found = database.Library.Find("Harder", 10);
         assert(found.Count == 1, "import: the entry is in the in-memory library straight away");
 
-        var (duplicate, refused) = await database.ImportAsync("Daft Punk", "Harder, Better, Faster, Stronger",
+        var (duplicate, refused, _) = await database.Library.ImportAsync("Daft Punk", "Harder, Better, Faster, Stronger",
             "Discovery", ".mp3", new MemoryStream("different bytes"u8.ToArray()));
         assert(duplicate is null && refused is not null && refused.Contains("already"),
             "import: a second import of the same name is refused, not silently overwritten");
 
-        var (_, badExtension) = await database.ImportAsync("A", "B", null, ".txt", new MemoryStream([1]));
+        var (_, badExtension, _) = await database.Library.ImportAsync("A", "B", null, ".txt", new MemoryStream([1]));
         assert(badExtension is not null, "import: an extension the library cannot play is refused");
 
         // "/" would make ParseFile read a folder that is not there; " - " would make it read the wrong artist.
-        var (slashed, slashError) = await database.ImportAsync("AC/DC", "Back - In Black", null, ".mp3",
+        var (slashed, slashError, _) = await database.Library.ImportAsync("AC/DC", "Back - In Black", null, ".mp3",
             new MemoryStream([1, 2, 3]));
         assert(slashError is null && slashed?.RelativeLocation == "Deezer/AC_DC/AC_DC - Back In Black.mp3",
             $"import: a separator in the name is cleaned out of the path ({slashed?.RelativeLocation})");
@@ -502,7 +464,7 @@ static async Task ImportCheck(Action<bool, string> assert)
         // The cover a source supplied, for a file carrying none of its own. Content-addressed, so the
         // name is the hash and importing the same artwork twice writes one file.
 
-        var (art, artError) = await database.ImportAsync("Daft Punk", "Aerodynamic", null, ".mp3",
+        var (art, artError, _) = await database.Library.ImportAsync("Daft Punk", "Aerodynamic", null, ".mp3",
             new MemoryStream([4, 5, 6]), "not really a jpeg"u8.ToArray());
         assert(artError is null && art?.CoverUrl is { Length: > 0 },
             $"import: the supplied cover became this entry's artwork ({artError})");
@@ -530,25 +492,25 @@ static async Task RescanCheck(Action<bool, string> assert)
     try
     {
         var database = new MusicDatabase(Serilog.Core.Logger.None, options);
-        await database.InitializeAsync();
+        await database.Library.Initialize();
 
-        var before = database.FindForAdmin("Queen", 10);
+        var before = database.Library.Find("Queen", 10);
         assert(before.Count == 1, "rescan: the throwaway library loaded one song at boot");
 
         await File.WriteAllBytesAsync(Path.Combine(folder, "Queen - Somebody to Love.mp3"), new byte[4096]);
-        assert(database.TryRescan(), "rescan: a rescan starts when none is running");
-        assert(!database.TryRescan(), "rescan: a second one is refused while the first runs");
+        assert(database.Library.TryRescan(), "rescan: a rescan starts when none is running");
+        assert(!database.Library.TryRescan(), "rescan: a second one is refused while the first runs");
 
         for (var waited = 0; Scanning() && waited < 300; waited++) await Task.Delay(100);
         assert(!Scanning(), "rescan: the scan finished and cleared its flag");
 
-        var after = database.FindForAdmin("Queen", 10);
+        var after = database.Library.Find("Queen", 10);
         assert(after.Count == 2, $"rescan: the file added after boot is in the library ({after.Count})");
         assert(after.Any(song => song.Id == before[0].Id), "rescan: the existing entry kept its ID");
         assert(Stored(root).Contains("Somebody"), "rescan: the new entry reached library.db");
         assert(!File.Exists(Path.Combine(folder, "Info.json")), "rescan: no Info.json is written any more");
 
-        bool Scanning() => System.Text.Json.JsonSerializer.Serialize(database.Summary()).Contains("\"scanning\":true");
+        bool Scanning() => System.Text.Json.JsonSerializer.Serialize(database.Library.Summary()).Contains("\"scanning\":true");
     }
     finally
     {
@@ -583,9 +545,9 @@ static async Task BackfillCheck(Action<bool, string> assert)
     try
     {
         var database = new MusicDatabase(Serilog.Core.Logger.None, options);
-        await database.InitializeAsync();
+        await database.Library.Initialize();
 
-        var songs = database.FindForAdmin("Duran Duran", 10);
+        var songs = database.Library.Find("Duran Duran", 10);
         assert(songs.Count == 1, "backfill: the throwaway library loaded the one song on disk");
         assert(songs[0].Id == "ducome-un", "backfill: the ID survives it -- playlists and cache keys hold it");
         assert(songs[0].Scan == MusicManager.ScanVersion, "backfill: the entry is stamped with the pass that read it");
@@ -600,8 +562,8 @@ static async Task BackfillCheck(Action<bool, string> assert)
         // Imported once: what the file says now is not read again.
         await File.WriteAllTextAsync(info, "[]");
         var again = new MusicDatabase(Serilog.Core.Logger.None, options);
-        await again.InitializeAsync();
-        assert(again.FindForAdmin("Duran Duran", 10).SingleOrDefault()?.Id == "ducome-un",
+        await again.Library.Initialize();
+        assert(again.Library.Find("Duran Duran", 10).SingleOrDefault()?.Id == "ducome-un",
             "backfill: a restart reads library.db, not the Info.json it was imported from");
     }
     finally
@@ -632,14 +594,14 @@ static async Task EditCheck(Action<bool, string> assert)
     try
     {
         var database = new MusicDatabase(Serilog.Core.Logger.None, options);
-        await database.InitializeAsync();
+        await database.Library.Initialize();
 
-        var before = database.FindForAdmin("Queen", 10);
+        var before = database.Library.Find("Queen", 10);
         assert(before.Count == 1, "edit: the throwaway library loaded one song");
         assert(before[0].CoverUrl == "https://music.example.com/Album_Covers/cover.jpg",
             "edit: $[DOMAIN] is substituted on the way in");
 
-        var (edited, error) = await database.EditAsync("quyoure-ab",
+        var (edited, error, _) = await database.Library.EditAsync("quyoure-ab",
             ["You're My Best Friend", "You_re My Best Friend"], ["Queen", "Freddie Mercury"], "A Night at the Opera");
 
         assert(error is null && edited is not null, $"edit: the edit succeeded ({error})");
@@ -652,15 +614,15 @@ static async Task EditCheck(Action<bool, string> assert)
         assert(saved.Contains("$[DOMAIN]"), "edit: the cover placeholder is written back, not this host's domain");
         assert(!saved.Contains("music.example.com"), "edit: no absolute domain was baked into the library");
 
-        var (_, blank) = await database.EditAsync("quyoure-ab", [" ", ""], null, null);
+        var (_, blank, _) = await database.Library.EditAsync("quyoure-ab", [" ", ""], null, null);
         assert(blank == "A song needs at least one title.", "edit: a song cannot be left with no title");
 
-        var (missing, notFound) = await database.EditAsync("no-such-id", null, null, "X");
+        var (missing, notFound, _) = await database.Library.EditAsync("no-such-id", null, null, "X");
         assert(missing is null && notFound == "No song with that ID.", "edit: an unknown ID is refused");
 
         // Album cleared by an empty value, left alone by a missing one.
-        await database.EditAsync("quyoure-ab", null, null, "");
-        assert(database.FindForAdmin("Queen", 10)[0].Album is null, "edit: an empty album clears it");
+        await database.Library.EditAsync("quyoure-ab", null, null, "");
+        assert(database.Library.Find("Queen", 10)[0].Album is null, "edit: an empty album clears it");
     }
     finally
     {

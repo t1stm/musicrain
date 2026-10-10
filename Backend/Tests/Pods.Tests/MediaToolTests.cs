@@ -1,9 +1,9 @@
 using System.Diagnostics;
-using Gaida.Core.Platforms;
 using Gaida.Core.Streams;
 using Gaida.Platforms.MusicDatabase;
 using Gaida.Infrastructure.FFmpeg;
 using Gaida.Platforms.MusicDatabase.Getters;
+using Gaida.Platforms.YouTube;
 using Gaida.Platforms.YouTube.Getters;
 using Serilog.Core;
 
@@ -86,7 +86,7 @@ public class MediaToolTests : IDisposable
     [Fact]
     public async Task AYtDlpDownloadThatFailsStillEndsTheBody()
     {
-        var spreader = await new GetterYtDlp(Logger.None).GetContentDataAsync(new Refused(),
+        var spreader = await new GetterYtDlp(Logger.None).GetContentDataAsync(Truncated(),
             CancellationToken.None);
 
         Assert.NotNull(spreader);
@@ -99,7 +99,7 @@ public class MediaToolTests : IDisposable
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
 
-        var spreader = await new GetterYtDlp(Logger.None).GetContentDataAsync(new Refused(), cancelled.Token);
+        var spreader = await new GetterYtDlp(Logger.None).GetContentDataAsync(Truncated(), cancelled.Token);
 
         Assert.NotNull(spreader);
         await ReadToEnd(spreader);
@@ -121,6 +121,12 @@ public class MediaToolTests : IDisposable
         await Run("wavpack", "-q", "-y", "-b384", "-c", await Wav(1), "-o", path);
         Assert.True(File.Exists(path + "c"), "wavpack wrote no correction file");
         return path;
+    }
+
+    /// <summary>A result yt-dlp turns away at once, offline: an id too short to be one.</summary>
+    private static YouTubeResult Truncated()
+    {
+        return new YouTubeResult { Id = "yt://x", Downloaders = [] };
     }
 
     private static MusicResult Local(string path)
@@ -227,22 +233,6 @@ public class MediaToolTests : IDisposable
         public override void Write(byte[] buffer, int offset, int count)
         {
             throw new NotSupportedException();
-        }
-    }
-
-    /// <summary>A result yt-dlp turns away at once, offline: file URLs are off unless it is told otherwise.</summary>
-    private sealed class Refused : PlatformResult
-    {
-        [System.Diagnostics.CodeAnalysis.SetsRequiredMembers]
-        public Refused()
-        {
-            Id = "test://refused";
-            Downloaders = [];
-        }
-
-        public override string GetDownloadUrl()
-        {
-            return "file:///nonexistent";
         }
     }
 }

@@ -17,6 +17,12 @@ public sealed class Sweep(
     IConfiguration configuration,
     ILogger logger) : BackgroundService
 {
+    /// <summary>How long the sweep lets the stack come up before asking it about tracks.</summary>
+    private static readonly TimeSpan StartupGrace = TimeSpan.FromSeconds(20);
+
+    /// <summary>Tracks fetched per page of the library's backlog.</summary>
+    private const int PageSize = 200;
+
     private readonly ILogger _logger = logger.ForContext<Sweep>();
 
     private int Looked { get; set; }
@@ -59,29 +65,13 @@ public sealed class Sweep(
 
         // The host has to be listening before this starts asking other pods about tracks: they are
         // starting up too, and a page fetched into a connection-refused is a page wasted.
-        await Task.Delay(TimeSpan.FromSeconds(20), ct);
+        await Task.Delay(StartupGrace, ct);
         _logger.Information("Lyrics sweep started, one track every {Delay}", Delay);
 
         while (!ct.IsCancellationRequested)
             try
             {
-                var page = await PageAsync(ct);
-                LastPage = DateTimeOffset.UtcNow;
-
-                if (page.Count == 0)
-                {
-                    // The library is done. New imports and expired retry windows are what the next pass finds.
-                    _logger.Information("Nothing left to look up; sleeping {Idle}", Idle);
-                    await Task.Delay(Idle, ct);
-                    continue;
-                }
-
-                foreach (var row in page)
-                {
-                    if (ct.IsCancellationRequested) return;
-                    await OneAsync(row, ct);
-                    await Task.Delay(Delay, ct);
-                }
+                await PassAsync(ct);
             }
             catch (OperationCanceledException)
             {
@@ -92,6 +82,28 @@ public sealed class Sweep(
                 _logger.Error(e, "The lyrics sweep stumbled; retrying in a minute");
                 await Task.Delay(TimeSpan.FromMinutes(1), ct);
             }
+    }
+
+    /// <summary>One page of the backlog, a track at a time. An empty page means the library is done for now.</summary>
+    private async Task PassAsync(CancellationToken ct)
+    {
+        var page = await PageAsync(ct);
+        LastPage = DateTimeOffset.UtcNow;
+
+        if (page.Count == 0)
+        {
+            // New imports and expired retry windows are what the next pass finds.
+            _logger.Information("Nothing left to look up; sleeping {Idle}", Idle);
+            await Task.Delay(Idle, ct);
+            return;
+        }
+
+        foreach (var row in page)
+        {
+            if (ct.IsCancellationRequested) return;
+            await OneAsync(row, ct);
+            await Task.Delay(Delay, ct);
+        }
     }
 
     private async Task OneAsync(MissingLyricsDto row, CancellationToken ct)
@@ -120,8 +132,7 @@ public sealed class Sweep(
         }
 
         Found++;
-        var content = found.SyncedLyrics ?? found.PlainLyrics ?? string.Empty;
-        var kind = found.SyncedLyrics is not null ? LyricsKind.Synchronized : LyricsKind.Unsynchronized;
+        var (content, kind) = found.Best();
 
         await lyrics.StoreAsync(track, content, kind, LyricsOrigin.Lrclib, false, ct);
     }
@@ -136,7 +147,7 @@ public sealed class Sweep(
 
         var http = factory.CreateClient("pods");
         return await http.GetFromJsonAsync<List<MissingLyricsDto>>(
-            $"{local}/lyrics/missing?take=200&retryDays={RetryDays}", ct) ?? [];
+            $"{local}/lyrics/missing?take={PageSize}&retryDays={RetryDays}", ct) ?? [];
     }
 
     public object Snapshot()

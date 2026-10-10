@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -23,10 +24,10 @@ public sealed class Identity(IHttpClientFactory http, IConfiguration configurati
     public string? LastError { get; private set; }
 
     /// <returns>The caller, or the answer to refuse them with.</returns>
-    public async Task<(Caller? caller, IResult? refusal)> WhoAsync(HttpRequest request, CancellationToken ct)
+    public async Task<Identified> WhoAsync(HttpRequest request, CancellationToken ct)
     {
         if (!Guid.TryParseExact(request.Headers["X-Device-Id"].ToString(), "D", out var parsed))
-            return (null, Api.Error(400, "invalid_request", "Send X-Device-Id, a UUID."));
+            return (null, Api.Invalid("Send X-Device-Id, a UUID."));
         var device = parsed.ToString();
 
         var authorization = request.Headers.Authorization.ToString();
@@ -67,4 +68,17 @@ public sealed class Identity(IHttpClientFactory http, IConfiguration configurati
     private static IResult SignInAgain() => Api.Error(401, "unauthorized", "Sign in again.");
 
     private sealed record Me(string? Id);
+}
+
+/// <summary>Who a request is from, or the answer to refuse it with.</summary>
+public readonly record struct Identified(Caller? Caller, IResult? Refusal)
+{
+    [MemberNotNullWhen(true, nameof(Caller))]
+    [MemberNotNullWhen(false, nameof(Refusal))]
+    public bool Known => Refusal is null;
+
+    public static implicit operator Identified((Caller? Caller, IResult? Refusal) result)
+    {
+        return new Identified(result.Caller, result.Refusal);
+    }
 }

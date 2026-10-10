@@ -128,4 +128,10 @@ public sealed record LrcLibResult(
     double? Duration,
     bool Instrumental,
     string? PlainLyrics,
-    string? SyncedLyrics);
+    string? SyncedLyrics)
+{
+    /// <summary>The synchronized lyrics when there are any, else the plain ones.</summary>
+    public (string Content, LyricsKind Kind) Best() => SyncedLyrics is not null
+        ? (SyncedLyrics, LyricsKind.Synchronized)
+        : (PlainLyrics ?? string.Empty, LyricsKind.Unsynchronized);
+}

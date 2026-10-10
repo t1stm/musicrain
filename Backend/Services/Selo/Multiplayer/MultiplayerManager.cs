@@ -20,7 +20,7 @@ public class MultiplayerManager(IHttpClientFactory http, ILogger<MultiplayerMana
     /// <summary>Raised when the room list or any room's info changes.</summary>
     public event Func<Task>? RoomsChanged;
 
-    public Task<Guid> CreateNewRoom()
+    public Guid CreateNewRoom()
     {
         var guid = Guid.NewGuid();
 
@@ -31,7 +31,7 @@ public class MultiplayerManager(IHttpClientFactory http, ILogger<MultiplayerMana
         });
 
         _ = AnnounceAsync();
-        return Task.FromResult(guid);
+        return guid;
     }
 
     public Room? GetRoom(Guid roomId)

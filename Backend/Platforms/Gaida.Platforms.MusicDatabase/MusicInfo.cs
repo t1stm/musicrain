@@ -376,7 +376,7 @@ public class MusicInfo : IJsonOnDeserialized
     {
         return new MusicResult
         {
-            Id = "audio://" + (Id ??= UpdateRandomId()),
+            Id = MusicResult.Prefix + (Id ??= UpdateRandomId()),
             Downloaders = getters,
             Name = DisplayTitle,
             Artist = DisplayArtist,

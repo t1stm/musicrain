@@ -25,7 +25,7 @@ public class MultiplayerManagerTests
             return Task.CompletedTask;
         };
 
-        var roomId = await manager.CreateNewRoom();
+        var roomId = manager.CreateNewRoom();
 
         var room = Assert.IsType<Room>(manager.GetRoom(roomId));
         Assert.Equal(roomId, room.RoomId);
@@ -39,7 +39,7 @@ public class MultiplayerManagerTests
     public async Task TheLastMemberLeavingTakesTheRoomWithThem()
     {
         var manager = new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance);
-        var roomId = await manager.CreateNewRoom();
+        var roomId = manager.CreateNewRoom();
         var room = Assert.IsType<Room>(manager.GetRoom(roomId));
         var changeCount = 0;
         manager.RoomsChanged += () =>
@@ -69,7 +69,7 @@ public class MultiplayerManagerTests
     public async Task ARoomNobodyEverJoinedStays()
     {
         var manager = new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance);
-        var roomId = await manager.CreateNewRoom();
+        var roomId = manager.CreateNewRoom();
         var room = Assert.IsType<Room>(manager.GetRoom(roomId));
 
         // a socket can close before it ever joins: there is no member to lose, so
@@ -83,7 +83,7 @@ public class MultiplayerManagerTests
     public async Task UpdatingRoomInfoRaisesManagerChangeEvent()
     {
         var manager = new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance);
-        var roomId = await manager.CreateNewRoom();
+        var roomId = manager.CreateNewRoom();
         var room = Assert.IsType<Room>(manager.GetRoom(roomId));
         var socket = new RecordingWebSocket();
         var user = new User { Id = "host", Username = "Host", WebSocket = socket };
@@ -117,7 +117,7 @@ public class MultiplayerManagerTests
             return Task.CompletedTask;
         };
 
-        await manager.CreateNewRoom();
+        manager.CreateNewRoom();
 
         for (var waited = 0; waited < 50 && Volatile.Read(ref heard) == 0; waited++) await Task.Delay(20);
         Assert.Equal(1, heard);
@@ -138,8 +138,8 @@ public class MultiplayerManagerTests
             Interlocked.Decrement(ref running);
         };
 
-        await manager.CreateNewRoom();
-        await manager.CreateNewRoom();
+        manager.CreateNewRoom();
+        manager.CreateNewRoom();
         gate.SetResult();
 
         for (var waited = 0; waited < 50 && Volatile.Read(ref calls) < 2; waited++) await Task.Delay(20);
@@ -463,7 +463,7 @@ public class VirtualPlayerTests
         // exactly what Room.RemoveUser runs once the last user is gone: with a
         // count of zero, `0 < 0` used to read as "everybody reported", so the
         // room rewound itself, force-played, and advanced a track on the way out
-        await store.RemoveUser("only");
+        store.RemoveUser("only");
         await player.UserLeft("only");
 
         var joiner = new RecordingWebSocket();
@@ -492,7 +492,7 @@ public class VirtualPlayerTests
 
         // ...because when they drop, one vote against one remaining member used to add
         // up, and the room rewound to zero and force-played under everybody left in it.
-        await store.RemoveUser("leaving");
+        store.RemoveUser("leaving");
         await player.UserLeft("leaving");
 
         Assert.Empty(staying.Messages);
@@ -512,7 +512,7 @@ public class VirtualPlayerTests
 
         // one of the two played the track out; the other is still on it
         await player.SetFinished("leaving");
-        await store.RemoveUser("leaving");
+        store.RemoveUser("leaving");
         await player.UserLeft("leaving");
 
         // their `end` used to stay on the tally and skip the track under the one left
@@ -881,7 +881,7 @@ public class MultiplayerControllerTests
         var manager = new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance);
         var controller = Controller(manager);
 
-        var result = await controller.CreateRoom();
+        var result = controller.CreateRoom();
 
         var json = Assert.IsType<JsonResult>(result);
         var room = Assert.IsType<Room>(json.Value);
@@ -901,7 +901,7 @@ public class MultiplayerControllerTests
     public async Task AJoinThatFaultsStillTakesTheUserBackOutOfTheRoom()
     {
         var manager = new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance);
-        var roomId = await manager.CreateNewRoom();
+        var roomId = manager.CreateNewRoom();
         var room = manager.GetRoom(roomId)!;
 
         var staying = new RecordingWebSocket();
@@ -921,7 +921,7 @@ public class MultiplayerControllerTests
     public async Task AJoinWhoseReceiveFailsStillTakesTheUserBackOutOfTheRoom()
     {
         var manager = new MultiplayerManager(new StubFactory(new HttpClientHandler()), NullLogger<MultiplayerManager>.Instance);
-        var roomId = await manager.CreateNewRoom();
+        var roomId = manager.CreateNewRoom();
         var room = manager.GetRoom(roomId)!;
 
         var staying = new RecordingWebSocket();

@@ -75,7 +75,7 @@ public class LibraryDatabaseTests : IDisposable
         var result = new YouTubeResult { Id = "yt://abcdefghijk", Downloaders = [cache] };
         using var spreader = new StreamSpreader();
 
-        await result.RunCacheProcess(spreader);
+        result.RunCacheProcess(spreader);
         await spreader.WriteAsync(new byte[] { 1, 2, 3 });
         await spreader.CloseAsync();
 

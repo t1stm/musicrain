@@ -12,6 +12,12 @@ namespace Gaida.Bot.Commands;
 /// </summary>
 public static class ButtonHandler
 {
+    public const string Shuffle = "shuffle";
+    public const string Back = "back";
+    public const string Pause = "pause";
+    public const string Skip = "skip";
+    public const string Leave = "leave";
+
     public static async Task HandleAsync(PlayerController controller, ILogger logger, DiscordClient client,
         ComponentInteractionCreatedEventArgs args)
     {
@@ -33,27 +39,27 @@ public static class ButtonHandler
 
             switch (args.Id)
             {
-                case "shuffle":
+                case Shuffle:
                     player.Shuffle();
                     await EphemeralAsync(args, Text.ShufflingTheQueue());
                     break;
 
-                case "skip":
+                case Skip:
                     player.Skip();
                     await EphemeralAsync(args, Text.SkippingOneTime());
                     break;
 
-                case "back":
+                case Back:
                     player.Skip(-1);
                     await EphemeralAsync(args, Text.SkippingOneTimeBack());
                     break;
 
-                case "pause":
+                case Pause:
                     player.Pause();
                     await EphemeralAsync(args, player.Paused ? Text.PausingThePlayer() : Text.UnpausingThePlayer());
                     break;
 
-                case "leave":
+                case Leave:
                     await player.DisconnectAsync();
                     break;
 

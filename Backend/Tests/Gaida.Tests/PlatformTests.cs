@@ -36,14 +36,11 @@ public class PlatformTests
         }
 
         protected override HashSet<string> SearchIdIdentifiers { get; } = ["test://"];
-        protected override List<SearchProvider> SearchProviders { get; set; }
-        protected override List<ContentGetter> ContentDownloaders { get; set; }
     }
 
     private sealed class Provider(int priority, Func<string, PlatformResult> find) : SearchProvider(Serilog.Core.Logger.None),
         ISupportsId
     {
-        public override string PlatformIdentifier => "test://";
         public override int Priority => priority;
 
         public Task<PlatformResult?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
@@ -59,11 +56,6 @@ public class PlatformTests
         {
             Id = id;
             Downloaders = [];
-        }
-
-        public override string GetDownloadUrl()
-        {
-            return Id;
         }
     }
 }

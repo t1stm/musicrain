@@ -10,7 +10,7 @@ public class ContentTests
     [InlineData("OPUS")]
     public void ACodecIsTheSameCodecInAnyCase(string codec)
     {
-        Assert.Equal(("audio/ogg", "-c:a libopus", "-f ogg"), Content.Encoding(codec));
+        Assert.Equal(new Content.AudioEncoding("audio/ogg", "libopus", "ogg"), Content.Encoding(codec));
     }
 
     [Fact]

@@ -27,8 +27,7 @@ public class AudioController(ILogger<AudioController> logger, CacheService cache
     [Route("/Audio/Download/{codec:required}/{bitrate:int:required}")]
     public async Task<IActionResult> Download(string codec, int bitrate, string id)
     {
-        if (bitrate < 8) return BadRequest("Bitrate must be at least 8");
-        if (string.IsNullOrWhiteSpace(id)) return NotFound("No ID provided");
+        if (Unsound(bitrate, id) is { } refusal) return refusal;
 
         var key = CacheService.EncodedKey(codec, bitrate, id);
         var entry = await GetOrFetch(key, UpstreamDownloadPath(codec, bitrate, id), out _, Label(codec, bitrate, id));
@@ -45,8 +44,7 @@ public class AudioController(ILogger<AudioController> logger, CacheService cache
     [Route("/Audio/Preload/{codec:required}/{bitrate:int:required}")]
     public async Task<IActionResult> Preload(string codec, int bitrate, string id)
     {
-        if (bitrate < 8) return BadRequest("Bitrate must be at least 8");
-        if (string.IsNullOrWhiteSpace(id)) return NotFound("No ID provided");
+        if (Unsound(bitrate, id) is { } refusal) return refusal;
 
         var key = CacheService.EncodedKey(codec, bitrate, id);
 
@@ -100,8 +98,7 @@ public class AudioController(ILogger<AudioController> logger, CacheService cache
             if (entry.Body.Closed)
                 return File(entry.Body.OpenRead(), entry.ContentType, true);
 
-            await using var reader = entry.Body.OpenRead();
-            await reader.CopyToAsync(Response.Body, HttpContext.RequestAborted);
+            await entry.Body.DrainToAsync(Response.Body, HttpContext.RequestAborted);
             return new EmptyResult();
         }
         catch (FileNotFoundException)
@@ -122,5 +119,12 @@ public class AudioController(ILogger<AudioController> logger, CacheService cache
             // other reader is affected.
             return new EmptyResult();
         }
+    }
+
+    /// <summary>What Download and Preload turn away before going upstream, or <c>null</c> for a sound request.</summary>
+    private IActionResult? Unsound(int bitrate, string id)
+    {
+        if (bitrate < 8) return BadRequest("Bitrate must be at least 8");
+        return string.IsNullOrWhiteSpace(id) ? NotFound("No ID provided") : null;
     }
 }

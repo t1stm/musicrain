@@ -29,6 +29,9 @@ public sealed class Fleet(IHttpClientFactory factory, IConfiguration configurati
     /// <summary>How long a target has to answer a snapshot before it is rendered as down.</summary>
     private static readonly TimeSpan SnapshotTimeout = TimeSpan.FromSeconds(5);
 
+    /// <summary><c>AdminApi.TokenHeader</c>. Oko does not reference Gaida.Admin, so it keeps its own copy.</summary>
+    private const string TokenHeader = "X-Admin-Token";
+
     private readonly string _token = configuration["ADMIN_TOKEN"] ?? "";
 
     public IReadOnlyList<Target> Targets { get; } =
@@ -212,7 +215,7 @@ public sealed class Fleet(IHttpClientFactory factory, IConfiguration configurati
     private HttpRequestMessage Request(Target target, string path)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, target.Url.TrimEnd('/') + path);
-        request.Headers.Add("X-Admin-Token", _token);
+        request.Headers.Add(TokenHeader, _token);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return request;
     }

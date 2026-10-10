@@ -25,13 +25,17 @@ public sealed record Track
     [JsonIgnore]
     public string DisplayName => string.IsNullOrWhiteSpace(Artist) ? Name : $"{Name} - {Artist}";
 
+    public const string LocalPrefix = "audio://";
+    public const string YouTubePrefix = "yt://";
+    public const string DeezerPrefix = "deezer://";
+
     /// <summary>The old <c>ILanguage.GetTypeOfTrack</c>, decided by the ID's platform prefix.</summary>
     [JsonIgnore]
     public string Kind => Id switch
     {
-        _ when Id.StartsWith("audio://", StringComparison.Ordinal) => "Music",
-        _ when Id.StartsWith("yt://", StringComparison.Ordinal) => "Youtube Video",
-        _ when Id.StartsWith("deezer://", StringComparison.Ordinal) => "Deezer Track",
+        _ when Id.StartsWith(LocalPrefix, StringComparison.Ordinal) => "Music",
+        _ when Id.StartsWith(YouTubePrefix, StringComparison.Ordinal) => "Youtube Video",
+        _ when Id.StartsWith(DeezerPrefix, StringComparison.Ordinal) => "Deezer Track",
         _ => "Item"
     };
 

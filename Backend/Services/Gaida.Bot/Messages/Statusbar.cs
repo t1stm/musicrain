@@ -3,6 +3,7 @@ using System.Globalization;
 using DSharpPlus.Entities;
 using DSharpPlus.Exceptions;
 using Gaida.Bot.Enums;
+using Gaida.Bot.Commands;
 using Gaida.Bot.Players;
 
 namespace Gaida.Bot.Messages;
@@ -100,7 +101,6 @@ public sealed class Statusbar
         switch (Mode)
         {
             case StatusbarMode.Stopped:
-            case StatusbarMode.Message:
                 break;
 
             case StatusbarMode.Playing:
@@ -164,18 +164,19 @@ public sealed class Statusbar
         var waited = Player.WaitingStopwatch.ElapsedMilliseconds;
         Message = await Message.ModifyAsync(new DiscordMessageBuilder().WithContent(
             $"```Waiting:\nFor 15 minutes and then leaving.\n" +
-            $"{GenerateProgressbar(waited, 900000)} ( {Player.WaitingStopwatch.Elapsed:mm\\:ss} - 15:00 )```"));
+            $"{GenerateProgressbar(waited, (long)Player.IdleTimeout.TotalMilliseconds)} " +
+            $"( {Player.WaitingStopwatch.Elapsed:mm\\:ss} - {Player.IdleTimeout:mm\\:ss} )```"));
     }
 
     private DiscordMessageBuilder GenerateBuilder() =>
         new DiscordMessageBuilder()
             .WithContent(GenerateStatusbar())
             .AddActionRowComponent(
-                new DiscordButtonComponent(DiscordButtonStyle.Secondary, "shuffle", "Shuffle"),
-                new DiscordButtonComponent(DiscordButtonStyle.Success, "back", "Previous"),
-                new DiscordButtonComponent(DiscordButtonStyle.Primary, "pause", "Play / Pause"),
-                new DiscordButtonComponent(DiscordButtonStyle.Success, "skip", "Next"),
-                new DiscordButtonComponent(DiscordButtonStyle.Secondary, "leave", "Leave"));
+                new DiscordButtonComponent(DiscordButtonStyle.Secondary, ButtonHandler.Shuffle, "Shuffle"),
+                new DiscordButtonComponent(DiscordButtonStyle.Success, ButtonHandler.Back, "Previous"),
+                new DiscordButtonComponent(DiscordButtonStyle.Primary, ButtonHandler.Pause, "Play / Pause"),
+                new DiscordButtonComponent(DiscordButtonStyle.Success, ButtonHandler.Skip, "Next"),
+                new DiscordButtonComponent(DiscordButtonStyle.Secondary, ButtonHandler.Leave, "Leave"));
 
     private string GenerateStatusbar()
     {
@@ -203,7 +204,7 @@ public sealed class Statusbar
             $"{(next is null ? "" : $"\n\n{Text.NextUp()}: ({player.Queue.Current + 2}) {next.DisplayName}")}```";
     }
 
-    public async Task UpdateMessageAndStopAsync(string message, bool formatted = true)
+    public async Task UpdateMessageAndStopAsync(string message)
     {
         try
         {
@@ -212,7 +213,7 @@ public sealed class Statusbar
 
             if (Message is null) return;
 
-            var builder = new DiscordMessageBuilder().WithContent(formatted ? message.CodeBlocked() : message);
+            var builder = new DiscordMessageBuilder().WithContent(message.CodeBlocked());
             builder.ClearComponents();
             await Message.ModifyAsync(builder);
         }

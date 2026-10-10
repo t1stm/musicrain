@@ -8,10 +8,8 @@ using ILogger = Serilog.ILogger;
 namespace Dunav;
 
 /// <summary>
-///     One upstream fetch per cache key, however many clients race for it -- coalescing lifted from
-///     <c>Gaida.API/ManagerService.cs</c>'s <c>GetOrStartEncoderAsync</c>, adapted from
-///     <c>Func&lt;FFmpegEncoder,...&gt;</c> to fetch-upstream-into-a-file. Also owns expiry, the byte-ceiling
-///     LRU eviction the old code never had, and the on-disk bodies themselves.
+///     One upstream fetch per cache key, however many clients race for it. Also owns expiry, the byte-ceiling
+///     LRU eviction, and the on-disk bodies themselves.
 /// </summary>
 public class CacheService : BackgroundService
 {
@@ -149,7 +147,7 @@ public class CacheService : BackgroundService
     /// <summary>
     ///     Fetches <paramref name="upstreamPath" /> (relative to <c>Gaida:Url</c>) into <paramref name="entry" />'s
     ///     spreader. Returns once headers are read and the body copy is subscribed -- not once the body is
-    ///     finished -- so callers get progressive streaming the same way <c>FFmpegEncoder.Convert</c> does.
+    ///     finished -- so callers get progressive streaming.
     /// </summary>
     public async Task<bool> FetchAsync(CacheEntry entry, string upstreamPath, CancellationToken cancellationToken)
     {
@@ -183,8 +181,7 @@ public class CacheService : BackgroundService
         var upstreamStream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
         // Fire-and-forget on purpose, and deliberately not tied to the triggering request's cancellation
-        // token: the fetch outlives the request that started it, same as GetContentDataAsync being called
-        // with CancellationToken.None in Gaida.API's StartEncode.
+        // token: the fetch outlives the request that started it.
         _ = PumpAsync(response, upstreamStream, entry, upstreamPath);
         return true;
     }

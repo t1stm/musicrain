@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Gaida.Platforms.YouTube;
 
 namespace Gaida.Pods.YouTube;
 
@@ -10,8 +11,7 @@ namespace Gaida.Pods.YouTube;
 public readonly record struct ClassifyResult(int Status, string? Kind, string? Id, string? Error);
 
 /// <summary>
-///     The YouTube half of what used to be Gaida.API's <c>QueryParser</c> (see
-///     <c>Gaida.API/Contracts/QueryParser.cs</c>), scoped to this platform's own identifiers.
+///     The YouTube half of what used to be Gaida.API's query parser, scoped to this platform's own identifiers.
 ///     Recognises <c>yt://</c> / <c>yt-playlist://</c> ids and YouTube URLs (watch/youtu.be/shorts/embed/live/playlist).
 ///     A bare ID is deliberately not claimed: ordinary words fit the alphabet ("Innervision" is 11 characters), so
 ///     anything without a scheme or a YouTube link is a keyword search. Pure string parsing -- no network.
@@ -25,17 +25,17 @@ public static partial class Classify
         var query = value?.Trim();
         if (string.IsNullOrEmpty(query)) return NotMine;
 
-        if (query.StartsWith("yt://", StringComparison.OrdinalIgnoreCase))
-            return ParseVideoId(query["yt://".Length..]);
+        if (query.StartsWith(YouTubeResult.Prefix, StringComparison.OrdinalIgnoreCase))
+            return ParseVideoId(query[YouTubeResult.Prefix.Length..]);
 
-        if (query.StartsWith("yt-playlist://", StringComparison.OrdinalIgnoreCase))
-            return ParsePlaylistId(query["yt-playlist://".Length..]);
+        if (query.StartsWith(YouTubeResult.PlaylistPrefix, StringComparison.OrdinalIgnoreCase))
+            return ParsePlaylistId(query[YouTubeResult.PlaylistPrefix.Length..]);
 
         if (Uri.TryCreate(query, UriKind.Absolute, out var uri))
             return ParseUrl(uri);
 
         // Schemeless playlist link (e.g. "youtube.com/playlist?list=PL...") that Uri.TryCreate rejected for
-        // lacking a scheme. Same shape YouTube.cs:72-75 (IsPlaylistUrl) matches against arbitrary text.
+        // lacking a scheme.
         var schemeless = SchemelessPlaylistRegex().Match(query);
         return schemeless.Success ? ParsePlaylistId(schemeless.Groups[1].Value) : NotMine;
     }
@@ -65,14 +65,14 @@ public static partial class Classify
     private static ClassifyResult ParseVideoId(string id)
     {
         return VideoIdRegex().IsMatch(id)
-            ? Ok("id", "yt://" + id)
+            ? Ok("id", YouTubeResult.Prefix + id)
             : Invalid("The YouTube video ID is invalid.");
     }
 
     private static ClassifyResult ParsePlaylistId(string id)
     {
         return PlaylistIdRegex().IsMatch(id)
-            ? Ok("playlist", "yt-playlist://" + id)
+            ? Ok("playlist", YouTubeResult.PlaylistPrefix + id)
             : Invalid("The YouTube playlist ID is invalid.");
     }
 

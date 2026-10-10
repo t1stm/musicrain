@@ -41,25 +41,25 @@ public class DomPersistenceTests : IDisposable
         Step(() => mila = User(store, "mila"));
         Step(() => gone = User(store, "gone"));
         Step(() => store.Login("kris", Password));
-        Step(() => store.Logout(store.Login("ana", Password).token!.Value));
+        Step(() => store.Logout(store.Login("ana", Password).Value!.Token.Value));
 
         Step(() => Befriend(store, kris, ana));
         Step(() => Befriend(store, kris, mila));
         Step(() => Befriend(store, kris, gone));
         Step(() => Befriend(store, ana, gone));
 
-        Step(() => mix = store.Create(kris, "Mix", Visibility.Friends, [Track("yt://1"), Track("yt://2")]).playlist!);
+        Step(() => mix = store.Create(kris, "Mix", Visibility.Friends, [Track("yt://1"), Track("yt://2")]).Value!);
         Step(() => store.Update(kris, mix.Id, "Mix two", null, null, ["ana", "mila", "gone"]));
         Step(() => store.Append(ana, mix.Id, Track("yt://3")));
         Step(() => store.Update(mila, mix.Id, null, null, [Track("yt://3"), Track("yt://1"), Track("yt://4")],
             revision: 2));
         Step(() => store.SetCover(kris, mix.Id, "cover.webp"));
 
-        Step(() => theirs = store.Create(ana, "Theirs", Visibility.Public, [Track("yt://5")]).playlist!);
+        Step(() => theirs = store.Create(ana, "Theirs", Visibility.Public, [Track("yt://5")]).Value!);
         Step(() => store.Update(ana, theirs.Id, null, null, null, ["kris"]));
         Step(() => store.Append(kris, theirs.Id, Track("yt://6")));
         Step(() => store.Create(gone, "Doomed", Visibility.Public, []));
-        Step(() => removed = store.Create(kris, "Removed", Visibility.Private, []).playlist!);
+        Step(() => removed = store.Create(kris, "Removed", Visibility.Private, []).Value!);
         Step(() => store.Delete(kris, removed.Id));
 
         Step(() => store.MergeSettings(kris,
@@ -67,11 +67,11 @@ public class DomPersistenceTests : IDisposable
         Step(() => store.MergeSettings(kris, new JsonObject { ["theme"] = null, ["volume"] = 0.5 }));
 
         // a rename that reaches friends, a playlist it owns, one it collaborates on and a track it added
-        Step(() => Assert.Null(store.Rename(kris, Password, "Kristian").error));
-        Step(() => Assert.Null(store.Rename(mila, Password, "MILA").error));
+        Step(() => Assert.Null(store.Rename(kris, Password, "Kristian")?.Code));
+        Step(() => Assert.Null(store.Rename(mila, Password, "MILA")?.Code));
         Step(() => Assert.True(store.Unfriend(ana, "Kristian")));
-        Step(() => Assert.Null(store.DeleteAccount(gone, Password).error));
-        Step(() => Assert.Null(store.ChangePassword(ana, Password, "another password").error));
+        Step(() => Assert.Null(store.DeleteAccount(gone, Password).Refusal?.Code));
+        Step(() => Assert.Null(store.ChangePassword(ana, Password, "another password").Refusal?.Code));
         Step(() => Assert.Equal(2, store.SignOutEverywhere(kris, "none of them")));
 
         Step(() => Assert.True(store.AdminUpdatePlaylist(theirs.Id, "Renamed by an operator", false, 0).ok));
@@ -79,7 +79,7 @@ public class DomPersistenceTests : IDisposable
         Step(() => Assert.True(store.AdminSetPassword("ana", "a third password").ok));
         Step(() => Assert.True(store.AdminRenameUser("ana", "Anna").ok));
         Step(() => Assert.True(store.AdminDeletePlaylist(mix.Id).ok));
-        Step(() => Assert.True(store.AdminDeleteUser("MILA").ok));
+        Step(() => Assert.True(store.AdminDeleteUser("MILA") is not null));
 
         var after = State(store);
         Assert.Contains("Kristian", after);
@@ -94,8 +94,8 @@ public class DomPersistenceTests : IDisposable
     public void UpgradeGivesEveryAccountALastingId()
     {
         var store = Store();
-        var kris = store.Register("kris", Password).token!.Value;
-        var ana = store.Register("ana", Password).token!.Value;
+        var kris = store.Register("kris", Password).Value!.Token.Value;
+        var ana = store.Register("ana", Password).Value!.Token.Value;
 
         // back to what a version 1 database looked like
         using (var db = new SqliteConnection($"Data Source={Path.Combine(_directory, "dom.db")}"))
@@ -112,7 +112,7 @@ public class DomPersistenceTests : IDisposable
         Assert.Equal(22, krisId.Length);
         Assert.NotEqual(krisId, anaId);
 
-        Assert.Null(upgraded.Rename(upgraded.Resolve(kris)!, Password, "Kristian").error);
+        Assert.Null(upgraded.Rename(upgraded.Resolve(kris)!, Password, "Kristian")?.Code);
         Assert.Equal(krisId, Store().Resolve(kris)!.Id);
         Assert.Equal(anaId, Store().Resolve(ana)!.Id);
     }
@@ -151,10 +151,10 @@ public class DomPersistenceTests : IDisposable
     }
 
     private static void Befriend(DomStore store, User inviter, User friend) =>
-        Assert.Null(store.AcceptInvite(friend, store.OpenInvite(inviter)!.Code).error);
+        Assert.Null(store.AcceptInvite(friend, store.OpenInvite(inviter)!.Code).Refusal?.Code);
 
     private static User User(DomStore store, string username) =>
-        store.Resolve(store.Register(username, Password).token!.Value)!;
+        store.Resolve(store.Register(username, Password).Value!.Token.Value)!;
 
     private static TrackSnapshot Track(string id) =>
         new() { Id = id, Name = "Nightcall", Artist = "Kavinsky", Album = "OutRun", Duration = "00:04:18" };

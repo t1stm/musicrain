@@ -63,27 +63,7 @@ public sealed class PlayerController(GaidaClient api, ILogger logger, BotEventLo
                     ? found
                     : null;
 
-                var player = new Player
-                {
-                    Client = client,
-                    Api = api,
-                    Logger = logger,
-                    Controller = this,
-                    Settings = settings,
-                    Guild = guild,
-                    VoiceChannel = ownVoiceChannel,
-                    Channel = ownTextChannel
-                };
-
-                _players.Add(player);
-                logger.Information("{Account} is taking {Channel} in {Guild}", client.CurrentUser.Username,
-                    ownVoiceChannel.Name, guild.Name);
-                events.Record("join", client.CurrentUser.Username, guild.Name, ownVoiceChannel.Name,
-                    detail: _players.Count(other => other.Guild?.Id == guildId) > 1
-                        ? "joined; another account was already playing in this guild"
-                        : "joined");
-
-                return player;
+                return AddPlayerLocked(client, guild, ownVoiceChannel, ownTextChannel);
             }
 
             logger.Information("No free accounts left in {Guild}", voiceChannel.Guild.Name);
@@ -91,6 +71,33 @@ public sealed class PlayerController(GaidaClient api, ILogger logger, BotEventLo
                 voiceChannel.Name, detail: $"no free accounts, all {Clients.Count} are busy here");
             return null;
         }
+    }
+
+    /// <summary>A new player for <paramref name="client" />'s account. Caller holds the lock on <c>_players</c>.</summary>
+    private Player AddPlayerLocked(DiscordClient client, DiscordGuild guild, DiscordChannel voiceChannel,
+        DiscordChannel? textChannel)
+    {
+        var player = new Player
+        {
+            Client = client,
+            Api = api,
+            Logger = logger,
+            Controller = this,
+            Settings = settings,
+            Guild = guild,
+            VoiceChannel = voiceChannel,
+            Channel = textChannel
+        };
+
+        _players.Add(player);
+        logger.Information("{Account} is taking {Channel} in {Guild}", client.CurrentUser.Username,
+            voiceChannel.Name, guild.Name);
+        events.Record("join", client.CurrentUser.Username, guild.Name, voiceChannel.Name,
+            detail: _players.Count(other => other.Guild?.Id == guild.Id) > 1
+                ? "joined; another account was already playing in this guild"
+                : "joined");
+
+        return player;
     }
 
     /// <summary>The player a button click belongs to: same text channel, clicker in its voice channel.</summary>

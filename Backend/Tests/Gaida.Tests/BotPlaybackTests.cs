@@ -347,7 +347,7 @@ public class BotPlaybackTests
             Track("Sonne", "yt://exact")
         };
 
-        Assert.Equal("yt://exact", PlaybackCommands.BestMatch(results, "Sonne")!.Id);
+        Assert.Equal("yt://exact", TrackPicker.BestMatch(results, "Sonne")!.Id);
     }
 
     [Fact]
@@ -360,8 +360,8 @@ public class BotPlaybackTests
             Track("Sonne", "audio://library")
         };
 
-        Assert.Equal("audio://library", PlaybackCommands.BestMatch(results, "Sonne")!.Id);
-        Assert.Null(PlaybackCommands.BestMatch([], "Sonne"));
+        Assert.Equal("audio://library", TrackPicker.BestMatch(results, "Sonne")!.Id);
+        Assert.Null(TrackPicker.BestMatch([], "Sonne"));
     }
 
     [Fact]
@@ -375,7 +375,7 @@ public class BotPlaybackTests
             Track("La Bomba", "deezer://3297621211", artist: "King \u00c1frica")
         };
 
-        Assert.Equal("deezer://3297621211", PlaybackCommands.BestMatch(results, "la bomba king africa")!.Id);
+        Assert.Equal("deezer://3297621211", TrackPicker.BestMatch(results, "la bomba king africa")!.Id);
     }
 
     [Fact]
@@ -388,7 +388,7 @@ public class BotPlaybackTests
         };
 
         // The query names the artist, which every result shares, so the title decides.
-        Assert.Equal("yt://sonne", PlaybackCommands.BestMatch(results, "Artist Sonne")!.Id);
+        Assert.Equal("yt://sonne", TrackPicker.BestMatch(results, "Artist Sonne")!.Id);
     }
 
     [Fact]

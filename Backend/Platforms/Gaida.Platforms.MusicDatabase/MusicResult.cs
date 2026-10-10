@@ -5,10 +5,7 @@ namespace Gaida.Platforms.MusicDatabase;
 
 public class MusicResult : PlatformResult
 {
-    [JsonIgnore] public string Path { get; init; } = string.Empty;
+    public const string Prefix = "audio://";
 
-    public override string GetDownloadUrl()
-    {
-        return Id;
-    }
+    [JsonIgnore] public string Path { get; init; } = string.Empty;
 }

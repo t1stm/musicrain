@@ -35,11 +35,10 @@ internal static class Admin
 
         admin.MapPost("/delete-user", async (string username) =>
         {
-            var (ok, id, orphaned, deleted) = store.AdminDeleteUser(username);
-            if (!ok) return Results.NotFound();
+            if (store.AdminDeleteUser(username) is not { } deleted) return Results.NotFound();
 
-            await cleanup.AfterDeleteAsync(id!, orphaned);
-            return Results.Ok(new { deletedPlaylists = deleted });
+            await cleanup.AfterDeleteAsync(deleted.Id, deleted.Covers);
+            return Results.Ok(new { deletedPlaylists = deleted.Playlists });
         });
 
         admin.MapPost("/rename-playlist", (string id, string name) =>

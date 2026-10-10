@@ -55,57 +55,57 @@ app.MapAdmin(() => new { service = "moliv", plays = plays.Snapshot(), dom = new 
 
 app.MapPut("/Audio/History/Plays/{id}", async (string id, PlayBody? body, HttpRequest request, CancellationToken ct) =>
 {
-    var (caller, refusal) = await identity.WhoAsync(request, ct);
-    if (refusal is not null) return refusal;
+    var who = await identity.WhoAsync(request, ct);
+    if (!who.Known) return who.Refusal;
 
-    if (!Guid.TryParseExact(id, "D", out var play)) return Invalid("The play id must be a UUID.");
-    if (body is null) return Invalid("Send the play as JSON.");
+    if (!Guid.TryParseExact(id, "D", out var play)) return Api.Invalid("The play id must be a UUID.");
+    if (body is null) return Api.Invalid("Send the play as JSON.");
 
-    var (row, error) = body.ToRow(play.ToString(), caller!, DateTimeOffset.UtcNow);
-    if (error is not null) return Invalid(error);
+    var row = body.ToRow(play.ToString(), who.Caller, DateTimeOffset.UtcNow);
+    if (!row.Ok) return Api.Invalid(row.Error);
 
-    return plays.Upsert(row!)
+    return plays.Upsert(row.Row)
         ? Results.NoContent()
         : Api.Error(403, "forbidden", "That play was recorded on another device.");
 });
 
 app.MapGet("/Audio/History", async (string? before, int? limit, HttpRequest request, CancellationToken ct) =>
 {
-    var (caller, refusal) = await identity.WhoAsync(request, ct);
-    if (refusal is not null) return refusal;
+    var who = await identity.WhoAsync(request, ct);
+    if (!who.Known) return who.Refusal;
 
-    if (limit is < 1 or > 100) return Invalid("limit must be between 1 and 100.");
+    if (limit is < 1 or > 100) return Api.Invalid("limit must be between 1 and 100.");
     var cursor = before is null ? null : Api.ParseCursor(before);
-    if (before is not null && cursor is null) return Invalid("before is not a cursor this service handed out.");
+    if (before is not null && cursor is null) return Api.Invalid("before is not a cursor this service handed out.");
 
-    var page = plays.List(caller!, cursor, limit ?? 50);
+    var page = plays.List(who.Caller, cursor, limit ?? 50);
     return Results.Ok(new PageDto(page, page.Count == (limit ?? 50) ? Api.Cursor(page[^1]) : null));
 });
 
 app.MapGet("/Audio/History/Recent", async (int? limit, HttpRequest request, CancellationToken ct) =>
 {
-    var (caller, refusal) = await identity.WhoAsync(request, ct);
-    if (refusal is not null) return refusal;
+    var who = await identity.WhoAsync(request, ct);
+    if (!who.Known) return who.Refusal;
 
     return limit is < 1 or > 50
-        ? Invalid("limit must be between 1 and 50.")
-        : Results.Ok(plays.Recent(caller!, limit ?? 12));
+        ? Api.Invalid("limit must be between 1 and 50.")
+        : Results.Ok(plays.Recent(who.Caller, limit ?? 12));
 });
 
 app.MapPost("/Audio/History/Claim", async (HttpRequest request, CancellationToken ct) =>
 {
-    var (caller, refusal) = await identity.WhoAsync(request, ct);
-    if (refusal is not null) return refusal;
+    var who = await identity.WhoAsync(request, ct);
+    if (!who.Known) return who.Refusal;
 
-    return caller!.UserId is { } user
-        ? Results.Ok(new { claimed = plays.Claim(user, caller.DeviceId) })
+    return who.Caller.UserId is { } user
+        ? Results.Ok(new { claimed = plays.Claim(user, who.Caller.DeviceId) })
         : Api.Error(401, "unauthorized", "Sign in first.");
 });
 
 app.MapDelete("/Audio/History", async (HttpRequest request, CancellationToken ct) =>
 {
-    var (caller, refusal) = await identity.WhoAsync(request, ct);
-    return refusal ?? Results.Ok(new { deleted = plays.Clear(caller!) });
+    var who = await identity.WhoAsync(request, ct);
+    return who.Known ? Results.Ok(new { deleted = plays.Clear(who.Caller) }) : who.Refusal;
 });
 
 // Local only, like Stih's /register: not under /Audio, so no nginx location reaches it; the published port
@@ -116,11 +116,9 @@ app.MapPost("/forget", (string? user, HttpRequest request) =>
     if (!AdminApi.Authorized(request, app.Configuration["ADMIN_TOKEN"])) return Results.Unauthorized();
 
     return string.IsNullOrWhiteSpace(user)
-        ? Invalid("Name the account to forget.")
+        ? Api.Invalid("Name the account to forget.")
         : Results.Ok(new { deleted = plays.Forget(user) });
 });
 
 app.Run();
 return 0;
-
-static IResult Invalid(string message) => Api.Error(400, "invalid_request", message);

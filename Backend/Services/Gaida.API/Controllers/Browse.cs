@@ -1,3 +1,4 @@
+using Gaida.Core.Utils;
 using Gaida.API.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
@@ -20,7 +21,7 @@ public class Browse(IConfiguration configuration, IHostEnvironment environment) 
     {
         // Normalized once here so the echoed path and the folder paths built below agree with each other
         // whatever the client sent.
-        var folder = (path ?? string.Empty).Replace('\\', '/').Trim('/');
+        var folder = FolderPath.Normalize(path);
 
         if (managerService.Pod(Prefix.Local) is not { } local)
             return Ok(new BrowseDto(folder, [], []));
@@ -51,7 +52,7 @@ public class Browse(IConfiguration configuration, IHostEnvironment environment) 
     [ProducesResponseType<IReadOnlyList<SearchResultDto>>(StatusCodes.Status200OK)]
     public IActionResult GetTracks(string? path, [FromServices] ManagerService managerService)
     {
-        var folder = (path ?? string.Empty).Replace('\\', '/').Trim('/');
+        var folder = FolderPath.Normalize(path);
 
         if (managerService.Pod(Prefix.Local) is not { } local)
             return Ok(Array.Empty<SearchResultDto>());

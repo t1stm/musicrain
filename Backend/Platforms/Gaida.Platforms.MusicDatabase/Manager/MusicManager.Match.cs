@@ -56,13 +56,7 @@ public partial class MusicManager
     public LocalMatch? FindLocalVariant(string name, string? artist, TimeSpan duration)
     {
         var normalized = TitleNormalizer.Normalize(name, artist);
-        var candidates = normalized.Candidates
-            .Select(candidate => (
-                Artist: LevenshteinDistance.RemoveFormatting(candidate.Artist) ?? string.Empty,
-                Title: LevenshteinDistance.RemoveFormatting(candidate.Title) ?? string.Empty))
-            .Where(candidate => candidate.Title.Length > 0)
-            .Distinct()
-            .ToArray();
+        var candidates = Searchable(normalized);
 
         if (candidates.Length == 0)
         {
@@ -103,6 +97,18 @@ public partial class MusicManager
         return null;
     }
 
+    /// <summary>The normalizer's readings of a title, in the form songs are scored against, minus any with no title.</summary>
+    private static (string Artist, string Title)[] Searchable(NormalizedTitle normalized)
+    {
+        return normalized.Candidates
+            .Select(candidate => (
+                Artist: LevenshteinDistance.RemoveFormatting(candidate.Artist) ?? string.Empty,
+                Title: LevenshteinDistance.RemoveFormatting(candidate.Title) ?? string.Empty))
+            .Where(candidate => candidate.Title.Length > 0)
+            .Distinct()
+            .ToArray();
+    }
+
     /// <summary>
     ///     Weighted so neither half carries a match alone: a perfect artist against a wrong title tops out at
     ///     0.35, a perfect title against a wrong artist at 0.65. Both are below any usable threshold, which is
@@ -115,11 +121,11 @@ public partial class MusicManager
         if (titles.Length == 0) return (0, tags);
 
         var best = (from candidate in candidates
-                    let titleSimilarity = titles.Max(title => Similarity(candidate.Title, title))
+                    let titleSimilarity = titles.Max(title => LevenshteinDistance.Similarity(candidate.Title, title))
                     select candidate.Artist.Length == 0
                         ? Math.Max(TitleWeight * titleSimilarity, Concatenated(candidate.Title, titles, artists))
                         : TitleWeight * titleSimilarity +
-                          ArtistWeight * artists.Select(a => Similarity(candidate.Artist, a)).DefaultIfEmpty(0).Max())
+                          ArtistWeight * artists.Select(a => LevenshteinDistance.Similarity(candidate.Artist, a)).DefaultIfEmpty(0).Max())
             .Prepend(0d)
             .Max();
 
@@ -132,21 +138,11 @@ public partial class MusicManager
         foreach (var title in titles)
             foreach (var artist in artists)
             {
-                best = Math.Max(best, Similarity(term, title + artist));
-                best = Math.Max(best, Similarity(term, artist + title));
+                best = Math.Max(best, LevenshteinDistance.Similarity(term, title + artist));
+                best = Math.Max(best, LevenshteinDistance.Similarity(term, artist + title));
             }
 
         return best;
-    }
-
-    /// <summary>
-    ///     Length-relative, unlike <c>SearchByTerm</c>'s absolute budget: a long transliterated title
-    ///     accumulates several ambiguous letters (ю→yu|iu, я→ya|ia, щ→sht|sh) and a fixed distance rejects it.
-    /// </summary>
-    private static double Similarity(string a, string b)
-    {
-        if (a.Length == 0 || b.Length == 0) return 0;
-        return 1d - (double)LevenshteinDistance.ComputeStrict(a, b) / Math.Max(a.Length, b.Length);
     }
 
     private static IReadOnlyList<string> Ordered(IEnumerable<string> tags)

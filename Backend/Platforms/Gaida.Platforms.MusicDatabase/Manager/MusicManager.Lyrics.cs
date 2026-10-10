@@ -47,7 +47,7 @@ public partial class MusicManager
     ///     records what it did. Under the edit gate for the same reason <see cref="EditAsync" /> is: both
     ///     rewrite one entry and then its row.
     /// </remarks>
-    public async Task<(MusicInfo? entry, string? error)> StampLyricsAsync(string id, LyricsKind? kind,
+    public async Task<Change> StampLyricsAsync(string id, LyricsKind? kind,
         LyricsOrigin? source, CancellationToken cancellationToken = default)
     {
         await _editGate.WaitAsync(cancellationToken);
@@ -55,9 +55,9 @@ public partial class MusicManager
         try
         {
             var entry = SearchById(id);
-            if (entry is null) return (null, "No song with that ID.");
-            if (entry.RelativeLocation is null) return (null, "That entry has no file on disk.");
-            if (entry.LyricsType is not null) return (null, "That entry already has lyrics.");
+            if (entry is null) return Change.NoSuchSong;
+            if (entry.RelativeLocation is null) return Change.Refused("That entry has no file on disk.");
+            if (entry.LyricsType is not null) return Change.Refused("That entry already has lyrics.");
 
             entry.LyricsType = kind;
             entry.LyricsSource = kind is null ? null : source;
@@ -66,7 +66,7 @@ public partial class MusicManager
             _database.Write([entry]);
             Logger.Information("Stamped lyrics on {ID}: {Kind} from {Source}", id, kind, source);
 
-            return (entry, null);
+            return entry;
         }
         finally
         {
@@ -87,7 +87,7 @@ public partial class MusicManager
                                    && (song.LyricsChecked is null || song.LyricsChecked < retryBefore))
                 .OrderBy(song => song.LyricsChecked ?? DateOnly.MinValue)
                 .ThenBy(song => song.Id, StringComparer.Ordinal)
-                .Take(Math.Clamp(take, 1, 500))
+                .Take(Math.Clamp(take, 1, MaxPage))
         ];
     }
 }

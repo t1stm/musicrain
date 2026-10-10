@@ -13,6 +13,12 @@ public sealed class Playlist
     // Shuffle and Clear replace the list, so the lock cannot be the list itself: whoever is
     // holding the old instance would be locking something nobody else can see any more.
     private readonly Lock _gate = new();
+
+    /// <summary>How many edits a typed name may be off by and still find a queued track.</summary>
+    private const int NameEdits = 3;
+
+    /// <summary>For a move, the edits allowed as a share of the track's display name.</summary>
+    private const double MoveEditShare = 0.2;
     private List<Track> _items = [];
 
     /// <summary>A copy, so a command reading it cannot be torn by the play loop changing the queue.</summary>
@@ -26,7 +32,7 @@ public sealed class Playlist
 
     public int Current { get; set; }
 
-    public long Count
+    public int Count
     {
         get
         {
@@ -86,7 +92,7 @@ public sealed class Playlist
     {
         lock (_gate)
         {
-            return _items.First(vi => LevenshteinDistance.ComputeLean(vi.DisplayName, name) < 3);
+            return _items.First(vi => LevenshteinDistance.ComputeLean(vi.DisplayName, name) < NameEdits);
         }
     }
 
@@ -108,11 +114,14 @@ public sealed class Playlist
         }
     }
 
+    /// <summary>The seed that asks for a random one.</summary>
+    public const int AnySeed = -555;
+
     public void ShuffleWithSeed(int seed)
     {
         lock (_gate)
         {
-            if (seed == -555) seed = Random.Shared.Next(int.MaxValue);
+            if (seed == AnySeed) seed = Random.Shared.Next(int.MaxValue);
             Track[] shuffled = [.. _items];
             new Random(seed).Shuffle(shuffled);
 
@@ -184,9 +193,9 @@ public sealed class Playlist
         lock (_gate)
         {
             var one = _items.FirstOrDefault(vi =>
-                LevenshteinDistance.ComputeStrict(vi.DisplayName, first.Trim()) < vi.DisplayName.Length * 0.2);
+                LevenshteinDistance.ComputeStrict(vi.DisplayName, first.Trim()) < vi.DisplayName.Length * MoveEditShare);
             var two = _items.FirstOrDefault(vi =>
-                LevenshteinDistance.ComputeStrict(vi.DisplayName, second.Trim()) < vi.DisplayName.Length * 0.2);
+                LevenshteinDistance.ComputeStrict(vi.DisplayName, second.Trim()) < vi.DisplayName.Length * MoveEditShare);
 
             if (one is null || two is null)
             {

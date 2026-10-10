@@ -17,8 +17,8 @@ public abstract class Platform : ISupportsId
     public HashSet<string>.AlternateLookup<ReadOnlySpan<char>> SearchIdIdentifiersLookup =>
         SearchIdIdentifiers.GetAlternateLookup<ReadOnlySpan<char>>();
 
-    protected abstract List<SearchProvider> SearchProviders { get; set; }
-    protected abstract List<ContentGetter> ContentDownloaders { get; set; }
+    protected List<SearchProvider> SearchProviders { get; set; } = [];
+    protected List<ContentGetter> ContentDownloaders { get; set; } = [];
 
     public virtual async Task<PlatformResult?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
     {

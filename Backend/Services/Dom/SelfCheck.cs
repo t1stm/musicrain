@@ -42,21 +42,21 @@ internal static class SelfCheck
         var noSuchUser = store.Login("nobody", "correct horse battery");
         var right = store.Login("РАДОСТ", "correct horse battery");
 
-        var ok = created.token is not null
-                 && sameNameOtherCase.error == "username_taken"
-                 && shortPassword.error == "invalid_request"
-                 && spaced.error == "invalid_request"
-                 && wrongPassword.error == "invalid_credentials"
+        var ok = created.Ok
+                 && sameNameOtherCase.Refusal?.Code == "username_taken"
+                 && shortPassword.Refusal?.Code == "invalid_request"
+                 && spaced.Refusal?.Code == "invalid_request"
+                 && wrongPassword.Refusal?.Code == "invalid_credentials"
                  // a wrong password and a missing account must be indistinguishable to the caller
-                 && noSuchUser.error == wrongPassword.error
-                 && noSuchUser.message == wrongPassword.message
-                 && right.token is not null
+                 && noSuchUser.Refusal?.Code == wrongPassword.Refusal?.Code
+                 && noSuchUser.Refusal?.Message == wrongPassword.Refusal?.Message
+                 && right.Ok
                  && store.UserCount == 1;
 
         Report(ok, "registration rules hold and a password verifies only against itself",
-            $"created={created.error ?? "ok"} duplicate={sameNameOtherCase.error} " +
-            $"weak={shortPassword.error} spaced={spaced.error} wrong={wrongPassword.error} " +
-            $"missing={noSuchUser.error} login={right.error ?? "ok"} users={store.UserCount}");
+            $"created={created.Refusal?.Code ?? "ok"} duplicate={sameNameOtherCase.Refusal?.Code} " +
+            $"weak={shortPassword.Refusal?.Code} spaced={spaced.Refusal?.Code} wrong={wrongPassword.Refusal?.Code} " +
+            $"missing={noSuchUser.Refusal?.Code} login={right.Refusal?.Code ?? "ok"} users={store.UserCount}");
 
         return ok;
     }
@@ -67,8 +67,8 @@ internal static class SelfCheck
         using var scratch = new ScratchFile();
         var store = new DomStore(scratch.Path, Quiet);
 
-        var phone = store.Register("kris", "correct horse battery").token!;
-        var laptop = store.Login("kris", "correct horse battery").token!;
+        var phone = store.Register("kris", "correct horse battery").Value!.Token;
+        var laptop = store.Login("kris", "correct horse battery").Value!.Token;
 
         var distinct = phone.Value != laptop.Value;
         var both = store.Resolve(phone.Value)?.Username == "kris" && store.Resolve(laptop.Value)?.Username == "kris";
@@ -96,15 +96,15 @@ internal static class SelfCheck
         string token;
         {
             var store = new DomStore(scratch.Path, Quiet);
-            token = store.Register("Радост", "correct horse battery").token!.Value;
+            token = store.Register("Радост", "correct horse battery").Value!.Token.Value;
         }
 
         var reloaded = new DomStore(scratch.Path, Quiet);
 
         var ok = reloaded.UserCount == 1
                  && reloaded.Resolve(token)?.Username == "Радост"
-                 && reloaded.Login("радост", "correct horse battery").token is not null
-                 && reloaded.Login("радост", "wrong").error == "invalid_credentials"
+                 && reloaded.Login("радост", "correct horse battery").Ok
+                 && reloaded.Login("радост", "wrong").Refusal?.Code == "invalid_credentials"
                  // the password itself must not be anywhere on disk
                  && !scratch.Bytes().Contains("correct horse battery");
 
@@ -122,7 +122,7 @@ internal static class SelfCheck
         string token;
         {
             var store = new DomStore(scratch.Path, Quiet);
-            token = store.Register("kris", "correct horse battery").token!.Value;
+            token = store.Register("kris", "correct horse battery").Value!.Token.Value;
         }
 
         scratch.Execute("UPDATE tokens SET ExpiresUtc = $at", DateTimeOffset.UtcNow.AddMinutes(-1));
@@ -132,7 +132,7 @@ internal static class SelfCheck
 
         // the rejection also drops it, so the database no longer carries a token nobody can use
         var pruned = (long)scratch.Execute("SELECT COUNT(*) FROM tokens WHERE Value = $at", token)! == 0;
-        var stillSignsIn = store2.Login("kris", "correct horse battery").token is not null;
+        var stillSignsIn = store2.Login("kris", "correct horse battery").Ok;
 
         var ok = rejected && pruned && stillSignsIn;
 
@@ -148,8 +148,8 @@ internal static class SelfCheck
         using var scratch = new ScratchFile();
         var store = new DomStore(scratch.Path, Quiet);
 
-        var kris = store.Register("kris", "correct horse battery").user!;
-        var stranger = store.Register("stranger", "correct horse battery").user!;
+        var kris = store.Register("kris", "correct horse battery").Value!.User;
+        var stranger = store.Register("stranger", "correct horse battery").Value!.User;
 
         List<TrackSnapshot> tracks =
         [
@@ -157,7 +157,8 @@ internal static class SelfCheck
             new() { Id = "yt://abc", Name = "Another", Artist = "Someone else", Duration = "00:04:02" }
         ];
 
-        var (made, error, _) = store.Create(kris, "Late shift", Visibility.Private, tracks);
+        var creation = store.Create(kris, "Late shift", Visibility.Private, tracks);
+        var (made, error) = (creation.Value, creation.Refusal?.Code);
         var unnamed = store.Create(kris, "   ", Visibility.Private, null);
 
         var mineOnly = store.Mine(kris).Count == 1 && store.Public().Count == 0;
@@ -167,7 +168,7 @@ internal static class SelfCheck
         var shared = store.Public().Count == 1 && store.Visible(made.Id, stranger) is not null;
 
         // a playlist is only ever changed or removed by whoever owns it — seeing it is not enough
-        var strangerPatch = store.Update(stranger, made.Id, "Mine now", null, null).error;
+        var strangerPatch = store.Update(stranger, made.Id, "Mine now", null, null).Refusal?.Code;
         var strangerDelete = store.Delete(stranger, made.Id).deleted;
 
         var duration = store.Visible(made.Id, kris)!.Duration == TimeSpan.FromSeconds(3 * 60 + 41 + 4 * 60 + 2);
@@ -178,13 +179,13 @@ internal static class SelfCheck
         var gone = reloaded.Delete(kris, made.Id).deleted && reloaded.Mine(kris).Count == 0;
 
         var ok = error is null
-                 && unnamed.error == "invalid_request"
+                 && unnamed.Refusal?.Code == "invalid_request"
                  && mineOnly && hidden && shared && duration && survived && gone
                  && strangerPatch == "forbidden"
                  && !strangerDelete;
 
         Report(ok, "a playlist is private until it is not, and only its owner can change it",
-            $"created={error ?? "ok"} unnamed={unnamed.error} mineOnly={mineOnly} hidden={hidden} " +
+            $"created={error ?? "ok"} unnamed={unnamed.Refusal?.Code} mineOnly={mineOnly} hidden={hidden} " +
             $"shared={shared} duration={duration} reloaded={survived} deleted={gone} " +
             $"strangerPatch={strangerPatch} strangerDeleted={strangerDelete}");
 

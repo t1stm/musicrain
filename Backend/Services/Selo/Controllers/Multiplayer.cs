@@ -9,9 +9,9 @@ namespace Selo.Controllers;
 public class Multiplayer(ILogger<Multiplayer> logger, MultiplayerManager manager) : ControllerBase
 {
     [HttpPost("/Audio/Multiplayer/CreateRoom")]
-    public async Task<IActionResult> CreateRoom()
+    public IActionResult CreateRoom()
     {
-        var roomId = await manager.CreateNewRoom();
+        var roomId = manager.CreateNewRoom();
         logger.LogInformation("Room created: {Room}", roomId);
 
         return new JsonResult(manager.GetRoom(roomId));
