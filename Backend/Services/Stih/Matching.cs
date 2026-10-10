@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Gaida.Core.Utils;
 
 namespace Stih;
@@ -79,7 +80,7 @@ public static class Matching
     ///     Whether an <c>/api/get</c> answer is usable. That route matched on length and names itself, so
     ///     this only rejects what has no words in it at all.
     /// </summary>
-    public static bool IsUsable(LrcLibResult? result)
+    public static bool IsUsable([NotNullWhen(true)] LrcLibResult? result)
     {
         return result is { Instrumental: false } && (result.PlainLyrics is not null || result.SyncedLyrics is not null);
     }

@@ -11,7 +11,7 @@ public static class SelfCheck
         var user1 = await store.GetOrAddUser("user-1", new ClientWebSocket());
         var user2 = await store.GetOrAddUser("user-2", new ClientWebSocket());
 
-        var queue = new MessageQueue(store);
+        var queue = new MessageQueue(store, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
         var player = new VirtualPlayer(queue);
 
         await player.Enqueue(new TrackDto { Id = "audio://self-check" });

@@ -28,7 +28,7 @@ public abstract class Platform : ISupportsId
                 var result = await searchProvider.GetByIdAsync(id, cancellationToken);
                 if (result is not null) return result;
             }
-            catch (Exception e)
+            catch (Exception e) when (e is not OperationCanceledException)
             {
                 Logger.Error(e, "Provider {Provider} failed for ID {ID}", searchProvider.GetType().Name, id);
             }

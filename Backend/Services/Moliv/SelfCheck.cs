@@ -112,7 +112,9 @@ internal static class SelfCheck
         plays.Upsert(Row(Guid.NewGuid().ToString(), Anonymous, Now, played: 2_000) with { EndReason = "skipped" });
         plays.Upsert(Row(Guid.NewGuid().ToString(), Anonymous, Now.AddMinutes(-1), played: 2_000) with
         {
-            TrackId = "deezer://short", DurationMs = 2_000, EndReason = "finished"
+            TrackId = "deezer://short",
+            DurationMs = 2_000,
+            EndReason = "finished"
         });
 
         var first = plays.List(Anonymous, null, 2);

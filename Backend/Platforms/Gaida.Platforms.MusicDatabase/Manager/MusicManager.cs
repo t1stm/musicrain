@@ -12,7 +12,7 @@ namespace Gaida.Platforms.MusicDatabase.Manager;
 
 public partial class MusicManager(ILogger logger)
 {
-    private readonly CoverExtractor _coverExtractor = new();
+    private readonly CoverExtractor _coverExtractor = new(logger);
 
     /// <summary>
     ///     Serialises admin edits against each other and against their own file writes.
@@ -27,7 +27,15 @@ public partial class MusicManager(ILogger logger)
     /// <summary>1 while a scan runs, so a second Rescan click is refused rather than queued behind it.</summary>
     private int _scanning;
 
-    protected List<MusicInfo> Songs = [];
+    private List<MusicInfo> _songs = [];
+
+    /// <summary>Replaced whole, never edited in place: readers walk it without a lock.</summary>
+    protected List<MusicInfo> Songs
+    {
+        get => Volatile.Read(ref _songs);
+        set => Volatile.Write(ref _songs, value);
+    }
+
     private ILogger Logger { get; } = logger;
 
     public static string Domain =>
@@ -156,10 +164,7 @@ public partial class MusicManager(ILogger logger)
 
         songs.ForEach(s => s.CoverUrl = s.CoverUrl?.Replace("$[DOMAIN]", AlbumCoverLocation));
 
-        lock (Songs)
-        {
-            Songs = songs;
-        }
+        Songs = songs;
     }
 
     /// <param name="artist">The folder, as an absolute path.</param>
@@ -242,7 +247,7 @@ public partial class MusicManager(ILogger logger)
         }
         catch (JsonException e)
         {
-            Logger.Fatal(e, "Malformed Info.json for '{Artist}', rebuilding it", folder);
+            Logger.Error(e, "Malformed Info.json for '{Artist}', rebuilding it", folder);
             return [];
         }
     }
@@ -315,7 +320,8 @@ public partial class MusicManager(ILogger logger)
 
         // Also pass 4: a cover named by the SHA-1 of nothing is the zero-byte file an empty TagLib# picture
         // became. Dropped, so the cover pass after the load extracts the real one through ATL.
-        if (entry.CoverUrl?.EndsWith("/da39a3ee5e6b4b0d3255bfef95601890afd80709.") == true) entry.CoverUrl = null;
+        if (entry.CoverUrl?.EndsWith("/da39a3ee5e6b4b0d3255bfef95601890afd80709.", StringComparison.Ordinal) == true)
+            entry.CoverUrl = null;
     }
 
     private static IEnumerable<string> NewFiles(List<MusicInfo> existing, List<string> files)
@@ -482,8 +488,8 @@ public partial class MusicManager(ILogger logger)
         var (folders, files) = Browse(folder);
 
         foreach (var child in folders)
-        foreach (var song in BrowseTracks(folder.Length == 0 ? child.Name : $"{folder}/{child.Name}"))
-            yield return song;
+            foreach (var song in BrowseTracks(folder.Length == 0 ? child.Name : $"{folder}/{child.Name}"))
+                yield return song;
 
         foreach (var song in files) yield return song;
     }
@@ -570,9 +576,9 @@ public partial class MusicManager(ILogger logger)
     /// </remarks>
     /// <param name="id">The entry to edit. Kept as-is — see the remark on regeneration.</param>
     public async Task<(MusicInfo? entry, string? error)> EditAsync(string id, IReadOnlyList<string>? titles,
-        IReadOnlyList<string>? artists, string? album)
+        IReadOnlyList<string>? artists, string? album, CancellationToken cancellationToken = default)
     {
-        await _editGate.WaitAsync();
+        await _editGate.WaitAsync(cancellationToken);
 
         try
         {

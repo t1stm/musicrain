@@ -152,7 +152,7 @@ public class Playlists(DomStore store, IConfiguration config) : ControllerBase
         var name = $"{playlist.Id}.{extension}";
         await using (var target = System.IO.File.Create(Path.Combine(CoverDir, name)))
         {
-            await file.CopyToAsync(target);
+            await file.CopyToAsync(target, HttpContext.RequestAborted);
         }
 
         if (playlist.CoverFile is not null && playlist.CoverFile != name) Forget(playlist.CoverFile);

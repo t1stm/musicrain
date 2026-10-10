@@ -42,8 +42,9 @@ public class MusicGetter(ILogger logger) : ContentGetter(logger)
     /// </summary>
     private StreamSpreader DecodedWavPack(string path, CancellationToken cancellationToken)
     {
-        var process = Process.Start(new ProcessStartInfo("wvunpack", $"-q -o - \"{path}\"")
+        var process = Process.Start(new ProcessStartInfo("wvunpack")
         {
+            ArgumentList = { "-q", "-o", "-", path },
             RedirectStandardOutput = true,
             UseShellExecute = false
         });
@@ -56,21 +57,41 @@ public class MusicGetter(ILogger logger) : ContentGetter(logger)
         }
 
         var spreader = new StreamSpreader();
-        _ = Task.Run(async () =>
-        {
-            // ponytail: FLAC out of the pod rather than wvunpack's raw WAV — a 5-minute track is ~50MB of
-            // PCM, which Dunav would then cache and count against its byte ceiling, for no audible
-            // difference. ffmpeg's FLAC encoder takes integer samples only, so a 32-bit float WavPack file
-            // would fail the encode; the library has none, and the exit code below is what says so.
-            await FFmpegEncoder.EncodeAsync(process.StandardOutput.BaseStream, spreader, "-c:a flac -f flac",
-                cancellationToken);
-
-            if (process.ExitCode != 0)
-                Logger.Error("MusicGetter: wvunpack exited {Code} for {Path}", process.ExitCode, path);
-
-            await spreader.CloseAsync();
-        }, cancellationToken);
+        _ = Task.Run(PumpAsync, CancellationToken.None);
 
         return spreader;
+
+        async Task PumpAsync()
+        {
+            using (process)
+            {
+                try
+                {
+                    // ponytail: FLAC out of the pod rather than wvunpack's raw WAV — a 5-minute track is ~50MB of
+                    // PCM, which Dunav would then cache and count against its byte ceiling, for no audible
+                    // difference. ffmpeg's FLAC encoder takes integer samples only, so a 32-bit float WavPack file
+                    // would fail the encode; the library has none, and the exit code below is what says so.
+                    await FFmpegEncoder.EncodeAsync(process.StandardOutput.BaseStream, spreader, "-c:a flac -f flac",
+                        cancellationToken);
+
+                    await process.WaitForExitAsync(CancellationToken.None);
+                    if (process.ExitCode != 0)
+                        Logger.Error("MusicGetter: wvunpack exited {Code} for {Path}", process.ExitCode, path);
+                }
+                catch (OperationCanceledException)
+                {
+                    // The request that started it left; the body ends where it got to.
+                }
+                catch (Exception e)
+                {
+                    Logger.Error(e, "MusicGetter: decoding {Path} failed", path);
+                }
+                finally
+                {
+                    if (!process.HasExited) process.Kill(true);
+                    await spreader.CloseAsync();
+                }
+            }
+        }
     }
 }

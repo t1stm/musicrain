@@ -203,19 +203,19 @@ internal static class SelfCheck
                & Check("every request identifies the client",
                    direct.Agents.Count > 0 && direct.Agents.All(agent => agent is { Length: > 0 }))
                & Check("a 429 pauses the sweep and writes no row",
-                   refused is null && !lrcLib.LastWasClean &&
+                   refused is { Result: null, Clean: false } &&
                    lrcLib.PausedUntil > DateTimeOffset.UtcNow.AddSeconds(20))
                & Check("an unreachable LRCLIB is not a miss",
-                   failed is null && !unreachable.LastWasClean)
+                   failed is { Result: null, Clean: false })
                & Check("an empty LRCLIB_URL asks nothing at all",
-                   !silent.Enabled && silent.FindAsync(track).GetAwaiter().GetResult() is null);
+                   !silent.Enabled && silent.FindAsync(track).GetAwaiter().GetResult().Result is null);
     }
 
     // ── plumbing ────────────────────────────────────────────────────────────────────────────────
 
     private static LrcLibResult? Find(Stub stub, Track track)
     {
-        return Client(stub).FindAsync(track).GetAwaiter().GetResult();
+        return Client(stub).FindAsync(track).GetAwaiter().GetResult().Result;
     }
 
     private static LrcLib Client(Stub stub, string url = "https://lrclib.test")

@@ -164,7 +164,7 @@ public sealed class LyricsIndex
         {
             // As before: an unreadable index costs re-asking LRCLIB for the misses. The hits are all
             // still on disk, and /resolve re-finds the library's.
-            _logger.Fatal(e, "Error while importing the lyrics index from {Path}; starting empty", legacy);
+            _logger.Error(e, "Error while importing the lyrics index from {Path}; starting empty", legacy);
             return;
         }
 

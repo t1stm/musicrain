@@ -30,14 +30,14 @@ public sealed class GaidaClient(ILogger logger, string? baseUrl = null)
     {
         try
         {
-            var response = await _http.GetAsync(
+            using var response = await _http.GetAsync(
                 $"{BaseUrl}/Audio/FindQueryType?query={Uri.EscapeDataString(query)}", cancellationToken);
             if (!response.IsSuccessStatusCode) return null;
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             return await JsonSerializer.DeserializeAsync<QueryResolution>(stream, Json, cancellationToken);
         }
-        catch (Exception e)
+        catch (Exception e) when (e is not OperationCanceledException)
         {
             logger.Warning(e, "Resolving {Query} failed", query);
             return null;
@@ -51,7 +51,7 @@ public sealed class GaidaClient(ILogger logger, string? baseUrl = null)
     public async IAsyncEnumerable<Track> SearchAsync(string query,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var response = await _http.GetAsync($"{BaseUrl}/Audio/Search?query={Uri.EscapeDataString(query)}",
+        using var response = await _http.GetAsync($"{BaseUrl}/Audio/Search?query={Uri.EscapeDataString(query)}",
             HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
         if (!response.IsSuccessStatusCode)
@@ -83,12 +83,12 @@ public sealed class GaidaClient(ILogger logger, string? baseUrl = null)
     }
 
     /// <summary>Warms the encode for a track we are about to want. Failure is not interesting.</summary>
-    public async Task PreloadAsync(string id, int bitrate)
+    public async Task PreloadAsync(string id, int bitrate, CancellationToken cancellationToken = default)
     {
         try
         {
             using var response = await _http.GetAsync(
-                $"{BaseUrl}/Audio/Preload/Opus/{bitrate}?id={Uri.EscapeDataString(id)}");
+                $"{BaseUrl}/Audio/Preload/Opus/{bitrate}?id={Uri.EscapeDataString(id)}", cancellationToken);
             logger.Debug("Preloading {ID} answered {Status}", id, response.StatusCode);
         }
         catch (Exception e)
@@ -102,14 +102,14 @@ public sealed class GaidaClient(ILogger logger, string? baseUrl = null)
     {
         try
         {
-            var response = await _http.GetAsync(
+            using var response = await _http.GetAsync(
                 $"{BaseUrl}/Audio/Lyrics/Get?id={Uri.EscapeDataString(id)}", cancellationToken);
             if (!response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent) return null;
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             return await JsonSerializer.DeserializeAsync<LyricsResult>(stream, Json, cancellationToken);
         }
-        catch (Exception e)
+        catch (Exception e) when (e is not OperationCanceledException)
         {
             logger.Warning(e, "Fetching lyrics for {ID} failed", id);
             return null;

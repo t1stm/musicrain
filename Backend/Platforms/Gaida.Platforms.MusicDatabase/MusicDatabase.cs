@@ -73,7 +73,8 @@ public sealed class MusicDatabase : Platform, ISupportsSearch, ISupportsRandomRe
 
     /// <summary>Rewrites one song's names and album, and saves its row in library.db.</summary>
     public Task<(MusicInfo? entry, string? error)> EditAsync(string id, IReadOnlyList<string>? titles,
-        IReadOnlyList<string>? artists, string? album) => _provider.EditAsync(id, titles, artists, album);
+        IReadOnlyList<string>? artists, string? album, CancellationToken cancellationToken = default) =>
+        _provider.EditAsync(id, titles, artists, album, cancellationToken);
 
     /// <summary>
     ///     Writes one downloaded track into the library's import folder and indexes it — see
@@ -91,8 +92,9 @@ public sealed class MusicDatabase : Platform, ISupportsSearch, ISupportsRandomRe
     public MusicInfo? FindEntry(string id) => _provider.FindEntry(id);
 
     /// <summary>Records what stih found beside one track — see <see cref="Manager.MusicManager.StampLyricsAsync" />.</summary>
-    public Task<(MusicInfo? entry, string? error)> StampLyricsAsync(string id, LyricsKind? kind, LyricsOrigin? source)
-        => _provider.StampLyricsAsync(id, kind, source);
+    public Task<(MusicInfo? entry, string? error)> StampLyricsAsync(string id, LyricsKind? kind, LyricsOrigin? source,
+        CancellationToken cancellationToken = default) =>
+        _provider.StampLyricsAsync(id, kind, source, cancellationToken);
 
     /// <returns>Tracks with no lyrics beside them, for stih's backfill sweep.</returns>
     public IReadOnlyList<MusicInfo> MissingLyrics(int take, DateOnly retryBefore) =>

@@ -68,7 +68,7 @@ public class YouTubeCacherTests : IDisposable
             """);
 
         var cacher = new YouTubeCacher(Serilog.Core.Logger.None, legacy);
-        await cacher.InitializeAsync();
+        cacher.Initialize();
 
         var imported = await cacher.GetFromCacheAsync("QcqaQ47ywD0");
         Assert.Equal("Отличен 6", imported?.Name);
@@ -78,7 +78,7 @@ public class YouTubeCacherTests : IDisposable
 
         await File.WriteAllTextAsync(legacy, "[]");
         var reopened = new YouTubeCacher(Serilog.Core.Logger.None, legacy);
-        await reopened.InitializeAsync();
+        reopened.Initialize();
         Assert.NotNull(await reopened.GetFromCacheAsync("QcqaQ47ywD0"));
     }
 
@@ -95,7 +95,7 @@ public class YouTubeCacherTests : IDisposable
     private async Task<YouTubeCacher> Cacher(string name, params YouTubeResult[] results)
     {
         var cacher = new YouTubeCacher(Serilog.Core.Logger.None, Path.Combine(_directory, name + ".db"));
-        await cacher.InitializeAsync();
+        cacher.Initialize();
         await cacher.AddToCacheAsync(results);
         return cacher;
     }

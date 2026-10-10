@@ -67,7 +67,8 @@ public class MusicSearchProvider(ILogger logger) : SearchProvider(logger),
 
     /// <summary>Admin: rewrite one song's names and album.</summary>
     public Task<(MusicInfo? entry, string? error)> EditAsync(string id, IReadOnlyList<string>? titles,
-        IReadOnlyList<string>? artists, string? album) => _musicManager.EditAsync(id, titles, artists, album);
+        IReadOnlyList<string>? artists, string? album, CancellationToken cancellationToken = default) =>
+        _musicManager.EditAsync(id, titles, artists, album, cancellationToken);
 
     public Task<(MusicInfo? entry, string? error)> ImportAsync(string artist, string title, string? album,
         string extension, Stream content, byte[]? cover = null, CancellationToken cancellationToken = default) =>
@@ -77,8 +78,9 @@ public class MusicSearchProvider(ILogger logger) : SearchProvider(logger),
     public MusicInfo? FindEntry(string id) => _musicManager.SearchById(id);
 
     /// <summary>stih: what it found, or that it found nothing.</summary>
-    public Task<(MusicInfo? entry, string? error)> StampLyricsAsync(string id, LyricsKind? kind, LyricsOrigin? source)
-        => _musicManager.StampLyricsAsync(id, kind, source);
+    public Task<(MusicInfo? entry, string? error)> StampLyricsAsync(string id, LyricsKind? kind, LyricsOrigin? source,
+        CancellationToken cancellationToken = default) =>
+        _musicManager.StampLyricsAsync(id, kind, source, cancellationToken);
 
     /// <summary>stih: the sweep's work list.</summary>
     public IReadOnlyList<MusicInfo> MissingLyrics(int take, DateOnly retryBefore) =>
@@ -93,8 +95,21 @@ public class MusicSearchProvider(ILogger logger) : SearchProvider(logger),
     protected override void Initialize()
     {
         Logger.Debug("Initializing MusicSearchProvider");
-        _ = _musicManager.Initialize();
+        _ = ScanAtBootAsync();
         base.Initialize();
+    }
+
+    /// <summary>Nothing awaits the boot scan, so a failure would otherwise leave an empty library and no trace.</summary>
+    private async Task ScanAtBootAsync()
+    {
+        try
+        {
+            await _musicManager.Initialize();
+        }
+        catch (Exception exception)
+        {
+            Logger.Error(exception, "The library scan at boot failed; the library is empty until a rescan works");
+        }
     }
 
     private IAsyncEnumerable<PlatformResult> ToResults(IEnumerable<MusicInfo> songs)

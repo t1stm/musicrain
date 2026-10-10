@@ -1,3 +1,4 @@
+using System.Globalization;
 using ILogger = Serilog.ILogger;
 
 namespace Stih;
@@ -28,12 +29,17 @@ public sealed class Sweep(
                             !bool.TryParse(value, out var on) || on;
 
     private TimeSpan Delay => TimeSpan.FromMilliseconds(
-        int.TryParse(configuration["LYRICS_SWEEP_DELAY_MS"], out var ms) ? Math.Max(0, ms) : 1000);
+        int.TryParse(configuration["LYRICS_SWEEP_DELAY_MS"], CultureInfo.InvariantCulture, out var ms)
+            ? Math.Max(0, ms)
+            : 1000);
 
     private TimeSpan Idle => TimeSpan.FromHours(
-        double.TryParse(configuration["LYRICS_SWEEP_IDLE_HOURS"], out var hours) ? Math.Max(0.1, hours) : 6);
+        double.TryParse(configuration["LYRICS_SWEEP_IDLE_HOURS"], CultureInfo.InvariantCulture, out var hours)
+            ? Math.Max(0.1, hours)
+            : 6);
 
-    private int RetryDays => int.TryParse(configuration["LYRICS_RETRY_DAYS"], out var days) ? days : 30;
+    private int RetryDays =>
+        int.TryParse(configuration["LYRICS_RETRY_DAYS"], CultureInfo.InvariantCulture, out var days) ? days : 30;
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -102,11 +108,11 @@ public sealed class Sweep(
 
         // The LRCLIB gate is released between items by FindAsync itself, so a listener waiting on a
         // lookup is behind at most one request rather than behind the whole sweep.
-        var found = await lrcLib.FindAsync(track, ct);
+        var (found, clean) = await lrcLib.FindAsync(track, ct);
         if (found is null)
         {
             // A failure records nothing and the track simply comes back in a later page.
-            if (!lrcLib.LastWasClean) return;
+            if (!clean) return;
 
             Missed++;
             await lyrics.RecordMissAsync(track, ct);

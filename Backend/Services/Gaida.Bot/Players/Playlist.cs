@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Gaida.Bot.Gaida;
 using Gaida.Bot.Tools;
 
@@ -12,7 +13,16 @@ public sealed class Playlist
     // Shuffle and Clear replace the list, so the lock cannot be the list itself: whoever is
     // holding the old instance would be locking something nobody else can see any more.
     private readonly Lock _gate = new();
-    public List<Track> Items { get; private set; } = [];
+    private List<Track> _items = [];
+
+    /// <summary>A copy, so a command reading it cannot be torn by the play loop changing the queue.</summary>
+    public IReadOnlyList<Track> Items
+    {
+        get
+        {
+            lock (_gate) return [.. _items];
+        }
+    }
 
     public int Current { get; set; }
 
@@ -20,7 +30,7 @@ public sealed class Playlist
     {
         get
         {
-            lock (_gate) return Items.Count;
+            lock (_gate) return _items.Count;
         }
     }
 
@@ -30,30 +40,30 @@ public sealed class Playlist
 
     public void AddToQueue(Track info)
     {
-        lock (_gate) Items.Add(info);
+        lock (_gate) _items.Add(info);
     }
 
     public void AddToQueue(IEnumerable<Track> infos)
     {
-        lock (_gate) Items.AddRange(infos);
+        lock (_gate) _items.AddRange(infos);
     }
 
     public void AddToQueueNext(Track info)
     {
-        lock (_gate) Items.Insert(Math.Clamp(Current + 1, 0, Items.Count), info);
+        lock (_gate) _items.Insert(Math.Clamp(Current + 1, 0, _items.Count), info);
     }
 
     public void AddToQueueNext(IEnumerable<Track> infos)
     {
-        lock (_gate) Items.InsertRange(Math.Clamp(Current + 1, 0, Items.Count), infos);
+        lock (_gate) _items.InsertRange(Math.Clamp(Current + 1, 0, _items.Count), infos);
     }
 
     public Track RemoveFromQueue(int index)
     {
         lock (_gate)
         {
-            var item = Items[index];
-            Items.Remove(item);
+            var item = _items[index];
+            _items.Remove(item);
             return item;
         }
     }
@@ -62,16 +72,21 @@ public sealed class Playlist
     {
         lock (_gate)
         {
-            Items.Remove(item);
+            _items.Remove(item);
             return item;
         }
+    }
+
+    public int IndexOf(Track item)
+    {
+        lock (_gate) return _items.IndexOf(item);
     }
 
     public Track GetWithString(string name)
     {
         lock (_gate)
         {
-            return Items.First(vi => LevenshteinDistance.ComputeLean(vi.DisplayName, name) < 3);
+            return _items.First(vi => LevenshteinDistance.ComputeLean(vi.DisplayName, name) < 3);
         }
     }
 
@@ -80,7 +95,7 @@ public sealed class Playlist
         lock (_gate)
         {
             var random = new Random();
-            var queue = Items.OrderBy(_ => random.Next()).ToList();
+            var queue = _items.OrderBy(_ => random.Next()).ToList();
             var current = GetCurrent();
             if (current is not null)
             {
@@ -88,7 +103,7 @@ public sealed class Playlist
                 queue.Insert(0, current);
             }
 
-            Items = queue;
+            _items = queue;
             Current = 0;
         }
     }
@@ -97,8 +112,11 @@ public sealed class Playlist
     {
         lock (_gate)
         {
-            if (seed == -555) seed = new Random().Next(int.MaxValue);
-            var queue = Items.OrderBy(_ => new Random(seed).Next()).ToList();
+            if (seed == -555) seed = Random.Shared.Next(int.MaxValue);
+            Track[] shuffled = [.. _items];
+            new Random(seed).Shuffle(shuffled);
+
+            var queue = shuffled.ToList();
             var current = GetCurrent();
             if (current is not null)
             {
@@ -106,7 +124,7 @@ public sealed class Playlist
                 queue.Insert(0, current);
             }
 
-            Items = queue;
+            _items = queue;
             Current = 0;
             RandomSeed = seed;
         }
@@ -118,8 +136,8 @@ public sealed class Playlist
         lock (_gate)
         {
             Current = 0;
-            Items = [];
-            if (current is not null) Items.Add(current);
+            _items = [];
+            if (current is not null) _items.Add(current);
         }
     }
 
@@ -127,8 +145,8 @@ public sealed class Playlist
     {
         lock (_gate)
         {
-            if (Items.Count == 0) return null;
-            return Current >= Items.Count || Current < 0 ? null : Items[Current];
+            if (_items.Count == 0) return null;
+            return Current >= _items.Count || Current < 0 ? null : _items[Current];
         }
     }
 
@@ -136,65 +154,56 @@ public sealed class Playlist
     {
         lock (_gate)
         {
-            return Current >= Items.Count - 1 ? null : Items[Current + 1];
+            return Current + 1 < 0 || Current >= _items.Count - 1 ? null : _items[Current + 1];
         }
     }
 
-    public bool Move(int from, int to, out Track item)
+    public bool Move(int from, int to, [NotNullWhen(true)] out Track? item)
     {
-        item = null!;
-        try
+        lock (_gate)
         {
-            lock (_gate)
+            if (from < 0 || from >= _items.Count || to < 0 || to >= _items.Count)
             {
-                var moved = Items[from];
-                Items.Remove(moved);
-                Items.Insert(to, moved);
-                item = moved;
+                item = null;
+                return false;
             }
 
+            item = _items[from];
+            _items.Remove(item);
+            _items.Insert(to, item);
             return true;
-        }
-        catch
-        {
-            return false;
         }
     }
 
-    public bool Move(string first, string second, out Track itemOne, out Track itemTwo)
+    public bool Move(string first, string second, [NotNullWhen(true)] out Track? itemOne,
+        [NotNullWhen(true)] out Track? itemTwo)
     {
-        itemOne = null!;
-        itemTwo = null!;
-        try
+        itemOne = null;
+        itemTwo = null;
+
+        lock (_gate)
         {
-            lock (_gate)
+            var one = _items.FirstOrDefault(vi =>
+                LevenshteinDistance.ComputeStrict(vi.DisplayName, first.Trim()) < vi.DisplayName.Length * 0.2);
+            var two = _items.FirstOrDefault(vi =>
+                LevenshteinDistance.ComputeStrict(vi.DisplayName, second.Trim()) < vi.DisplayName.Length * 0.2);
+
+            if (one is null || two is null)
             {
-                var one = Items.FirstOrDefault(vi =>
-                    LevenshteinDistance.ComputeStrict(vi.DisplayName, first.Trim()) < vi.DisplayName.Length * 0.2);
-                var two = Items.FirstOrDefault(vi =>
-                    LevenshteinDistance.ComputeStrict(vi.DisplayName, second.Trim()) < vi.DisplayName.Length * 0.2);
-
-                if (one is null || two is null)
-                {
-                    one = Items.MinBy(vi => LevenshteinDistance.ComputeStrict(vi.Name, first.Trim()));
-                    two = Items.MinBy(vi => LevenshteinDistance.ComputeStrict(vi.Name, second.Trim()));
-                    if (one is null || two is null) return false;
-                }
-
-                var indexOne = Items.IndexOf(one);
-                var indexTwo = Items.IndexOf(two);
-                Items[indexOne] = two;
-                Items[indexTwo] = one;
-                itemTwo = Items[indexOne];
-                itemOne = Items[indexTwo];
+                one = _items.MinBy(vi => LevenshteinDistance.ComputeStrict(vi.Name, first.Trim()));
+                two = _items.MinBy(vi => LevenshteinDistance.ComputeStrict(vi.Name, second.Trim()));
+                if (one is null || two is null) return false;
             }
 
-            return true;
+            var indexOne = _items.IndexOf(one);
+            var indexTwo = _items.IndexOf(two);
+            _items[indexOne] = two;
+            _items[indexTwo] = one;
+            itemTwo = _items[indexOne];
+            itemOne = _items[indexTwo];
         }
-        catch
-        {
-            return false;
-        }
+
+        return true;
     }
 
     /// <summary>What the <c>list</c> command sends as <c>queue.txt</c>, dashes and all.</summary>
@@ -203,11 +212,11 @@ public sealed class Playlist
         var result = "";
         lock (_gate)
         {
-            if (Items.Count < 1) return Text.TheQueueIsEmpty();
+            if (_items.Count < 1) return Text.TheQueueIsEmpty();
 
-            for (var index = 0; index < Items.Count; index++)
+            for (var index = 0; index < _items.Count; index++)
             {
-                var item = Items[index];
+                var item = _items[index];
                 if (index == Current)
                 {
                     result += new string('-', item.DisplayName.Length + 8) + '\n';

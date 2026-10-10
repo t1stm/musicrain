@@ -11,6 +11,7 @@ namespace Pods.Tests;
 ///     anything: reconciliation is two File.Exists against a temp directory, and the other two are a
 ///     LINQ pass over an in-memory list.
 /// </summary>
+[Collection("STORAGE")]
 public class LyricsTests : IDisposable
 {
     private readonly string _storage = Directory.CreateTempSubdirectory("gaida-lyrics").FullName;

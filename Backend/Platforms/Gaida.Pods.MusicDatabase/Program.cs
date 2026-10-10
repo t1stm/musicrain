@@ -30,6 +30,7 @@ var builder = WebApplication.CreateBuilder(args);
 foreach (var key in (string[])["DOMAIN", "STORAGE", "ALBUM_COVERS"])
     Environment.SetEnvironmentVariable(key, builder.Configuration[key]);
 
+builder.Services.AddSerilog();
 builder.Services.AddSingleton(Log.Logger);
 
 // The one service this pod talks to, and only from the admin surface: /Admin/import-deezer pulls a
@@ -56,13 +57,14 @@ admin?.MapGet("/library", IResult (string? q, int? take, MusicDatabase db) =>
 // absent leaves that field alone; `album=` with no value clears it. Read off the query rather than
 // bound, because "not sent" and "sent empty" mean different things here and model binding gives both
 // as an empty array.
-admin?.MapPost("/edit-song", async Task<IResult> (string id, HttpRequest request, MusicDatabase db) =>
+admin?.MapPost("/edit-song", async Task<IResult> (string id, HttpRequest request, MusicDatabase db,
+    CancellationToken ct) =>
 {
     var titles = Variants(request, "title");
     var artists = Variants(request, "artist");
     var album = request.Query.TryGetValue("album", out var value) ? value.ToString() : null;
 
-    var (entry, error) = await db.EditAsync(id, titles, artists, album);
+    var (entry, error) = await db.EditAsync(id, titles, artists, album, ct);
     if (error is not null)
         return error == "No song with that ID." ? Results.NotFound() : Results.BadRequest(new ErrorDto(error));
 
@@ -180,7 +182,8 @@ app.MapGet("/lyrics/missing", IResult (int? take, int? retryDays, MusicDatabase 
 
 // What stih calls after writing a file, and after a lookup that found nothing (`type` omitted). It
 // writes no lyrics file: stih has already done that on the volume both pods share.
-app.MapPost("/lyrics/stamp", async Task<IResult> (string? id, string? type, string? source, MusicDatabase db) =>
+app.MapPost("/lyrics/stamp", async Task<IResult> (string? id, string? type, string? source, MusicDatabase db,
+    CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(id)) return Results.BadRequest(new ErrorDto("A track ID is required."));
 
@@ -189,7 +192,7 @@ app.MapPost("/lyrics/stamp", async Task<IResult> (string? id, string? type, stri
     if (!TryParseLyrics<LyricsOrigin>(source, out var origin))
         return Results.BadRequest(new ErrorDto($"'{source}' is not a lyrics source."));
 
-    var (entry, error) = await db.StampLyricsAsync(StripAudioPrefix(id), kind, origin);
+    var (entry, error) = await db.StampLyricsAsync(StripAudioPrefix(id), kind, origin, ct);
     if (error is not null)
         return error == "No song with that ID." ? Results.NotFound() : Results.BadRequest(new ErrorDto(error));
 

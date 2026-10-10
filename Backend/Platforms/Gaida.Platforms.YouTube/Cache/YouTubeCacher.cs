@@ -40,45 +40,46 @@ public class YouTubeCacher
 
     private ILogger Logger { get; }
 
-    public Task InitializeAsync()
+    public void Initialize()
     {
         Logger.Information("Opening YouTube cache at: {CachePath}", _path);
 
         using var db = Database.Open(_connectionString);
         Database.Upgrade(db, SchemaVersion, transaction => Create(db, transaction));
-        return Task.CompletedTask;
     }
 
     /// <summary>Remembers results not seen before. One already cached keeps what it was first cached as.</summary>
-    public async Task AddToCacheAsync(IEnumerable<YouTubeResult> results)
+    public async Task AddToCacheAsync(IEnumerable<YouTubeResult> results, CancellationToken cancellationToken = default)
     {
         await using var db = Database.Open(_connectionString);
-        await using var transaction = await db.BeginTransactionAsync();
+        await using var transaction = await db.BeginTransactionAsync(cancellationToken);
         var added = Insert(db, results, transaction);
-        await transaction.CommitAsync();
+        await transaction.CommitAsync(cancellationToken);
 
         Logger.Debug("Added {Count} YouTube results to cache", added);
     }
 
     /// <returns>Up to <paramref name="count" /> distinct cached results, fewer when the cache holds fewer.</returns>
-    public async Task<YouTubeResult[]> GetRandomAsync(int count)
+    public async Task<YouTubeResult[]> GetRandomAsync(int count, CancellationToken cancellationToken = default)
     {
         if (count < 1) return [];
 
         // ponytail: ORDER BY random() visits every row, ~55 ms at half a million. Sample rowids if the
         // discovery endpoint ever shows up in a trace.
         await using var db = Database.Open(_connectionString);
-        return (await db.QueryAsync<YouTubeResult>(
-            $"SELECT {Columns} FROM results ORDER BY random() LIMIT @count", new { count })).ToArray();
+        return (await db.QueryAsync<YouTubeResult>(new CommandDefinition(
+            $"SELECT {Columns} FROM results ORDER BY random() LIMIT @count", new { count },
+            cancellationToken: cancellationToken))).ToArray();
     }
 
     /// <param name="id">The bare video ID, without <c>yt://</c>.</param>
     /// <returns>The cached result, or <c>null</c> when the ID isn't cached.</returns>
-    public async Task<YouTubeResult?> GetFromCacheAsync(string id)
+    public async Task<YouTubeResult?> GetFromCacheAsync(string id, CancellationToken cancellationToken = default)
     {
         await using var db = Database.Open(_connectionString);
-        return await db.QuerySingleOrDefaultAsync<YouTubeResult>(
-            $"SELECT {Columns} FROM results WHERE Id = @id", new { id = "yt://" + id });
+        return await db.QuerySingleOrDefaultAsync<YouTubeResult>(new CommandDefinition(
+            $"SELECT {Columns} FROM results WHERE Id = @id", new { id = "yt://" + id },
+            cancellationToken: cancellationToken));
     }
 
     /// <summary><c>Id</c> is a field, and Dapper binds parameters from properties only.</summary>
@@ -133,7 +134,7 @@ public class YouTubeCacher
         catch (JsonException e)
         {
             // As before: an unreadable cache costs re-searching YouTube, nothing else.
-            Logger.Fatal(e, "Error while importing the YouTube cache from {Path}; starting empty", legacy);
+            Logger.Error(e, "Error while importing the YouTube cache from {Path}; starting empty", legacy);
         }
     }
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -8,19 +9,21 @@ namespace Selo.Multiplayer;
 public class Room
 {
     private readonly HttpClient _gaida;
+    private readonly ILogger _logger;
     [JsonIgnore] private readonly VirtualPlayer _player;
     [JsonIgnore] private readonly MessageQueue _queue;
 
     [JsonIgnore] private readonly UserStore _store;
 
-    public Room(Guid guid, HttpClient gaida)
+    public Room(Guid guid, HttpClient gaida, ILogger logger)
     {
         RoomId = guid;
         _gaida = gaida;
+        _logger = logger;
         RoomName = guid.ToString();
 
         _store = new UserStore();
-        _queue = new MessageQueue(_store);
+        _queue = new MessageQueue(_store, logger);
         _player = new VirtualPlayer(_queue);
     }
 
@@ -173,7 +176,8 @@ public class Room
             "setnext" when int.TryParse(value.Span, out var nextIndex) => _player.SetNext(nextIndex),
             "move" when TryParseMove(value.Span, out var from, out var to) => _player.Move(from, to),
             "skipto" when int.TryParse(value.Span, out var skipIndex) => _player.SkipTo(skipIndex),
-            "seek" when double.TryParse(value.Span, out var seekSeconds) => _player.SeekTo(seekSeconds),
+            "seek" when double.TryParse(value.Span, CultureInfo.InvariantCulture, out var seekSeconds) =>
+                _player.SeekTo(seekSeconds),
             "remove" when int.TryParse(value.Span, out var removeIndex) => _player.Remove(removeIndex),
             "chat" => _queue.Send($"chat {user.ChatUsername} %% {value}"),
             "updateroom" => HandleUpdateRoom(value, user),
@@ -205,6 +209,7 @@ public class Room
         }
         catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
         {
+            _logger.LogWarning(exception, "Room {Room} could not look up {Id}", RoomId, id);
             return;
         }
 

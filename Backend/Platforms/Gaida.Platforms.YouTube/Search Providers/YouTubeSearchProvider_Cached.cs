@@ -12,7 +12,7 @@ public class YouTubeSearchProviderCached(ILogger logger, YouTubeCacher cacher) :
 
     public async Task<PlatformResult?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
     {
-        var result = await cacher.GetFromCacheAsync(id);
+        var result = await cacher.GetFromCacheAsync(id, cancellationToken);
         if (result is null)
         {
             Logger.Debug("No cached YouTube result for ID: {ID}", id);
@@ -25,6 +25,6 @@ public class YouTubeSearchProviderCached(ILogger logger, YouTubeCacher cacher) :
 
     protected override void Initialize()
     {
-        cacher.InitializeAsync().GetAwaiter().GetResult();
+        cacher.Initialize();
     }
 }

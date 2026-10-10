@@ -17,7 +17,7 @@ public class MultiplayerManagerTests
     [Fact]
     public async Task CreateNewRoomRegistersRoomAndRaisesChangeEvent()
     {
-        var manager = new MultiplayerManager(new HttpClient());
+        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
         var changeCount = 0;
         manager.RoomsChanged += () =>
         {
@@ -38,7 +38,7 @@ public class MultiplayerManagerTests
     [Fact]
     public async Task TheLastMemberLeavingTakesTheRoomWithThem()
     {
-        var manager = new MultiplayerManager(new HttpClient());
+        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
         var roomId = await manager.CreateNewRoom();
         var room = Assert.IsType<Room>(manager.GetRoom(roomId));
         var changeCount = 0;
@@ -68,7 +68,7 @@ public class MultiplayerManagerTests
     [Fact]
     public async Task ARoomNobodyEverJoinedStays()
     {
-        var manager = new MultiplayerManager(new HttpClient());
+        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
         var roomId = await manager.CreateNewRoom();
         var room = Assert.IsType<Room>(manager.GetRoom(roomId));
 
@@ -82,7 +82,7 @@ public class MultiplayerManagerTests
     [Fact]
     public async Task UpdatingRoomInfoRaisesManagerChangeEvent()
     {
-        var manager = new MultiplayerManager(new HttpClient());
+        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
         var roomId = await manager.CreateNewRoom();
         var room = Assert.IsType<Room>(manager.GetRoom(roomId));
         var socket = new RecordingWebSocket();
@@ -99,6 +99,52 @@ public class MultiplayerManagerTests
         Assert.Equal("Listening Party", room.RoomName.Trim());
         Assert.Equal(1, changeCount);
         Assert.EndsWith("Listening Party", Assert.Single(socket.Messages));
+    }
+
+    [Fact]
+    public async Task AListenerThatFailsDoesNotSilenceTheOthers()
+    {
+        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
+        var heard = 0;
+        manager.RoomsChanged += async () =>
+        {
+            await Task.Yield();
+            throw new WebSocketException("gone");
+        };
+        manager.RoomsChanged += () =>
+        {
+            Interlocked.Increment(ref heard);
+            return Task.CompletedTask;
+        };
+
+        await manager.CreateNewRoom();
+
+        for (var waited = 0; waited < 50 && Volatile.Read(ref heard) == 0; waited++) await Task.Delay(20);
+        Assert.Equal(1, heard);
+    }
+
+    [Fact]
+    public async Task AnnouncementsReachAListenerOneAtATime()
+    {
+        // Every listener is one room-list socket, and a WebSocket takes one send at a time.
+        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
+        var gate = new TaskCompletionSource();
+        int running = 0, most = 0, calls = 0;
+        manager.RoomsChanged += async () =>
+        {
+            most = Math.Max(most, Interlocked.Increment(ref running));
+            Interlocked.Increment(ref calls);
+            await gate.Task;
+            Interlocked.Decrement(ref running);
+        };
+
+        await manager.CreateNewRoom();
+        await manager.CreateNewRoom();
+        gate.SetResult();
+
+        for (var waited = 0; waited < 50 && Volatile.Read(ref calls) < 2; waited++) await Task.Delay(20);
+        Assert.Equal(2, calls);
+        Assert.Equal(1, most);
     }
 }
 
@@ -137,7 +183,7 @@ public class MultiplayerUserTests
         var closedSocket = new RecordingWebSocket(WebSocketState.Closed);
         await store.GetOrAddUser("open", openSocket);
         await store.GetOrAddUser("closed", closedSocket);
-        var queue = new MessageQueue(store);
+        var queue = new MessageQueue(store, NullLogger.Instance);
 
         await queue.Add("playing True");
 
@@ -158,7 +204,7 @@ public class MultiplayerUserTests
         var healthy = new RecordingWebSocket();
         await store.GetOrAddUser("failing", failing);
         await store.GetOrAddUser("healthy", healthy);
-        var queue = new MessageQueue(store);
+        var queue = new MessageQueue(store, NullLogger.Instance);
 
         await queue.Add("seek 12 1700000000000");
 
@@ -732,7 +778,7 @@ public class MultiplayerRoomTests
     [Fact]
     public async Task RoomRoutesChatSyncAndInfoCommands()
     {
-        var room = new Room(Guid.NewGuid(), new HttpClient());
+        var room = new Room(Guid.NewGuid(), new HttpClient(), NullLogger.Instance);
         var socket = new RecordingWebSocket();
         var user = await room.GetOrAddUser("host:trace", socket, "Ada");
         socket.ClearMessages();
@@ -754,7 +800,7 @@ public class MultiplayerRoomTests
     [Fact]
     public async Task RemovingAUserWhoNeverJoinedIsHarmless()
     {
-        var room = new Room(Guid.NewGuid(), new HttpClient());
+        var room = new Room(Guid.NewGuid(), new HttpClient(), NullLogger.Instance);
         var socket = new RecordingWebSocket();
         await room.GetOrAddUser("present", socket, "Present User");
         socket.ClearMessages();
@@ -769,7 +815,7 @@ public class MultiplayerRoomTests
     [Fact]
     public async Task RemovingUserBroadcastsDepartureToRemainingUsers()
     {
-        var room = new Room(Guid.NewGuid(), new HttpClient());
+        var room = new Room(Guid.NewGuid(), new HttpClient(), NullLogger.Instance);
         var leavingSocket = new RecordingWebSocket();
         var remainingSocket = new RecordingWebSocket();
         await room.GetOrAddUser("leaving", leavingSocket, "Leaving User");
@@ -787,7 +833,7 @@ public class MultiplayerRoomTests
     [Fact]
     public async Task EveryMemberIsToldHowManyAreInTheRoom()
     {
-        var room = new Room(Guid.NewGuid(), new HttpClient());
+        var room = new Room(Guid.NewGuid(), new HttpClient(), NullLogger.Instance);
         var first = new RecordingWebSocket();
         var second = new RecordingWebSocket();
         await room.GetOrAddUser("first", first, "Ada");
@@ -832,7 +878,7 @@ public class MultiplayerControllerTests
     [Fact]
     public async Task CreateRoomReturnsTheRegisteredRoom()
     {
-        var manager = new MultiplayerManager(new HttpClient());
+        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
         var controller = Controller(manager);
 
         var result = await controller.CreateRoom();
@@ -845,7 +891,7 @@ public class MultiplayerControllerTests
     [Fact]
     public async Task WebSocketEndpointsRejectRegularHttpRequests()
     {
-        var controller = Controller(new MultiplayerManager(new HttpClient()));
+        var controller = Controller(new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance));
 
         Assert.IsType<BadRequestResult>(await controller.Rooms());
         Assert.IsType<BadRequestResult>(await controller.Join(Guid.NewGuid().ToString(), null));
@@ -854,7 +900,7 @@ public class MultiplayerControllerTests
     [Fact]
     public async Task AJoinThatFaultsStillTakesTheUserBackOutOfTheRoom()
     {
-        var manager = new MultiplayerManager(new HttpClient());
+        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
         var roomId = await manager.CreateNewRoom();
         var room = manager.GetRoom(roomId)!;
 
@@ -874,7 +920,7 @@ public class MultiplayerControllerTests
     [Fact]
     public async Task AJoinWhoseReceiveFailsStillTakesTheUserBackOutOfTheRoom()
     {
-        var manager = new MultiplayerManager(new HttpClient());
+        var manager = new MultiplayerManager(new HttpClient(), NullLogger<MultiplayerManager>.Instance);
         var roomId = await manager.CreateNewRoom();
         var room = manager.GetRoom(roomId)!;
 
@@ -917,7 +963,7 @@ internal static class TestObjects
     public static (VirtualPlayer Player, UserStore Store) Player()
     {
         var store = new UserStore();
-        return (new VirtualPlayer(new MessageQueue(store)), store);
+        return (new VirtualPlayer(new MessageQueue(store, NullLogger.Instance)), store);
     }
 
     /// <summary>

@@ -50,7 +50,7 @@ public sealed class YouTube : Platform, ISupportsSearch, ISupportsPlaylist, ISup
     public async IAsyncEnumerable<PlatformResult> GetRandomResults(int count,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        foreach (var result in await _cacher.GetRandomAsync(count))
+        foreach (var result in await _cacher.GetRandomAsync(count, cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
             result.Downloaders = ContentDownloaders;
@@ -72,14 +72,14 @@ public sealed class YouTube : Platform, ISupportsSearch, ISupportsPlaylist, ISup
     /// </summary>
     private async IAsyncEnumerable<PlatformResult> FirstProviderWithResults<T>(
         Func<T, CancellationToken, IAsyncEnumerable<PlatformResult>> search,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken) where T : class
     {
         foreach (var provider in SearchProviders.OfType<T>())
         {
             var found = new List<YouTubeResult>();
 
             await foreach (var result in search(provider, cancellationToken)
-                               .Guarded(Logger, provider!.GetType().Name, cancellationToken))
+                               .Guarded(Logger, provider.GetType().Name, cancellationToken))
             {
                 if (result is YouTubeResult youTubeResult) found.Add(youTubeResult);
                 yield return result;
@@ -87,7 +87,7 @@ public sealed class YouTube : Platform, ISupportsSearch, ISupportsPlaylist, ISup
 
             if (found.Count == 0) continue;
 
-            await _cacher.AddToCacheAsync(found);
+            await _cacher.AddToCacheAsync(found, cancellationToken);
             yield break;
         }
     }

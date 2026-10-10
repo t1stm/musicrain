@@ -81,8 +81,11 @@ public class MusicInfoFormatTests
     {
         var song = new MusicInfo
         {
-            Id = "id", Titles = ["Come Undone"], Artists = ["Duran Duran"],
-            Album = "Duran Duran", Scan = MusicManager.ScanVersion
+            Id = "id",
+            Titles = ["Come Undone"],
+            Artists = ["Duran Duran"],
+            Album = "Duran Duran",
+            Scan = MusicManager.ScanVersion
         };
 
         var json = JsonSerializer.Serialize(song, MusicInfo.SerializerOptions);

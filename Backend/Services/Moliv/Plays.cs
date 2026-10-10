@@ -116,8 +116,11 @@ public sealed class Plays
             ORDER BY StartedUtc DESC, Id DESC LIMIT @limit
             """, new
         {
-            caller.UserId, caller.DeviceId, limit,
-            startedUtc = before?.startedUtc, id = before?.id
+            caller.UserId,
+            caller.DeviceId,
+            limit,
+            startedUtc = before?.startedUtc,
+            id = before?.id
         }).AsList();
     }
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Serialization;
 
 namespace Dom.Store;
@@ -45,7 +46,10 @@ public sealed class Playlist
     /// <summary>Everything in it, added up. The card and the hero both state this.</summary>
     [JsonIgnore]
     public TimeSpan Duration => Tracks.Aggregate(TimeSpan.Zero,
-        (total, track) => total + (TimeSpan.TryParse(track.Duration, out var length) ? length : TimeSpan.Zero));
+        (total, track) => total +
+                          (TimeSpan.TryParse(track.Duration, CultureInfo.InvariantCulture, out var length)
+                              ? length
+                              : TimeSpan.Zero));
 }
 
 /// <summary>

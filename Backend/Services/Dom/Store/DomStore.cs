@@ -1,4 +1,6 @@
 using System.Data;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -96,8 +98,8 @@ public sealed class DomStore
     /// </summary>
     public (Token? token, User? user, string? error, string? message) Register(string username, string password)
     {
-        var (error, message) = Validate(username, password);
-        if (error is not null) return (null, null, error, message);
+        if (!IsValidUsername(username, out var message) || !IsValidPassword(password, out message))
+            return (null, null, "invalid_request", message);
 
         var name = username.Trim();
 
@@ -264,15 +266,14 @@ public sealed class DomStore
     public (Playlist? playlist, string? error, string? message) Create(
         User owner, string? name, Visibility visibility, List<TrackSnapshot>? tracks)
     {
-        var (error, message) = ValidatePlaylist(name, tracks);
-        if (error is not null) return (null, error, message);
+        if (!IsValidPlaylist(name, tracks, out var message)) return (null, "invalid_request", message);
 
         var now = DateTimeOffset.UtcNow;
         var playlist = new Playlist
         {
             Id = "p_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant(),
             Owner = owner.Username,
-            Name = name!.Trim(),
+            Name = name.Trim(),
             Visibility = visibility,
             Tracks = Clean(tracks),
             CreatedUtc = now,
@@ -305,8 +306,7 @@ public sealed class DomStore
         User caller, string id, string? name, Visibility? visibility, List<TrackSnapshot>? tracks,
         List<string>? collaborators = null, int? revision = null)
     {
-        var (error, message) = ValidatePlaylist(name ?? "unchanged", tracks);
-        if (error is not null) return (null, error, message);
+        if (!IsValidPlaylist(name ?? "unchanged", tracks, out var message)) return (null, "invalid_request", message);
 
         lock (_gate)
         {
@@ -551,15 +551,14 @@ public sealed class DomStore
     /// </summary>
     public (Token? token, string? error, string? message) ChangePassword(User user, string? current, string? password)
     {
-        var invalid = ValidatePassword(password);
-        if (invalid is not null) return (null, "invalid_request", invalid);
+        if (!IsValidPassword(password, out var invalid)) return (null, "invalid_request", invalid);
 
         lock (_gate)
         {
             if (!LiveLocked(user)) return (null, "unauthorized", SignInFirst);
             if (!Verify(user, current)) return (null, "invalid_credentials", WrongPassword);
 
-            SetPasswordLocked(user, password!);
+            SetPasswordLocked(user, password);
             RevokeLocked(user);
             var token = IssueLocked(user);
 
@@ -638,14 +637,13 @@ public sealed class DomStore
     /// </summary>
     public (bool ok, string? error) AdminSetPassword(string username, string? password)
     {
-        var invalid = ValidatePassword(password);
-        if (invalid is not null) return (false, invalid);
+        if (!IsValidPassword(password, out var invalid)) return (false, invalid);
 
         lock (_gate)
         {
             if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, "No such account.");
 
-            SetPasswordLocked(user, password!);
+            SetPasswordLocked(user, password);
             RevokeLocked(user);
 
             SaveLocked(users: [user]);
@@ -695,8 +693,7 @@ public sealed class DomStore
 
             if (name is not null)
             {
-                var (error, message) = ValidatePlaylist(name, null);
-                if (error is not null) return (false, message);
+                if (!IsValidPlaylist(name, null, out var message)) return (false, message);
                 playlist.Name = name.Trim();
             }
 
@@ -842,10 +839,9 @@ public sealed class DomStore
     /// <summary>Caller holds <see cref="_gate" />.</summary>
     private (string? error, string? message) RenameLocked(User user, string? newName)
     {
-        var invalid = ValidateUsername(newName);
-        if (invalid is not null) return ("invalid_request", invalid);
+        if (!IsValidUsername(newName, out var invalid)) return ("invalid_request", invalid);
 
-        var name = newName!.Trim();
+        var name = newName.Trim();
         var oldKey = user.Key;
         var newKey = User.Normalize(name);
         if (newKey != oldKey && _users.ContainsKey(newKey))
@@ -907,7 +903,7 @@ public sealed class DomStore
 
         SaveLocked(users: befriended, playlists: collaborated, goneUsers: [user.Key],
             gonePlaylists: owned.Select(playlist => playlist.Id));
-        return (owned.Where(p => p.CoverFile is not null).Select(p => p.CoverFile!).ToList(), owned.Count);
+        return (owned.Select(p => p.CoverFile).OfType<string>().ToList(), owned.Count);
     }
 
     private void RevokeLocked(User user)
@@ -974,18 +970,19 @@ public sealed class DomStore
     ///     What a playlist has to be. There is no track cap; Kestrel's 30 MB request body limit is
     ///     the only ceiling on how big one save can be.
     /// </summary>
-    private static (string? error, string? message) ValidatePlaylist(string? name, List<TrackSnapshot>? tracks)
+    private static bool IsValidPlaylist([NotNullWhen(true)] string? name, List<TrackSnapshot>? tracks,
+        [NotNullWhen(false)] out string? message)
     {
         var trimmed = name?.Trim() ?? "";
 
-        if (trimmed.Length is < 1 or > 80)
-            return ("invalid_request", "A playlist name is between 1 and 80 characters.");
-        if (trimmed.Any(char.IsControl))
-            return ("invalid_request", "A playlist name cannot contain control characters.");
-        if (tracks is not null && tracks.Any(t => string.IsNullOrWhiteSpace(t.Id) || string.IsNullOrWhiteSpace(t.Name)))
-            return ("invalid_request", "Every track needs an id and a name.");
+        message = trimmed.Length is < 1 or > 80 ? "A playlist name is between 1 and 80 characters."
+            : trimmed.Any(char.IsControl) ? "A playlist name cannot contain control characters."
+            : tracks is not null &&
+              tracks.Any(t => string.IsNullOrWhiteSpace(t.Id) || string.IsNullOrWhiteSpace(t.Name))
+                ? "Every track needs an id and a name."
+                : null;
 
-        return (null, null);
+        return name is not null && message is null;
     }
 
     /// <summary>Trims what came off the wire down to the fields a row draws, and nothing else.</summary>
@@ -997,41 +994,38 @@ public sealed class DomStore
             Name = t.Name.Trim(),
             Artist = t.Artist.Trim(),
             Album = string.IsNullOrWhiteSpace(t.Album) ? null : t.Album.Trim(),
-            Duration = TimeSpan.TryParse(t.Duration, out var length) ? length.ToString("c") : "00:00:00",
+            Duration = TimeSpan.TryParse(t.Duration, CultureInfo.InvariantCulture, out var length)
+                ? length.ToString("c", CultureInfo.InvariantCulture)
+                : "00:00:00",
             ThumbnailUrl = string.IsNullOrWhiteSpace(t.ThumbnailUrl) ? null : t.ThumbnailUrl.Trim()
         })
     ];
 
     /// <summary>
-    ///     What a username and password have to be. Deliberately permissive about script — the library
-    ///     this fronts is largely Cyrillic-tagged and a Latin-only rule would be the wrong kind of tidy —
-    ///     and strict about the things that actually cause trouble: whitespace, control characters, and
-    ///     an unbounded password, which is an unbounded PBKDF2.
+    ///     What a username has to be. Deliberately permissive about script — the library this fronts is
+    ///     largely Cyrillic-tagged and a Latin-only rule would be the wrong kind of tidy — and strict about
+    ///     the things that actually cause trouble: whitespace and control characters. Separate from the
+    ///     password rule because an admin rename changes one without the other.
     /// </summary>
-    private static (string? error, string? message) Validate(string? username, string? password)
-    {
-        var name = ValidateUsername(username);
-        if (name is not null) return ("invalid_request", name);
-
-        var secret = ValidatePassword(password);
-        return secret is not null ? ("invalid_request", secret) : (null, null);
-    }
-
-    /// <summary>The username half, on its own, because an admin rename changes one without the other.</summary>
-    private static string? ValidateUsername(string? username)
+    private static bool IsValidUsername([NotNullWhen(true)] string? username, [NotNullWhen(false)] out string? message)
     {
         var name = username?.Trim() ?? "";
 
-        if (name.Length is < 2 or > 32) return "A username is between 2 and 32 characters.";
-        return name.Any(c => char.IsWhiteSpace(c) || char.IsControl(c))
-            ? "A username cannot contain spaces."
+        message = name.Length is < 2 or > 32 ? "A username is between 2 and 32 characters."
+            : name.Any(c => char.IsWhiteSpace(c) || char.IsControl(c)) ? "A username cannot contain spaces."
             : null;
+
+        return username is not null && message is null;
     }
 
-    private static string? ValidatePassword(string? password)
+    /// <summary>Bounded both ways: an unbounded password is an unbounded PBKDF2.</summary>
+    private static bool IsValidPassword([NotNullWhen(true)] string? password, [NotNullWhen(false)] out string? message)
     {
-        if ((password ?? "").Length < 8) return "A password is at least 8 characters.";
-        return password!.Length > 256 ? "A password is at most 256 characters." : null;
+        message = password is null || password.Length < 8 ? "A password is at least 8 characters."
+            : password.Length > 256 ? "A password is at most 256 characters."
+            : null;
+
+        return password is not null && message is null;
     }
 
     private static byte[] Derive(string password, byte[] salt, int iterations) =>
@@ -1099,7 +1093,7 @@ public sealed class DomStore
         foreach (var row in db.Query<TokenRow>(
                      "SELECT UserKey, Value, IssuedUtc, ExpiresUtc FROM tokens ORDER BY rowid"))
             users[row.UserKey].Tokens.Add(new Token
-                { Value = row.Value, IssuedUtc = row.IssuedUtc, ExpiresUtc = row.ExpiresUtc });
+            { Value = row.Value, IssuedUtc = row.IssuedUtc, ExpiresUtc = row.ExpiresUtc });
         foreach (var friends in db.Query<FriendRow>("SELECT UserKey, Friend FROM friends ORDER BY UserKey, Position")
                      .GroupBy(row => row.UserKey))
             users[friends.Key].Friends = [.. friends.Select(row => row.Friend)];
@@ -1322,7 +1316,12 @@ public sealed class DomStore
     {
         public TrackSnapshot ToSnapshot() => new()
         {
-            Id = Id, Name = Name, Artist = Artist, Album = Album, Duration = Duration, ThumbnailUrl = ThumbnailUrl,
+            Id = Id,
+            Name = Name,
+            Artist = Artist,
+            Album = Album,
+            Duration = Duration,
+            ThumbnailUrl = ThumbnailUrl,
             AddedBy = AddedBy
         };
     }

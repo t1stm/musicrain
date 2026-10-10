@@ -8,7 +8,7 @@ public static class FFmpegEncoder
     public static async Task EncodeAsync(Stream source, Stream destination, string ffmpegArguments,
         CancellationToken cancellationToken = default)
     {
-        var process = Process.Start(new ProcessStartInfo("ffmpeg",
+        using var process = Process.Start(new ProcessStartInfo("ffmpeg",
             $"-v quiet -nostats -i - {ffmpegArguments} pipe:1")
         {
             RedirectStandardInput = true,
@@ -23,7 +23,16 @@ public static class FFmpegEncoder
         var feed = source.CopyToAsync(process.StandardInput.BaseStream, cancellationToken)
             .ContinueWith(_ => { process.StandardInput.BaseStream.Close(); }, CancellationToken.None);
 
-        await process.StandardOutput.BaseStream.CopyToAsync(destination, cancellationToken);
-        await feed;
+        try
+        {
+            await process.StandardOutput.BaseStream.CopyToAsync(destination, cancellationToken);
+            await feed;
+        }
+        catch
+        {
+            // Nobody is reading its output any more, and a full stdout pipe would hold it there for good.
+            if (!process.HasExited) process.Kill(true);
+            throw;
+        }
     }
 }

@@ -61,11 +61,12 @@ public sealed class LrcLib
     /// </summary>
     /// <returns>
     ///     The candidate to use, or <c>null</c> for both "nothing there" and "could not ask" — which
-    ///     <see cref="LastWasClean" /> tells apart: <c>false</c> means write no row.
+    ///     <c>Clean</c> tells apart: <c>false</c> means write no row. It is the last request's verdict, returned
+    ///     rather than kept on the client, so a sweep and a listener asking at once cannot read each other's.
     /// </returns>
-    public async Task<LrcLibResult?> FindAsync(Track track, CancellationToken ct = default)
+    public async Task<(LrcLibResult? Result, bool Clean)> FindAsync(Track track, CancellationToken ct = default)
     {
-        if (!Enabled) return null;
+        if (!Enabled) return (null, true);
 
         await _gate.WaitAsync(ct);
         try
@@ -75,32 +76,25 @@ public sealed class LrcLib
                         $"&album_name={Escape(track.Album)}" +
                         $"&duration={(int)Math.Round(track.Duration.TotalSeconds)}";
 
-            var exact = await GetAsync<LrcLibResult>("/api/get" + query, ct);
-            if (Matching.IsUsable(exact)) return Found(exact);
+            var (exact, _) = await GetAsync<LrcLibResult>("/api/get" + query, ct);
+            if (Matching.IsUsable(exact)) return (Found(exact), true);
 
             // 2. The fuzzy hit, filtered by Matching. Only after a 404 — never speculatively.
-            var search = await GetAsync<LrcLibResult[]>(
+            var (search, clean) = await GetAsync<LrcLibResult[]>(
                 $"/api/search?track_name={Escape(track.Title)}&artist_name={Escape(track.Artist)}", ct);
-            if (search is null) return null;
+            if (search is null) return (null, clean);
 
             var best = Matching.Best(track, search);
-            if (best is not null) return Found(best);
+            if (best is not null) return (Found(best), clean);
 
             Misses++;
-            return null;
+            return (null, clean);
         }
         finally
         {
             _gate.Release();
         }
     }
-
-    /// <summary>Whether the last call failed cleanly ("not there") rather than badly ("could not ask").</summary>
-    /// <remarks>
-    ///     Read straight after <see cref="FindAsync" /> under the same logical operation. It is a field
-    ///     rather than a tuple because every caller needs it and only after a <c>null</c>.
-    /// </remarks>
-    public bool LastWasClean { get; private set; } = true;
 
     public object Snapshot()
     {
@@ -117,19 +111,16 @@ public sealed class LrcLib
         };
     }
 
-    private LrcLibResult Found(LrcLibResult? result)
+    private LrcLibResult Found(LrcLibResult result)
     {
         Hits++;
-        return result!;
+        return result;
     }
 
-    private async Task<T?> GetAsync<T>(string path, CancellationToken ct) where T : class
+    /// <returns>The body, or <c>null</c>; and whether that answer was clean ("not there") or not ("could not ask").</returns>
+    private async Task<(T? Value, bool Clean)> GetAsync<T>(string path, CancellationToken ct) where T : class
     {
-        if (PausedUntil > DateTimeOffset.UtcNow)
-        {
-            LastWasClean = false;
-            return null;
-        }
+        if (PausedUntil > DateTimeOffset.UtcNow) return (null, false);
 
         var http = _factory.CreateClient("lrclib");
         using var request = new HttpRequestMessage(HttpMethod.Get, _baseUrl + path);
@@ -152,27 +143,20 @@ public sealed class LrcLib
 
                 PausedUntil = DateTimeOffset.UtcNow + after;
                 LastError = $"429 from LRCLIB; paused until {PausedUntil:O}";
-                LastWasClean = false;
                 _logger.Warning("LRCLIB rate-limited us; pausing until {Until}", PausedUntil);
-                return null;
+                return (null, false);
             }
 
-            if (response.StatusCode == HttpStatusCode.NotFound)
-            {
-                LastWasClean = true;
-                return null;
-            }
+            if (response.StatusCode == HttpStatusCode.NotFound) return (null, true);
 
             response.EnsureSuccessStatusCode();
-            LastWasClean = true;
-            return await response.Content.ReadFromJsonAsync<T>(Json, ct);
+            return (await response.Content.ReadFromJsonAsync<T>(Json, ct), true);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
             LastError = e.Message;
-            LastWasClean = false;
             _logger.Warning(e, "LRCLIB request {Path} failed", path);
-            return null;
+            return (null, false);
         }
     }
 

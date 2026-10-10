@@ -2,11 +2,17 @@ using System.Collections.Concurrent;
 
 namespace Selo.Multiplayer;
 
-public class MultiplayerManager(HttpClient gaida)
+public class MultiplayerManager(HttpClient gaida, ILogger<MultiplayerManager> logger)
 {
     // concurrent so the room-list socket can serialise the collection while another request
     // creates a room, which the dictionary-plus-semaphore pair never actually guarded
     private readonly ConcurrentDictionary<Guid, Room> _rooms = new();
+
+    /// <summary>
+    ///     One announcement at a time. Every listener is a room-list socket, and a WebSocket takes one send at a
+    ///     time: two rooms changing at once used to send on the same socket concurrently.
+    /// </summary>
+    private readonly SemaphoreSlim _announcing = new(1, 1);
 
     /// <summary>Raised when the room list or any room's info changes.</summary>
     public event Func<Task>? RoomsChanged;
@@ -15,13 +21,13 @@ public class MultiplayerManager(HttpClient gaida)
     {
         var guid = Guid.NewGuid();
 
-        _rooms.TryAdd(guid, new Room(guid, gaida)
+        _rooms.TryAdd(guid, new Room(guid, gaida, logger)
         {
-            OnInfoModified = () => RoomsChanged?.Invoke(),
+            OnInfoModified = () => _ = AnnounceAsync(),
             OnEmptied = () => RemoveRoom(guid)
         });
 
-        RoomsChanged?.Invoke();
+        _ = AnnounceAsync();
         return Task.FromResult(guid);
     }
 
@@ -43,6 +49,28 @@ public class MultiplayerManager(HttpClient gaida)
     {
         if (!_rooms.TryRemove(roomId, out _)) return;
 
-        RoomsChanged?.Invoke();
+        _ = AnnounceAsync();
+    }
+
+    /// <summary>Tells every listener in turn. One that fails is a socket going away, not a reason to stop.</summary>
+    private async Task AnnounceAsync()
+    {
+        await _announcing.WaitAsync();
+        try
+        {
+            foreach (var listener in RoomsChanged?.GetInvocationList().Cast<Func<Task>>() ?? [])
+                try
+                {
+                    await listener();
+                }
+                catch (Exception exception)
+                {
+                    logger.LogDebug(exception, "A room-list socket could not be told about a change");
+                }
+        }
+        finally
+        {
+            _announcing.Release();
+        }
     }
 }

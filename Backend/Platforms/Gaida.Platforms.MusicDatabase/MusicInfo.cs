@@ -420,10 +420,10 @@ public class MusicInfo : IJsonOnDeserialized
                      ?? string.Empty;
         var clean = new string(source.Select(character => character == ' ' ? '-' : character)
             .Where(character => char.IsAsciiLetterOrDigit(character) || character == '-')
-            .ToArray()).ToLower();
+            .ToArray()).ToLowerInvariant();
 
         return clean.Length >= length
             ? clean[..length]
-            : clean + Generation.RandomString(length - clean.Length).ToLower();
+            : clean + Generation.RandomString(length - clean.Length).ToLowerInvariant();
     }
 }

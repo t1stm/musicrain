@@ -19,4 +19,8 @@
     <ProjectReference Include="..\..\Gaida Library\Gaida.Admin\Gaida.Admin.csproj"/>
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Gaida.Tests"/>
+  </ItemGroup>
+
 </Project>

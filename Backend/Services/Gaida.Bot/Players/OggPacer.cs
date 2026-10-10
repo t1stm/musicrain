@@ -53,53 +53,53 @@ public sealed class OggGranuleScanner
                     break;
 
                 case State.Header:
-                {
-                    // The magic is already matched and sitting in the buffer; fill the rest.
-                    var take = Math.Min(HeaderLength - _collected, data.Length - index);
-                    data.Slice(index, take).CopyTo(_header.AsSpan(_collected));
-                    _collected += take;
-                    index += take;
+                    {
+                        // The magic is already matched and sitting in the buffer; fill the rest.
+                        var take = Math.Min(HeaderLength - _collected, data.Length - index);
+                        data.Slice(index, take).CopyTo(_header.AsSpan(_collected));
+                        _collected += take;
+                        index += take;
 
-                    if (_collected < HeaderLength) break;
+                        if (_collected < HeaderLength) break;
 
-                    var granule = BinaryPrimitives.ReadInt64LittleEndian(_header.AsSpan(6, 8));
+                        var granule = BinaryPrimitives.ReadInt64LittleEndian(_header.AsSpan(6, 8));
 
-                    // -1 means no packet finishes on this page. A new file starts a new scanner,
-                    // so within one stream the granule only ever climbs.
-                    if (granule > Granule) Granule = granule;
+                        // -1 means no packet finishes on this page. A new file starts a new scanner,
+                        // so within one stream the granule only ever climbs.
+                        if (granule > Granule) Granule = granule;
 
-                    _segmentCount = _header[26];
-                    _collected = 0;
-                    _state = _segmentCount == 0 ? State.Magic : State.SegmentTable;
-                    break;
-                }
+                        _segmentCount = _header[26];
+                        _collected = 0;
+                        _state = _segmentCount == 0 ? State.Magic : State.SegmentTable;
+                        break;
+                    }
 
                 case State.SegmentTable:
-                {
-                    var take = Math.Min(_segmentCount - _collected, data.Length - index);
-                    data.Slice(index, take).CopyTo(_segments.AsSpan(_collected));
-                    _collected += take;
-                    index += take;
+                    {
+                        var take = Math.Min(_segmentCount - _collected, data.Length - index);
+                        data.Slice(index, take).CopyTo(_segments.AsSpan(_collected));
+                        _collected += take;
+                        index += take;
 
-                    if (_collected < _segmentCount) break;
+                        if (_collected < _segmentCount) break;
 
-                    _payloadRemaining = 0;
-                    for (var i = 0; i < _segmentCount; i++) _payloadRemaining += _segments[i];
+                        _payloadRemaining = 0;
+                        for (var i = 0; i < _segmentCount; i++) _payloadRemaining += _segments[i];
 
-                    _collected = 0;
-                    _state = _payloadRemaining == 0 ? State.Magic : State.Payload;
-                    break;
-                }
+                        _collected = 0;
+                        _state = _payloadRemaining == 0 ? State.Magic : State.Payload;
+                        break;
+                    }
 
                 case State.Payload:
-                {
-                    var skip = (int)Math.Min(_payloadRemaining, data.Length - index);
-                    _payloadRemaining -= skip;
-                    index += skip;
+                    {
+                        var skip = (int)Math.Min(_payloadRemaining, data.Length - index);
+                        _payloadRemaining -= skip;
+                        index += skip;
 
-                    if (_payloadRemaining == 0) _state = State.Magic;
-                    break;
-                }
+                        if (_payloadRemaining == 0) _state = State.Magic;
+                        break;
+                    }
 
                 default:
                     throw new InvalidOperationException($"Unreachable scanner state {_state}.");

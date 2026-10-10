@@ -115,11 +115,11 @@ public partial class MusicManager
         if (titles.Length == 0) return (0, tags);
 
         var best = (from candidate in candidates
-                let titleSimilarity = titles.Max(title => Similarity(candidate.Title, title))
-                select candidate.Artist.Length == 0
-                    ? Math.Max(TitleWeight * titleSimilarity, Concatenated(candidate.Title, titles, artists))
-                    : TitleWeight * titleSimilarity +
-                      ArtistWeight * artists.Select(a => Similarity(candidate.Artist, a)).DefaultIfEmpty(0).Max())
+                    let titleSimilarity = titles.Max(title => Similarity(candidate.Title, title))
+                    select candidate.Artist.Length == 0
+                        ? Math.Max(TitleWeight * titleSimilarity, Concatenated(candidate.Title, titles, artists))
+                        : TitleWeight * titleSimilarity +
+                          ArtistWeight * artists.Select(a => Similarity(candidate.Artist, a)).DefaultIfEmpty(0).Max())
             .Prepend(0d)
             .Max();
 
@@ -130,11 +130,11 @@ public partial class MusicManager
     {
         var best = 0d;
         foreach (var title in titles)
-        foreach (var artist in artists)
-        {
-            best = Math.Max(best, Similarity(term, title + artist));
-            best = Math.Max(best, Similarity(term, artist + title));
-        }
+            foreach (var artist in artists)
+            {
+                best = Math.Max(best, Similarity(term, title + artist));
+                best = Math.Max(best, Similarity(term, artist + title));
+            }
 
         return best;
     }

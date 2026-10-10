@@ -240,7 +240,7 @@ public sealed class Player
         if (!_preloadedNext)
         {
             _preloadedNext = true;
-            _ = Api.PreloadAsync(next.Id, Bitrate);
+            _ = Api.PreloadAsync(next.Id, Bitrate, _dying.Token);
         }
 
         if (remaining > TimeSpan.FromSeconds(5) || _prefetch is not null) return;
@@ -265,8 +265,13 @@ public sealed class Player
         if (pendingId == id) return await pending;
 
         // The user skipped somewhere else; throw the held response away.
-        _ = pending.ContinueWith(task => task.Result?.Dispose(), TaskContinuationOptions.OnlyOnRanToCompletion);
+        Discard(pending);
         return null;
+    }
+
+    private static void Discard(Task<HttpResponseMessage?> pending)
+    {
+        _ = pending.ContinueWith(task => task.Result?.Dispose(), TaskContinuationOptions.OnlyOnRanToCompletion);
     }
 
     private Task WaitWhilePausedAsync(CancellationToken cancellationToken) =>
@@ -323,7 +328,7 @@ public sealed class Player
     {
         Resume();
 
-        if (index >= Queue.Count && index < -1) return null;
+        if (index >= Queue.Count || index < -1) return null;
 
         Queue.Current = index - 1;
         CancelTrack();
@@ -361,7 +366,7 @@ public sealed class Player
         try
         {
             var item = Queue.GetWithString(name);
-            var index = Queue.Items.IndexOf(item);
+            var index = Queue.IndexOf(item);
 
             if (index == Queue.Current)
             {
@@ -420,6 +425,10 @@ public sealed class Player
 
             _writer?.SignalCompletion();
             _writer = null;
+
+            if (_prefetch is { } pending) Discard(pending);
+            _prefetch = null;
+            _prefetchId = null;
 
             if (Connection is not null) await Connection.DisposeAsync();
             Connection = null;

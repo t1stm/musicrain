@@ -28,6 +28,8 @@
     <ProjectReference Include="..\..\Services\Selo\Selo.csproj"/>
     <ProjectReference Include="..\..\Services\Gaida.Bot\Gaida.Bot.csproj"/>
     <ProjectReference Include="..\..\Services\Dom\Dom.csproj"/>
+    <ProjectReference Include="..\..\Services\Dunav\Dunav.csproj"/>
+    <ProjectReference Include="..\..\Services\Stih\Stih.csproj"/>
   </ItemGroup>
 
 </Project>

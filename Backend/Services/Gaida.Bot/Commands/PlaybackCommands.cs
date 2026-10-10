@@ -6,6 +6,7 @@ using DSharpPlus.Commands.ArgumentModifiers;
 using DSharpPlus.Commands.Processors.SlashCommands;
 using DSharpPlus.Commands.Trees.Metadata;
 using DSharpPlus.Entities;
+using DSharpPlus.Exceptions;
 using DSharpPlus.Interactivity.Extensions;
 using DSharpPlus.Voice;
 using Gaida.Bot.Gaida;
@@ -49,7 +50,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         }
 
         // A bare number moves that queue entry to the front instead of searching for it.
-        if (int.TryParse(search, out var index))
+        if (int.TryParse(search, out var index) && index >= 1)
         {
             if (index > player.Queue.Count)
             {
@@ -61,7 +62,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
                 player.Queue.RemoveFromQueue(moved);
                 player.Queue.AddToQueueNext(moved);
                 await AcknowledgeAsync(ctx, player,
-                    Text.PlayingItemAfterThis(player.Queue.Items.IndexOf(moved) + 1, moved.DisplayName));
+                    Text.PlayingItemAfterThis(player.Queue.IndexOf(moved) + 1, moved.DisplayName));
                 return;
             }
         }
@@ -82,7 +83,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         player.Queue.AddToQueueNext(items);
         await AcknowledgeAsync(ctx, player, items.Count > 1
             ? Text.PlayingItemAfterThis(search)
-            : Text.PlayingItemAfterThis(player.Queue.Items.IndexOf(items[0]) + 1, items[0].DisplayName));
+            : Text.PlayingItemAfterThis(player.Queue.IndexOf(items[0]) + 1, items[0].DisplayName));
     }
 
     [Command("skip")]
@@ -360,7 +361,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
             {
                 await AcknowledgeAsync(ctx, player, added.Count > 1
                     ? Text.AddedItem(search)
-                    : Text.AddedItem($"({player.Queue.Items.IndexOf(added[0]) + 1}) - {added[0].DisplayName}"));
+                    : Text.AddedItem($"({player.Queue.IndexOf(added[0]) + 1}) - {added[0].DisplayName}"));
             }
             else if (ctx is SlashCommandContext)
             {
@@ -490,7 +491,8 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
 
         try
         {
-            player.Connection = await player.VoiceChannel!.ConnectAsync();
+            var channel = player.VoiceChannel ?? throw new InvalidOperationException("The player has no voice channel.");
+            player.Connection = await channel.ConnectAsync();
             _ = Task.Run(() => player.PlayAsync());
         }
         catch (Exception e)
@@ -548,7 +550,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
                 return;
             }
         }
-        catch
+        catch (DiscordException)
         {
             // Closed DMs; fall through and say it in the channel.
         }

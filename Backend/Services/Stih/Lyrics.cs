@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using ILogger = Serilog.ILogger;
 
 namespace Stih;
@@ -26,16 +27,23 @@ public sealed class Lyrics(
     private string DataDirectory => configuration["LYRICS_DATA"] ?? "/lyrics";
 
     private TimeSpan RetryAfter =>
-        TimeSpan.FromDays(double.TryParse(configuration["LYRICS_RETRY_DAYS"], out var days) ? days : 30);
+        TimeSpan.FromDays(double.TryParse(configuration["LYRICS_RETRY_DAYS"], CultureInfo.InvariantCulture,
+            out var days)
+            ? days
+            : 30);
 
     /// <summary>The words for one track, or <c>null</c> when there are none anywhere.</summary>
+    /// <remarks>
+    ///     The shared lookup belongs to nobody: one listener giving up stops their wait, not the answer the
+    ///     others are waiting on — which is then on disk for the next one anyway.
+    /// </remarks>
     public Task<LyricsDto?> GetAsync(string id, CancellationToken ct = default)
     {
         var lazy = _inFlight.GetOrAdd(id, key => new Lazy<Task<LyricsDto?>>(async () =>
         {
             try
             {
-                return await LookupAsync(key, ct);
+                return await LookupAsync(key, CancellationToken.None);
             }
             finally
             {
@@ -45,7 +53,7 @@ public sealed class Lyrics(
             }
         }));
 
-        return lazy.Value;
+        return lazy.Value.WaitAsync(ct);
     }
 
     private async Task<LyricsDto?> LookupAsync(string id, CancellationToken ct)
@@ -86,12 +94,12 @@ public sealed class Lyrics(
         }
 
         // 4. LRCLIB.
-        var found = await lrcLib.FindAsync(track, ct);
+        var (found, clean) = await lrcLib.FindAsync(track, ct);
         if (found is null)
         {
             // 5b. A clean "nothing there" is recorded; a timeout or a 429 is not, so it is retried
             // rather than remembered as a miss.
-            if (lrcLib is { Enabled: true, LastWasClean: true }) await RecordMissAsync(track, ct);
+            if (lrcLib.Enabled && clean) await RecordMissAsync(track, ct);
             return null;
         }
 
@@ -120,7 +128,7 @@ public sealed class Lyrics(
         if (tracks.OwnerOf(id) is null && Tracks.PlatformOf(id) is null)
             return $"No configured pod owns '{id}'.";
 
-        var content = string.IsNullOrWhiteSpace(body.Lrc) ? body.Text! : body.Lrc!;
+        var content = string.IsNullOrWhiteSpace(body.Lrc) ? body.Text ?? string.Empty : body.Lrc;
         var kind = string.IsNullOrWhiteSpace(body.Lrc) ? LyricsKind.Unsynchronized : LyricsKind.Synchronized;
         var source = Enum.TryParse<LyricsOrigin>(body.Source, true, out var parsed) ? parsed : LyricsOrigin.Deezer;
 

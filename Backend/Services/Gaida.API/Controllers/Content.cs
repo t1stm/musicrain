@@ -205,7 +205,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
     public async Task<IActionResult> Download(string codec, int bitrate, string id,
         [FromServices] ManagerService managerService)
     {
-        if (bitrate < 8) return BadRequest("Bitrate must be greater than 8");
+        if (bitrate < 8) return BadRequest("Bitrate must be at least 8");
         if (string.IsNullOrWhiteSpace(id)) return NotFound("No ID provided");
         logger.LogInformation("Downloading '{ID}' {Codec} {Bitrate}", id, codec, bitrate);
 

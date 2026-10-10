@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using DSharpPlus.Entities;
+using DSharpPlus.Exceptions;
 using Gaida.Bot.Enums;
 using Gaida.Bot.Players;
 
@@ -69,18 +70,28 @@ public sealed class Statusbar
             {
                 Player?.Logger.Warning(e, "Updating the statusbar failed");
 
-                if (e.Message.Contains("404") || e.Message.Contains("400"))
-                {
-                    Message = Channel is null
-                        ? null
-                        : await Channel.SendMessageAsync(Text.ThisMessageWillUpdateShortly().CodeBlocked());
-                }
+                if (e is NotFoundException or BadRequestException) await RepostAsync();
             }
 
             if (UpdateDelay > DefaultUpdateDelay) UpdateDelay -= DefaultUpdateDelay / 3;
             if (UpdateDelay < DefaultUpdateDelay) UpdateDelay = DefaultUpdateDelay;
 
             await Task.Delay(UpdateDelay);
+        }
+    }
+
+    /// <summary>The message is gone or unusable: start a new one, and keep the loop alive if that fails too.</summary>
+    private async Task RepostAsync()
+    {
+        try
+        {
+            Message = Channel is null
+                ? null
+                : await Channel.SendMessageAsync(Text.ThisMessageWillUpdateShortly().CodeBlocked());
+        }
+        catch (Exception e)
+        {
+            Player?.Logger.Warning(e, "Reposting the statusbar failed");
         }
     }
 

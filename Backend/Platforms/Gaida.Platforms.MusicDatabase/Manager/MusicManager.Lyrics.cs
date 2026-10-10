@@ -48,9 +48,9 @@ public partial class MusicManager
     ///     rewrite one entry and then its row.
     /// </remarks>
     public async Task<(MusicInfo? entry, string? error)> StampLyricsAsync(string id, LyricsKind? kind,
-        LyricsOrigin? source)
+        LyricsOrigin? source, CancellationToken cancellationToken = default)
     {
-        await _editGate.WaitAsync();
+        await _editGate.WaitAsync(cancellationToken);
 
         try
         {

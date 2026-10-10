@@ -45,19 +45,19 @@ public class GetterYouTubeExplode(ILogger logger) : ContentGetter(logger)
                 }
                 catch (Exception e)
                 {
-                    Logger.Fatal(e, "Error while copying stream for YouTube video ID: {ID}", youtubeResult.Id);
+                    Logger.Error(e, "Error while copying stream for YouTube video ID: {ID}", youtubeResult.Id);
                 }
                 finally
                 {
                     await streamSpreader.CloseAsync();
                 }
-            }, cancellationToken);
+            }, CancellationToken.None);
 
             return streamSpreader;
         }
         catch (Exception e)
         {
-            Logger.Fatal(e, "Error while processing YouTube video ID: {ID}", youtubeResult.Id);
+            Logger.Error(e, "Error while processing YouTube video ID: {ID}", youtubeResult.Id);
             return null;
         }
     }

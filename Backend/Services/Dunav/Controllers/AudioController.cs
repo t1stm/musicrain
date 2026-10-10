@@ -27,7 +27,7 @@ public class AudioController(ILogger<AudioController> logger, CacheService cache
     [Route("/Audio/Download/{codec:required}/{bitrate:int:required}")]
     public async Task<IActionResult> Download(string codec, int bitrate, string id)
     {
-        if (bitrate < 8) return BadRequest("Bitrate must be greater than 8");
+        if (bitrate < 8) return BadRequest("Bitrate must be at least 8");
         if (string.IsNullOrWhiteSpace(id)) return NotFound("No ID provided");
 
         var key = CacheService.EncodedKey(codec, bitrate, id);
@@ -45,7 +45,7 @@ public class AudioController(ILogger<AudioController> logger, CacheService cache
     [Route("/Audio/Preload/{codec:required}/{bitrate:int:required}")]
     public async Task<IActionResult> Preload(string codec, int bitrate, string id)
     {
-        if (bitrate < 8) return BadRequest("Bitrate must be greater than 8");
+        if (bitrate < 8) return BadRequest("Bitrate must be at least 8");
         if (string.IsNullOrWhiteSpace(id)) return NotFound("No ID provided");
 
         var key = CacheService.EncodedKey(codec, bitrate, id);

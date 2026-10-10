@@ -40,13 +40,11 @@ builder.Services.AddSingleton(Log.Logger);
 builder.Services.AddSingleton<CacheService>(services =>
     new CacheService(services.GetRequiredService<IHttpClientFactory>().CreateClient("Gaida"),
         Log.Logger, services.GetRequiredService<IConfiguration>()));
+builder.Services.AddHostedService(services => services.GetRequiredService<CacheService>());
 
 var app = builder.Build();
 
 app.UseCors("Frontend");
-
-// initialize eagerly so the sweep timer starts at boot, not on first request.
-app.Services.GetRequiredService<CacheService>();
 
 // Before MapControllers so the request ring wraps the whole pipeline. No-op without ADMIN_TOKEN.
 app.MapDunavAdmin();

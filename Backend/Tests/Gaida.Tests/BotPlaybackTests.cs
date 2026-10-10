@@ -178,6 +178,60 @@ public class BotPlaybackTests
     }
 
     [Fact]
+    public void AMoveOutOfRangeLeavesTheQueueAlone()
+    {
+        var queue = new Playlist();
+        queue.AddToQueue([Track("one"), Track("two"), Track("three")]);
+
+        Assert.False(queue.Move(0, 7, out _));
+        Assert.False(queue.Move(9, 0, out _));
+        Assert.Equal(["one", "two", "three"], queue.Items.Select(item => item.Name));
+    }
+
+    [Fact]
+    public void ASeededShuffleReordersTheQueue()
+    {
+        var queue = new Playlist();
+        string[] names = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"];
+        queue.AddToQueue(names.Select(name => Track(name)));
+        queue.Current = -1;
+
+        queue.ShuffleWithSeed(99);
+
+        Assert.NotEqual(names, queue.Items.Select(item => item.Name));
+        Assert.Equal(names.Order(), queue.Items.Select(item => item.Name).Order());
+    }
+
+    [Fact]
+    public void GoingToAPositionTheQueueDoesNotHaveChangesNothing()
+    {
+        var player = Detached("one", "two", "three");
+
+        Assert.Null(player.GoToIndex(5));
+        Assert.Null(player.GoToIndex(-5));
+        Assert.Equal(0, player.Queue.Current);
+    }
+
+    [Fact]
+    public void GoingToPositionZeroRestartsTheQueueWithoutThrowing()
+    {
+        var player = Detached("one", "two", "three");
+
+        // goto 0 arrives as -1: the loop walks the index back up to the first track.
+        Assert.Null(player.GoToIndex(-1));
+        Assert.Equal(-2, player.Queue.Current);
+    }
+
+    [Fact]
+    public void GoingToAPositionMovesTheIndexBeforeIt()
+    {
+        var player = Detached("one", "two", "three");
+
+        Assert.Equal("three", player.GoToIndex(2)?.Name);
+        Assert.Equal(1, player.Queue.Current);
+    }
+
+    [Fact]
     public void ClearKeepsWhatIsPlaying()
     {
         var queue = new Playlist();

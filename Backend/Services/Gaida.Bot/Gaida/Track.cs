@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Serialization;
 using DSharpPlus.Entities;
 
@@ -36,7 +37,8 @@ public sealed record Track
 
     /// <summary><see cref="TimeSpan.Zero" /> stands for the old "unknown length", which renders as ∞.</summary>
     [JsonIgnore]
-    public TimeSpan Length => TimeSpan.TryParse(Duration, out var parsed) ? parsed : TimeSpan.Zero;
+    public TimeSpan Length =>
+        TimeSpan.TryParse(Duration, CultureInfo.InvariantCulture, out var parsed) ? parsed : TimeSpan.Zero;
 }
 
 /// <summary>What <c>/Audio/FindQueryType</c> says a pasted value is.</summary>

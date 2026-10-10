@@ -11,7 +11,9 @@ public static class Romanize
         {
             var romanized = CyrillicToRomanSwitch(c);
             builder.Append(char.IsLower(c) ? romanized :
-                romanized.Length > 1 ? char.ToUpper(romanized[0]) + romanized[1..] : char.ToUpper(romanized[0]));
+                romanized.Length > 1
+                    ? char.ToUpperInvariant(romanized[0]) + romanized[1..]
+                    : char.ToUpperInvariant(romanized[0]));
         }
 
         return builder.ToString();
@@ -19,7 +21,7 @@ public static class Romanize
 
     private static string CyrillicToRomanSwitch(char letter)
     {
-        return char.ToLower(letter) switch
+        return char.ToLowerInvariant(letter) switch
         {
             'в' => "v",
             'е' => "e",

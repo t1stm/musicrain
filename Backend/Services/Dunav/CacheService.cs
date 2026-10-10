@@ -1,11 +1,9 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
-using System.Timers;
 using Gaida.Core.Streams;
 using JetBrains.Annotations;
 using ILogger = Serilog.ILogger;
-using Timer = System.Timers.Timer;
 
 namespace Dunav;
 
@@ -15,7 +13,7 @@ namespace Dunav;
 ///     <c>Func&lt;FFmpegEncoder,...&gt;</c> to fetch-upstream-into-a-file. Also owns expiry, the byte-ceiling
 ///     LRU eviction the old code never had, and the on-disk bodies themselves.
 /// </summary>
-public class CacheService
+public class CacheService : BackgroundService
 {
     private readonly ConcurrentDictionary<string, Lazy<Task<CacheEntry>>> _cachedEntries = new();
     private readonly ConcurrentDictionary<string, DateTime> _expireTimes = new();
@@ -23,7 +21,6 @@ public class CacheService
     private readonly HttpClient _http;
     private readonly long _maxBytes;
     private readonly TimeSpan _retention;
-    private readonly Timer _sweepTimer;
 
     public CacheService(HttpClient http, ILogger logger, IConfiguration configuration)
     {
@@ -53,9 +50,6 @@ public class CacheService
             {
                 Logger.Warning(exception, "Could not remove stale cache file {File}", stale);
             }
-
-        _sweepTimer = new Timer(TimeSpan.FromMinutes(1)) { Enabled = true };
-        _sweepTimer.Elapsed += Sweep;
     }
 
     private ILogger Logger { get; }
@@ -246,7 +240,22 @@ public class CacheService
         }
     }
 
-    private void Sweep(object? sender, ElapsedEventArgs elapsedEventArgs)
+    /// <summary>One sweep a minute, never two at once, and a sweep that throws is logged rather than lost.</summary>
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+        while (await timer.WaitForNextTickAsync(stoppingToken))
+            try
+            {
+                Sweep();
+            }
+            catch (Exception exception)
+            {
+                Logger.Error(exception, "The cache sweep failed");
+            }
+    }
+
+    internal void Sweep()
     {
         var now = DateTime.UtcNow;
 
@@ -273,12 +282,10 @@ public class CacheService
     {
         if (_maxBytes <= 0) return;
 
-        var live = _cachedEntries
-            .Where(kv => kv.Value is
-                { IsValueCreated: true, Value: { IsCompletedSuccessfully: true, Result: not null } })
-            .Select(kv => (kv.Key, Entry: kv.Value.Value.Result!,
-                Expire: _expireTimes.GetValueOrDefault(kv.Key, DateTime.MinValue)))
-            .ToList();
+        var live = new List<(string Key, CacheEntry Entry, DateTime Expire)>();
+        foreach (var (key, lazy) in _cachedEntries)
+            if (lazy is { IsValueCreated: true, Value: { IsCompletedSuccessfully: true, Result: { } entry } })
+                live.Add((key, entry, _expireTimes.GetValueOrDefault(key, DateTime.MinValue)));
 
         var total = live.Sum(x => x.Entry.Body.Length);
         if (total <= _maxBytes) return;

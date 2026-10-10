@@ -41,16 +41,16 @@ public sealed class YouTubeSearchProviderExplode(ILogger logger) : SearchProvide
         if (string.IsNullOrWhiteSpace(playlistId)) yield break;
 
         await foreach (var batch in Client.Playlists.GetVideoBatchesAsync(playlistId, cancellationToken))
-        foreach (var video in batch.Items)
-            yield return new YouTubeResult
-            {
-                Id = PlatformIdentifier + video.Id,
-                Name = video.Title,
-                Artist = video.Author.ChannelTitle,
-                Duration = video.Duration.GetValueOrDefault(TimeSpan.Zero),
-                ThumbnailUrl = BestThumbnail(video.Thumbnails),
-                Downloaders = ContentDownloaders
-            };
+            foreach (var video in batch.Items)
+                yield return new YouTubeResult
+                {
+                    Id = PlatformIdentifier + video.Id,
+                    Name = video.Title,
+                    Artist = video.Author.ChannelTitle,
+                    Duration = video.Duration.GetValueOrDefault(TimeSpan.Zero),
+                    ThumbnailUrl = BestThumbnail(video.Thumbnails),
+                    Downloaders = ContentDownloaders
+                };
     }
 
     public async IAsyncEnumerable<PlatformResult> SearchKeywords(string keywords,
@@ -74,8 +74,8 @@ public sealed class YouTubeSearchProviderExplode(ILogger logger) : SearchProvide
     }
 
     /// <summary>Highest resolution thumbnail, without the tracking query string.</summary>
-    private static string BestThumbnail(IReadOnlyList<Thumbnail> thumbnails)
+    internal static string? BestThumbnail(IReadOnlyList<Thumbnail> thumbnails)
     {
-        return thumbnails.MaxBy(t => t.Resolution.Area)!.Url.AsSpan().SliceTo("?").ToString();
+        return thumbnails.MaxBy(t => t.Resolution.Area)?.Url.AsSpan().SliceTo("?").ToString();
     }
 }

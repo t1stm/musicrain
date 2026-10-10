@@ -1,9 +1,10 @@
 using System.Security.Cryptography;
 using ATL;
+using Serilog;
 
 namespace Gaida.Platforms.MusicDatabase.Manager;
 
-public class CoverExtractor
+public class CoverExtractor(ILogger logger)
 {
     private static readonly Lock ExportLock = new();
     private string _exportLocation = "./Album_Covers";
@@ -33,10 +34,11 @@ public class CoverExtractor
             image = (pictures.FirstOrDefault(picture => picture.PicType == PictureInfo.PIC_TYPE.Front) ??
                      pictures.FirstOrDefault())?.PictureData;
         }
-        catch (Exception)
+        catch (Exception exception)
         {
             // Same rule as the missing file above, for a file that is there but unreadable: this runs inside
             // the Parallel.ForEach of the library scan, and one bad file must not take the whole load with it.
+            logger.Warning(exception, "Could not read the artwork of {Location}", location);
             return null;
         }
 
