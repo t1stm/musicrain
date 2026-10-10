@@ -94,7 +94,7 @@
 
 <svelte:head><title>History · musicrain</title></svelte:head>
 
-<div class="flex flex-col gap-8 px-2 py-6 sm:px-8">
+<div class="page page-column gap-8 px-2 py-6 sm:px-8 sm:pb-28">
 	<header>
 		<p class="eyebrow text-primary-500">Listening history</p>
 		<h1 class="mt-2 font-display text-xl font-light leading-tight tracking-tight text-chalk sm:text-3xl">
