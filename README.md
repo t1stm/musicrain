@@ -57,7 +57,8 @@ Host-specific values and secrets live in `Backend/.env`, which compose reads on 
 - [@discord/embedded-app-sdk](https://github.com/discord/embedded-app-sdk) for running inside a Discord voice channel
 - Variable fonts from Fontsource: [Unbounded](https://fontsource.org/fonts/unbounded) for display, [Golos Text](https://fontsource.org/fonts/golos-text) for body, [JetBrains Mono](https://fontsource.org/fonts/jetbrains-mono) for numerics
 - [.NET 10](https://dotnet.microsoft.com/) with ASP.NET Core minimal APIs on the backend, using `IAsyncEnumerable<T>` responses as the streaming primitive, and [Serilog](https://serilog.net/) throughout
-- [TagLib#](https://github.com/mono/taglib-sharp) for library tags, [YoutubeExplode](https://github.com/Tyrrrz/YoutubeExplode) with [yt-dlp](https://github.com/yt-dlp/yt-dlp) as fallback, and [FFmpeg](https://ffmpeg.org/) for transcoding, with [WavPack](https://www.wavpack.com/)'s `wvunpack` for hybrid tracks FFmpeg decodes lossy
+- [SQLite](https://sqlite.org/) for every store that outlives a restart, through [Microsoft.Data.Sqlite](https://learn.microsoft.com/dotnet/standard/data/sqlite/) and [Dapper](https://github.com/DapperLib/Dapper) in the .NET services and the standard library's `sqlite3` in the Deezer pod
+- [ATL.NET](https://github.com/Zeugma440/atldotnet) for library tags and covers, in-process, [YoutubeExplode](https://github.com/Tyrrrz/YoutubeExplode) with [yt-dlp](https://github.com/yt-dlp/yt-dlp) as fallback, and [FFmpeg](https://ffmpeg.org/) for transcoding, with [WavPack](https://www.wavpack.com/)'s `wvunpack` for hybrid tracks FFmpeg decodes lossy
 - [FastAPI](https://fastapi.tiangolo.com/) for the two Python pods, over [SpotAPI](https://github.com/Aran404/SpotAPI) and [deezer-py](https://gitlab.com/RemixDev/deezer-py) — both reach their service's own web endpoints, so neither needs an API key
 - [DSharpPlus](https://github.com/DSharpPlus/DSharpPlus) nightlies for the Discord bot, whose `Voice` extension takes Opus straight from the API without decoding it
 
@@ -84,7 +85,8 @@ Host-specific values and secrets live in `Backend/.env`, which compose reads on 
     ├── Gaida Library/
     │   ├── Gaida.Admin/
     │   ├── Gaida.CLI/
-    │   └── Gaida.Core/
+    │   ├── Gaida.Core/
+    │   └── Gaida.Sqlite/
     ├── Platforms/
     │   ├── Gaida.Platforms.MusicDatabase/
     │   ├── Gaida.Platforms.YouTube/
@@ -98,8 +100,10 @@ Host-specific values and secrets live in `Backend/.env`, which compose reads on 
     │   ├── Dunav/
     │   ├── Gaida.API/
     │   ├── Gaida.Bot/
+    │   ├── Moliv/
     │   ├── Oko/
-    │   └── Selo/
+    │   ├── Selo/
+    │   └── Stih/
     └── Tests/
         ├── Gaida.Tests/
         └── Pods.Tests/
@@ -109,7 +113,7 @@ Host-specific values and secrets live in `Backend/.env`, which compose reads on 
 
 [Backend/Platforms](Backend/Platforms) holds the pods. A `Gaida.Platforms.*` project is library code — search providers and content getters against one service. A `Gaida.Pods.*` project is the container that wraps one of them in HTTP, or, for Spotify and Deezer, a standalone Python app. Each has its own README.
 
-[Backend/Services](Backend/Services) holds everything that is not a pod, named in Bulgarian: **Gaida.API** is the public front door and the transcoder, **Dunav** the fan-out download cache, **Selo** the room server, **Dom** accounts and playlists, **Oko** the admin panel, and **Gaida.Bot** a Discord bot on the same library.
+[Backend/Services](Backend/Services) holds everything that is not a pod, named in Bulgarian: **Gaida.API** is the public front door and the transcoder, **Dunav** the fan-out download cache, **Selo** the room server, **Dom** accounts and playlists, **Moliv** the listening history, **Stih** the lyrics, **Oko** the admin panel, and **Gaida.Bot** a Discord bot on the same library.
 
 [Backend/data](Backend/data) is where the compose defaults mount their volumes — the music library, extracted album art served as `/Album_Covers`, and the YouTube and Deezer audio caches. All of it is gitignored, and only the album covers are ever served directly by nginx.
 
