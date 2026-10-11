@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Runtime.CompilerServices;
 using Gaida.Core.Platforms;
 using Gaida.Core.Platforms.Optional.Supports;
@@ -38,6 +39,29 @@ public sealed class YouTube : Platform, ISupportsSearch, ISupportsPlaylist, ISup
     }
 
     protected override HashSet<string> SearchIdIdentifiers { get; } = [YouTubeResult.Prefix];
+
+    /// <summary>
+    ///     An ID the cache did not know is looked up on YouTube and then remembered, as a search would have
+    ///     remembered it. A video only ever played by link then gets its name, in discovery and beside its webm
+    ///     in Oko, the first time it is played.
+    /// </summary>
+    public override async Task<PlatformResult?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var result = await base.GetByIdAsync(id, cancellationToken);
+        if (result is not YouTubeResult { Cached: false } fresh) return result;
+
+        try
+        {
+            await Cache.AddToCacheAsync([fresh], cancellationToken);
+        }
+        catch (DbException e)
+        {
+            // The lookup already has its answer; losing the row costs one YouTube call next time.
+            Logger.Warning(e, "Could not remember {ID}", fresh.Id);
+        }
+
+        return result;
+    }
 
     public async IAsyncEnumerable<PlatformResult> SearchPlaylist(string playlist,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)

@@ -1,5 +1,6 @@
 using Gaida.Platforms.YouTube;
 using Gaida.Platforms.YouTube.Cache;
+using Gaida.Platforms.YouTube.SearchProviders;
 
 namespace Pods.Tests;
 
@@ -165,6 +166,21 @@ public class YouTubeCacherTests : IDisposable
         Assert.False(File.Exists(Path.Combine(Webm, "a.webm")));
         Assert.False(await cacher.IsDownloadedAsync("yt://a"));
         Assert.NotNull(await cacher.GetFromCacheAsync("a"));
+    }
+
+    /// <summary>
+    ///     YouTube.GetByIdAsync remembers what it looked up unless it came out of the cache. This is the flag
+    ///     it decides on, so a cache hit is never written back.
+    /// </summary>
+    [Fact]
+    public async Task AResultReadOutOfTheCacheSaysSo()
+    {
+        var cacher = await Cacher(Result("yt://a"));
+
+        var hit = await new YouTubeSearchProviderCached(Serilog.Core.Logger.None, cacher).GetByIdAsync("a");
+
+        Assert.True(Assert.IsType<YouTubeResult>(hit).Cached);
+        Assert.False(Result("yt://b").Cached);
     }
 
     [Fact]

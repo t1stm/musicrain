@@ -19,6 +19,7 @@ public class YouTubeSearchProviderCached(ILogger logger, YouTubeCacher cacher) :
         }
 
         result.Downloaders = ContentDownloaders;
+        result.Cached = true;
         return result;
     }
 
