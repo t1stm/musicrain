@@ -10,6 +10,9 @@ Backed by SpotAPI (https://github.com/Aran404/SpotAPI), which reaches Spotify's 
 needs no client ID, no secret and no premium account. It is also unofficial: when Spotify changes those
 endpoints the calls below start failing, and every one of them degrades to "found nothing" rather than
 taking the route down.
+
+Every track it hands back is remembered in :mod:`cache`, so a later ``/resolve`` of it is answered
+without asking Spotify again. That cache is the pod's only state.
 """
 
 import json
@@ -17,12 +20,13 @@ import logging
 import os
 from typing import Any, Iterator
 
-from fastapi import FastAPI, Response
+from fastapi import APIRouter, FastAPI, Response
 from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
 from spotapi import Public
 
 import admin
+import cache
 import classify
 from mapper import to_dto
 
@@ -37,9 +41,7 @@ this is a budget rather than a page size -- Spotify's own first page is 100.
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
-# The request ring is this pod's whole admin payload -- it holds no state an operator edits.
-# No-op without ADMIN_TOKEN. See ADMIN_PLAN.md.
-admin.install(app, lambda: {"service": "gaida-spotify", "searchLimit": SEARCH_LIMIT})
+songs = cache.Results(os.environ.get("SPOTIFY_CACHE") or "/cache")
 
 
 @app.get("/classify")
@@ -59,9 +61,17 @@ def resolve(id: str | None = None) -> Response:
     if not track_id:
         return Response(status_code=404)
 
+    remembered = songs.get(track_id)
+    if remembered is not None:
+        return JSONResponse(remembered)
+
     track = _ask(lambda: Public.song_info(track_id), f"track {track_id}")
     dto = to_dto(((track or {}).get("data") or {}).get("trackUnion"))
-    return JSONResponse(dto) if dto else Response(status_code=404)
+    if not dto:
+        return Response(status_code=404)
+
+    songs.remember([dto])
+    return JSONResponse(dto)
 
 
 @app.get("/playlist")
@@ -81,8 +91,9 @@ def search(q: str | None = None) -> Response:
     if not query:
         return JSONResponse([])
 
-    return JSONResponse([dto for dto in (to_dto((item.get("item") or {}).get("data"))
-                                         for item in _search_hits(query)) if dto])
+    dtos = [dto for dto in (to_dto((item.get("item") or {}).get("data")) for item in _search_hits(query)) if dto]
+    songs.remember(dtos)
+    return JSONResponse(dtos)
 
 
 # Spotify has no audio and nothing to pick from at random. HttpPlatform reads both 404s as
@@ -91,6 +102,32 @@ def search(q: str | None = None) -> Response:
 @app.get("/content")
 def unsupported() -> Response:
     return Response(status_code=404)
+
+
+# ── the admin surface ───────────────────────────────────────────────────────────────────────────
+# Everything here is gone without ADMIN_TOKEN, along with the rest of /Admin. See ADMIN_PLAN.md and
+# CACHE_BROWSER_PLAN.md. Read-only but for the one delete.
+
+operations = APIRouter()
+
+
+@operations.get("/results")
+def browse_results(q: str | None = None, offset: int = 0, take: int = 100, top: int | None = None) -> Response:
+    """One page of the remembered tracks, newest first. A GET, so Oko reads it without auditing it."""
+    return JSONResponse(songs.browse(q, offset, take, top))
+
+
+@operations.post("/forget")
+def forget(id: str | None = None) -> Response:
+    track_id = classify.track_id(id or "")
+    if not track_id:
+        return JSONResponse({"error": "That is not a Spotify track ID."}, status_code=400)
+
+    return JSONResponse({"forgotten": 1 if songs.forget(track_id) else 0})
+
+
+admin.install(app, lambda: {"service": "gaida-spotify", "searchLimit": SEARCH_LIMIT, "results": songs.count()},
+              operations)
 
 
 def _search_hits(query: str) -> list[dict[str, Any]]:
@@ -112,10 +149,12 @@ def _playlist_tracks(playlist_id: str) -> Iterator[dict[str, Any]]:
 
     try:
         for page in pages:
-            for item in page.get("items") or []:
-                dto = to_dto((item.get("itemV2") or {}).get("data"))
-                if dto:
-                    yield dto
+            # Remembered a page at a time, before any of it is sent: a client that hangs up halfway
+            # still leaves every page it was handed in the cache.
+            dtos = [dto for dto in (to_dto((item.get("itemV2") or {}).get("data"))
+                                    for item in page.get("items") or []) if dto]
+            songs.remember(dtos)
+            yield from dtos
     except Exception:
         # Mid-stream: the entries already written stay written, which is the same contract the .NET
         # pods' Guarded() gives -- a short playlist rather than a torn response.

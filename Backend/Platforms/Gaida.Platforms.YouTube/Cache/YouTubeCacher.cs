@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text.Json;
 using Dapper;
+using Gaida.Core.Utils;
 using Gaida.Sqlite;
 using Serilog;
 
@@ -73,6 +74,61 @@ public class YouTubeCacher(ILogger logger, string path)
             cancellationToken: cancellationToken));
     }
 
+    /// <summary>How many results are cached. Synchronous because the admin snapshot is; ~25 ms at half a million.</summary>
+    public int Count()
+    {
+        using var db = Database.Open(_connectionString);
+        return db.ExecuteScalar<int>("SELECT count(*) FROM results");
+    }
+
+    /// <summary>
+    ///     One page for Oko's cache browser, newest first. <paramref name="top" /> pins the pages to the rows
+    ///     that existed when page 1 was read, so results a search adds meanwhile do not shift them; page 1
+    ///     passes <c>null</c> and gets the pin back. The search ignores case in Cyrillic too, which SQLite's
+    ///     own <c>LIKE</c> and <c>lower()</c> do not.
+    /// </summary>
+    /// <remarks>
+    ///     ponytail: every search is a full scan, ~0.5 s at half a million rows. An FTS5 shadow table is the
+    ///     upgrade if that ever matters; nothing but an operator pressing Enter runs it.
+    /// </remarks>
+    public async Task<ResultsPage> PageAsync(string? query, int offset, int take, long? top,
+        CancellationToken cancellationToken = default)
+    {
+        var needle = query?.Trim() ?? "";
+        offset = Math.Max(0, offset);
+        take = Math.Clamp(take, 1, 200);
+
+        await using var db = Database.Open(_connectionString);
+        db.CreateFunction("fold", (string? text) => text?.ToLowerInvariant(), isDeterministic: true);
+
+        var pinned = top ?? await db.ExecuteScalarAsync<long>(new CommandDefinition(
+            "SELECT coalesce(max(rowid), 0) FROM results", cancellationToken: cancellationToken));
+        var parameters = new { top = pinned, folded = needle.ToLowerInvariant(), raw = needle, offset, take };
+        var where = needle.Length == 0
+            ? "rowid <= @top"
+            : "rowid <= @top AND (instr(fold(coalesce(Name, '') || char(10) || coalesce(Artist, '') || " +
+              "char(10) || coalesce(Album, '')), @folded) OR instr(Id, @raw))";
+
+        var total = await db.ExecuteScalarAsync<int>(new CommandDefinition(
+            $"SELECT count(*) FROM results WHERE {where}", parameters, cancellationToken: cancellationToken));
+        var rows = await db.QueryAsync<YouTubeResult>(new CommandDefinition(
+            $"SELECT {Columns} FROM results WHERE {where} ORDER BY rowid DESC LIMIT @take OFFSET @offset",
+            parameters, cancellationToken: cancellationToken));
+
+        return new ResultsPage(pinned, total, offset, take, [.. rows]);
+    }
+
+    /// <summary>Drops one cached result. A search that lists it again puts it back, as the newest row.</summary>
+    /// <param name="id">The video ID, with or without <c>yt://</c>.</param>
+    /// <returns>Whether there was a row to drop.</returns>
+    public async Task<bool> ForgetAsync(string id, CancellationToken cancellationToken = default)
+    {
+        await using var db = Database.Open(_connectionString);
+        return await db.ExecuteAsync(new CommandDefinition("DELETE FROM results WHERE Id = @id",
+            new { id = YouTubeResult.Prefix + PlatformId.StripPrefix(id.Trim()) },
+            cancellationToken: cancellationToken)) > 0;
+    }
+
     /// <summary><c>Id</c> is a field, and Dapper binds parameters from properties only.</summary>
     private static int Insert(IDbConnection db, IEnumerable<YouTubeResult> results, IDbTransaction transaction)
     {
@@ -129,3 +185,6 @@ public class YouTubeCacher(ILogger logger, string path)
         }
     }
 }
+
+/// <summary>One page of <see cref="YouTubeCacher.PageAsync" />, with the pin and the clamped bounds it was read with.</summary>
+public sealed record ResultsPage(long Top, int Total, int Offset, int Take, YouTubeResult[] Rows);

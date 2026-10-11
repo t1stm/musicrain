@@ -4,7 +4,9 @@ The Spotify pod — `gaida-spotify` in [compose.yaml](../../compose.yaml). One o
 
 That shapes the whole pod. There is no `/content` route and no `contentUrl` in its DTO, and `/random` is a `404` — a random Spotify track is a random resolve, and the pods that own audio answer that question directly. Every hit it returns is a name for [Gaida.API](../../Services/Gaida.API)'s resolver to look up against the library, Deezer or YouTube, so a `spotify://` ID never reaches a client.
 
-It needs no credentials at all. [SpotAPI](https://github.com/Aran404/SpotAPI) reaches Spotify's own web endpoints, so there is no client ID, no secret, no premium account, and nothing to put in `.env`. `SPOTIFY_SEARCH_LIMIT` (default 15) is the only knob.
+It needs no credentials at all. [SpotAPI](https://github.com/Aran404/SpotAPI) reaches Spotify's own web endpoints, so there is no client ID, no secret, no premium account, and nothing secret to put in `.env`. `SPOTIFY_SEARCH_LIMIT` (default 15) is the only knob.
+
+Its one piece of state is a search cache. Every track a search, playlist or resolve hands back is a row in `cache.db` on the `/cache` volume (`SPOTIFY_CACHE_PATH`, default `data/spotify-cache`), first seen wins, so a later `/resolve` of it costs no Spotify call. It keeps the song data only, never the query or the playlist. Oko pages through it, searches it, and can forget a row.
 
 ## Running it
 
@@ -16,8 +18,8 @@ Or on the host:
 
 ```bash
 pip install -r requirements.txt
-uvicorn main:app --port 8083
-pytest                               # test_classify.py, pytest installed separately
+SPOTIFY_CACHE=./cache uvicorn main:app --port 8083
+pytest                               # test_classify.py and test_cache.py, pytest installed separately
 ```
 
 ## Interesting techniques
@@ -36,4 +38,4 @@ pytest                               # test_classify.py, pytest installed separa
 
 ## Project structure
 
-The pod is flat: [main.py](main.py) for the routes, [classify.py](classify.py) for recognising Spotify URLs and IDs, [mapper.py](mapper.py) for turning SpotAPI's shapes into the shared DTO, [admin.py](admin.py) for the admin surface, [test_classify.py](test_classify.py) for the parser's tests, and a [Dockerfile](Dockerfile).
+The pod is flat: [main.py](main.py) for the routes, [classify.py](classify.py) for recognising Spotify URLs and IDs, [mapper.py](mapper.py) for turning SpotAPI's shapes into the shared DTO, [cache.py](cache.py) for the search cache, [admin.py](admin.py) for the admin surface, [test_classify.py](test_classify.py) and [test_cache.py](test_cache.py) for the tests, and a [Dockerfile](Dockerfile).

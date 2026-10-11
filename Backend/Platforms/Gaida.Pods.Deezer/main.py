@@ -88,17 +88,6 @@ REGISTER_TIMEOUT = 5
 if not STIH_URL:
     log.info("STIH_URL is unset: downloaded lyrics go into the file's tags only, and are not registered")
 
-ADMIN_ROWS = int(os.environ.get("DEEZER_ADMIN_ROWS") or 200)
-"""
-How many cached tracks the admin snapshot carries. Oko polls it every two seconds while its panel is
-open, so this is a payload budget rather than a page size. 0 lifts the cap and sends every entry --
-fine for a cache of a few hundred, a megabyte of JSON every two seconds for one of tens of thousands.
-
-ponytail: the operator filters these rows in the browser. A server-side /Admin/cache?q= search is the
-upgrade when the cache holds more tracks than fit here.
-"""
-
-
 # ── the pod contract ────────────────────────────────────────────────────────────────────────────
 
 @app.get("/classify")
@@ -288,13 +277,38 @@ async def evict(id: str | None = None) -> Response:
     return JSONResponse({"evicted": 1 if removed else 0})
 
 
+@operations.get("/cache")
+async def browse_cache(q: str | None = None, offset: int = 0, take: int = 100, top: int | None = None) -> Response:
+    """One page of the downloads, newest first. A GET, so Oko reads it without auditing it."""
+    return JSONResponse(await asyncio.to_thread(songs.browse, "entries", q, offset, take, top))
+
+
+@operations.get("/results")
+async def browse_results(q: str | None = None, offset: int = 0, take: int = 100,
+                         top: int | None = None) -> Response:
+    """One page of the remembered search results, newest first."""
+    return JSONResponse(await asyncio.to_thread(songs.browse, "results", q, offset, take, top))
+
+
+@operations.post("/forget")
+async def forget(id: str | None = None) -> Response:
+    track_id = classify.track_id(id or "")
+    if not track_id:
+        return JSONResponse({"error": "That is not a Deezer track ID."}, status_code=400)
+
+    return JSONResponse({"forgotten": 1 if await asyncio.to_thread(songs.forget_result, track_id) else 0})
+
+
 @operations.post("/evict-all")
 async def evict_all() -> Response:
     return JSONResponse({"evicted": await asyncio.to_thread(songs.clear)})
 
 
 def snapshot() -> dict[str, Any]:
-    """What an operator sees. Read straight off the in-memory index — nothing here touches the disk."""
+    """
+    What an operator sees at a glance: counts off the in-memory index, and one count(*) over a table of
+    thousands. The rows themselves are paged on request -- see /Admin/cache and /Admin/results.
+    """
     count, total = songs.stats()
     return {
         "service": "gaida-deezer",
@@ -306,20 +320,7 @@ def snapshot() -> dict[str, Any]:
         "totalBytes": total,
         "maxBytes": songs.max_bytes,
         "directory": str(songs.directory),
-        "rowLimit": ADMIN_ROWS,
-        "entries": [
-            {
-                "id": entry.id,
-                "name": entry.name,
-                "artist": entry.artist,
-                "album": entry.album,
-                "duration": entry.duration,
-                "format": entry.format,
-                "bytes": entry.bytes,
-                "at": entry.at,
-            }
-            for entry in songs.recent(ADMIN_ROWS)
-        ],
+        "results": songs.results_count(),
     }
 
 

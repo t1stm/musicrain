@@ -12,18 +12,20 @@ namespace Gaida.Platforms.YouTube;
 
 public sealed class YouTube : Platform, ISupportsSearch, ISupportsPlaylist, ISupportsRandomResults
 {
-    private readonly YouTubeCacher _cacher;
+
+    /// <summary><c>YouTube.db</c>, which the pod's admin routes page through and prune.</summary>
+    public YouTubeCacher Cache { get; }
 
     public YouTube(ILogger logger, YouTubeOptions options) : base(logger)
     {
-        _cacher = new YouTubeCacher(logger, options.CacheDatabasePath);
+        Cache = new YouTubeCacher(logger, options.CacheDatabasePath);
 
         // One client for the platform, shared by the search provider and the downloader.
         var client = new YoutubeClient();
 
         SearchProviders =
         [
-            new YouTubeSearchProviderCached(logger, _cacher),
+            new YouTubeSearchProviderCached(logger, Cache),
             new YouTubeSearchProviderExplode(logger, client)
         ];
 
@@ -50,7 +52,7 @@ public sealed class YouTube : Platform, ISupportsSearch, ISupportsPlaylist, ISup
     public async IAsyncEnumerable<PlatformResult> GetRandomResults(int count,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        foreach (var result in await _cacher.GetRandomAsync(count, cancellationToken))
+        foreach (var result in await Cache.GetRandomAsync(count, cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
             result.Downloaders = ContentDownloaders;
@@ -87,7 +89,7 @@ public sealed class YouTube : Platform, ISupportsSearch, ISupportsPlaylist, ISup
 
             if (found.Count == 0) continue;
 
-            await _cacher.AddToCacheAsync(found, cancellationToken);
+            await Cache.AddToCacheAsync(found, cancellationToken);
             yield break;
         }
     }

@@ -83,6 +83,46 @@ public class YouTubeCacherTests : IDisposable
         Assert.NotNull(await reopened.GetFromCacheAsync("QcqaQ47ywD0"));
     }
 
+    /// <summary>Oko pages with the pin page 1 handed back, so a result cached meanwhile shifts nothing.</summary>
+    [Fact]
+    public async Task PagesStayPinnedToTheRowsPageOneSaw()
+    {
+        var cacher = await Cacher([.. Enumerable.Range(0, 5).Select(i => Result($"yt://{i}"))]);
+
+        var first = await cacher.PageAsync(null, 0, 2, null);
+        await cacher.AddToCacheAsync([Result("yt://late")]);
+        var second = await cacher.PageAsync(null, 2, 2, first.Top);
+
+        Assert.Equal(["yt://4", "yt://3"], first.Rows.Select(row => row.Id));
+        Assert.Equal(["yt://2", "yt://1"], second.Rows.Select(row => row.Id));
+        Assert.Equal(5, second.Total);
+        Assert.Equal(6, (await cacher.PageAsync(null, 0, 2, null)).Total);
+    }
+
+    /// <summary>SQLite folds ASCII only, and most of the real cache is Bulgarian.</summary>
+    [Fact]
+    public async Task SearchIgnoresCaseInCyrillicAndMatchesTheId()
+    {
+        var song = Result("yt://QcqaQ47ywD0");
+        song.Name = "Тази песен не е за Любов";
+        var cacher = await Cacher(song, Result("yt://other"));
+
+        Assert.Equal(1, (await cacher.PageAsync("любов", 0, 10, null)).Total);
+        Assert.Equal(1, (await cacher.PageAsync("QcqaQ47", 0, 10, null)).Total);
+        Assert.Equal(0, (await cacher.PageAsync("qcqaq47", 0, 10, null)).Total);
+    }
+
+    [Fact]
+    public async Task ForgetTakesTheIdWithOrWithoutItsPrefix()
+    {
+        var cacher = await Cacher(Result("yt://a"), Result("yt://b"));
+
+        Assert.True(await cacher.ForgetAsync("yt://a"));
+        Assert.True(await cacher.ForgetAsync("b"));
+        Assert.False(await cacher.ForgetAsync("a"));
+        Assert.Equal(0, cacher.Count());
+    }
+
     private static YouTubeResult Result(string id)
     {
         return new YouTubeResult { Id = id, Downloaders = [] };

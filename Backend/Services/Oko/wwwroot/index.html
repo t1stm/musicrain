@@ -75,6 +75,8 @@
     }
     button.act:hover { color: var(--text); border-color: var(--dim); }
     button.act[data-danger]:hover { color: var(--bad); border-color: var(--bad); }
+    button.act:disabled { opacity: .4; cursor: default; }
+    button.act:disabled:hover { color: var(--dim); border-color: var(--line); }
     .rowbar { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
     .rowbar input[type=search] {
       flex: 1; max-width: 420px; background: var(--panel); color: var(--text);
@@ -224,6 +226,9 @@
       { method: "POST" });
 
     if (!response.ok) alert(`${button.dataset.a} failed (${response.status})\n\n${await failure(response)}`);
+    // Every table of the pod that was acted on, not only the one the button sat in: Deezer's
+    // "Evict everything" sits outside both of its tables and empties one of them.
+    for (const key of Object.keys(browsers)) if (key.startsWith(button.dataset.t + "/")) loadBrowser(key);
     await refresh();
     if (page || tab !== "state") render();
   }
@@ -238,7 +243,7 @@
 
   // ── the bot's Discord status ─────────────────────────────────────────────────
   // What the controls are showing per account, keyed by the configured name /Admin/set-status takes.
-  // Module state for the same reason `deezerFilter` is: the State tab repaints every poll, so a value
+  // Module state for the same reason `browsers` is: the State tab repaints every poll, so a value
   // living only in the DOM is gone in two seconds.
   const statusDraft = {};
 
@@ -309,9 +314,145 @@
     if (service) el("body").innerHTML = renderState(service); else render();
   }
 
-  // What the Deezer cache table is filtered by. Module state rather than the input's own value: the
-  // State tab is re-rendered on every poll, so anything living only in the DOM is gone in two seconds.
-  let deezerFilter = "";
+  // ── the cache browsers (gaida-youtube, gaida-spotify, gaida-deezer) ─────────
+  // One paged table per database table, read through the unaudited /api/read and deleted from through
+  // the audited /api/action — nothing here edits a row. State is keyed `${target}/${table}` and keeps
+  // the markup as last rendered, like `libHtml`: the State tab is repainted on every poll. `top` is the
+  // pin the pod handed back with page 1, so rows added meanwhile do not shift the later pages; Search
+  // drops it, which is also how new rows come into view. See CACHE_BROWSER_PLAN.md.
+  const PAGE_SIZE = 100;
+  const browsers = {};
+
+  // Which tables each pod's view shows, keyed on what the pod reports about itself.
+  const BROWSED = { "gaida-youtube": ["results"], "gaida-spotify": ["results"], "gaida-deezer": ["cache", "results"] };
+
+  const TABLES = {
+    results: {
+      columns: ["Track", "Artist", "Album", "Length", "ID", ""],
+      row: (r, name) => [
+        cell(r.name ?? "—", "wrap"), cell(r.artist ?? "—", "wrap"), cell(r.album ?? "—", "wrap"),
+        cell((r.duration ?? "").split(".")[0], "mono"), cell(r.id, "mono"),
+        `<td>${act("Forget", name, "forget", { id: r.id },
+          { confirm: `Forget "${r.name}" from the search cache?\n\nThe next search that lists it adds it back.`,
+            danger: true })}</td>`
+      ]
+    },
+
+    // Deezer's downloads. Everything Deezer hands over is MP3 320 unless someone asked for lossless,
+    // so promoting is how a track worth keeping becomes a FLAC and demoting is how the space comes
+    // back. "To library" is the one button here that acts on another service.
+    cache: {
+      columns: ["Track", "Artist", "Format", "Size", "Cached", ""],
+      row: (r, name) => {
+        // Keyed on what the pod reports about itself, like the library table — not on what the target
+        // happens to be called in this deployment's config.
+        const library = (latest?.services ?? []).find((x) => x.snapshot?.service === "gaida-local")?.name;
+        return [
+          cell(r.name, "wrap"), cell(r.artist, "wrap"),
+          `<td><span class="pill">${esc(r.format)}</span></td>`,
+          cell(bytes(r.bytes), "mono"), cell(new Date(r.at * 1000).toLocaleString()),
+          `<td>` +
+            (r.format === "flac"
+              ? act("Demote to 320", name, "demote", { id: r.id }, { confirm: `Replace the FLAC of "${r.name}" with MP3 320?` })
+              : act("Promote to FLAC", name, "promote", { id: r.id })) +
+            (library
+              ? act("To library", library, "import-deezer", { id: r.id },
+                  { confirm: `Copy "${r.name}" into the library's Deezer folder?\n\nIt becomes an ordinary audio:// song, for you to tidy up in gaida-local's library.` })
+              : "") +
+            act("Evict", name, "evict", { id: r.id }) +
+          `</td>`
+        ];
+      }
+    }
+  };
+
+  // The pager's arithmetic, pure so that ?self-check can hold it to its edges.
+  const pager = (total, offset, take) => {
+    const pages = Math.max(1, Math.ceil(total / take));
+    return { page: Math.floor(offset / take) + 1, pages, last: (pages - 1) * take,
+             from: total ? offset + 1 : 0, to: Math.min(total, offset + take) };
+  };
+
+  const browserSlot = (name, table) => {
+    const key = `${name}/${table}`;
+    return `<div data-browser="${esc(key)}">${browsers[key]?.html ||
+      `<div class="scroll"><div class="empty">Loading…</div></div>`}</div>`;
+  };
+
+  async function loadBrowser(key, changes = {}) {
+    const state = browsers[key] ??= { q: "", draft: null, offset: 0, top: null, page: null, error: null, html: "" };
+    Object.assign(state, changes);
+
+    // A ticket rather than a flag: a newer load (the next page clicked before this one landed) wins,
+    // and whatever this one brings back is dropped.
+    const ticket = state.ticket = {};
+    const [target, kind] = key.split("/");
+    const query = new URLSearchParams({ q: state.q, offset: state.offset, take: PAGE_SIZE });
+    if (state.top !== null) query.set("top", state.top);
+
+    let page = null, error = null;
+    try {
+      const response = await fetch(`/api/read/${encodeURIComponent(target)}/${kind}?${query}`);
+      if (response.ok) page = await response.json(); else error = await failure(response);
+    } catch (e) { error = e.message; }
+    if (state.ticket !== ticket) return;
+
+    // A delete can empty the last page under the operator; show the one before it instead.
+    if (page && !page.rows.length && page.offset > 0)
+      return loadBrowser(key, { offset: pager(page.total, 0, page.take).last });
+
+    Object.assign(state, { page, error }, page ? { top: page.top, offset: page.offset } : {});
+    renderBrowser(key);
+  }
+
+  function renderBrowser(key) {
+    const state = browsers[key];
+    // Not `table`: that is the helper that draws one, called below.
+    const [name, kind] = key.split("/");
+    const spec = TABLES[kind];
+    const p = state.page;
+    const at = p && pager(p.total, p.offset, p.take);
+    const go = (label, offset, enabled, title) =>
+      `<button class="act" data-goto="${offset}" title="${title}"${enabled ? "" : " disabled"}>${label}</button>`;
+
+    state.html =
+      `<div class="rowbar">
+         <input type="search" data-browse-q placeholder="Search names, artists, albums or IDs…" value="${esc(state.draft ?? state.q)}">
+         <button class="act" data-browse="1" title="Search — again with the same words to take in rows added since">Search</button>
+         ${at ? go("«", 0, at.page > 1, "First page") + go("‹", p.offset - p.take, at.page > 1, "Previous page") +
+           `<span class="hint">Page ${at.page} of ${at.pages} · rows ${at.from}–${at.to} of ${p.total.toLocaleString()}</span>` +
+           go("›", p.offset + p.take, at.page < at.pages, "Next page") + go("»", at.last, at.page < at.pages, "Last page") : ""}
+       </div>` +
+      (state.error
+        ? `<div class="scroll"><div class="error">${esc(state.error)}</div></div>`
+        : table(spec.columns, (p?.rows ?? []).map((row) => spec.row(row, name))));
+
+    const slot = document.querySelector(`[data-browser="${CSS.escape(key)}"]`);
+    if (!slot) return;
+
+    // Put the keyboard back only if it was in here: a search pressed with Enter keeps typing.
+    const wasInside = slot.contains(document.activeElement);
+    slot.innerHTML = state.html;
+    const box = slot.querySelector("[data-browse-q]");
+    if (wasInside && box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+  }
+
+  function searchBrowser(slot) {
+    const q = slot.querySelector("[data-browse-q]").value.trim();
+    loadBrowser(slot.dataset.browser, { q, draft: null, offset: 0, top: null });
+  }
+
+  function pagerCheck() {
+    const assert = (condition, message) => { if (!condition) throw new Error("self-check failed: " + message); };
+    const empty = pager(0, 0, 100);
+    assert(empty.pages === 1 && empty.last === 0 && empty.from === 0 && empty.to === 0, "an empty table is one empty page");
+    const exact = pager(200, 100, 100);
+    assert(exact.page === 2 && exact.pages === 2 && exact.last === 100 && exact.to === 200, "200 rows are two pages");
+    const ragged = pager(908, 900, 100);
+    assert(ragged.page === 10 && ragged.pages === 10 && ragged.from === 901 && ragged.to === 908, "the last page is short");
+    assert(pager(101, 0, 100).last === 100, "one row over is a page of its own");
+    console.log("pager self-check OK");
+  }
 
   // ── the library editor (gaida-local only) ───────────────────────────────────
   // Rendered into the #lib slot of gaida-local's State view, next to its cards. `libHtml` is the
@@ -713,51 +854,43 @@
         ]));
     },
 
-    // The downloaded-song cache. Everything Deezer hands over is MP3 320 unless someone asked for
-    // lossless, so promoting is how a track worth keeping becomes a FLAC and demoting is how the
-    // space comes back. "To library" is the one button here that acts on another service.
+    // Deezer's cache.db: the downloads, and every track a search listed.
     deezer(s, name) {
       const pct = s.maxBytes ? Math.min(100, (s.totalBytes / s.maxBytes) * 100) : 0;
-      const needle = deezerFilter.trim().toLowerCase();
-      const rows = (s.entries ?? []).filter((e) => !needle ||
-        `${e.name} ${e.artist} ${e.album ?? ""} ${e.id}`.toLowerCase().includes(needle));
-
-      // Keyed on what the pod reports about itself, like the library table — not on what the target
-      // happens to be called in this deployment's config.
-      const library = (latest?.services ?? []).find((x) => x.snapshot?.service === "gaida-local")?.name;
-
       return `<div class="cards">
           <div class="card"><b>${s.count}</b><span>cached tracks</span></div>
           <div class="card"><b>${bytes(s.totalBytes)}</b><span>of ${bytes(s.maxBytes)}</span>
             <div class="bar"><i style="width:${pct.toFixed(1)}%"></i></div></div>
+          <div class="card"><b>${(s.results ?? 0).toLocaleString()}</b><span>remembered results</span></div>
           <div class="card"><b>${s.canDownload ? "yes" : "no"}</b><span>can download</span></div>
         </div>` +
         (s.canDownload ? "" : `<div class="scroll"><div class="error">No DEEZER_ARL — this pod is
           metadata only. Deezer results still show up, but Gaida resolves them against the library or
           YouTube, and nothing here can be promoted.</div></div>`) +
-        `<div class="rowbar">
-          <input type="search" id="dzq" placeholder="Filter cached tracks…" value="${esc(deezerFilter)}">
-          ${act("Evict everything", name, "evict-all", {},
-            { confirm: `Delete all ${s.count} cached track(s)?\n\nEach one is downloaded again the next time it is played.`,
-              danger: true })}
-          <span class="hint">${rows.length} of ${s.count}${s.rowLimit ? `, newest ${s.rowLimit} shown` : ""}</span>
-        </div>` +
-        table(["Track", "Artist", "Format", "Size", "Cached", ""], rows.map((e) => [
-          cell(e.name, "wrap"), cell(e.artist, "wrap"),
-          `<td><span class="pill">${esc(e.format)}</span></td>`,
-          cell(bytes(e.bytes), "mono"), cell(ago(new Date(e.at * 1000).toISOString()) + " ago"),
-          `<td>` +
-            (e.format === "flac"
-              ? act("Demote to 320", name, "demote", { id: e.id },
-                  { confirm: `Replace the FLAC of "${e.name}" with MP3 320?` })
-              : act("Promote to FLAC", name, "promote", { id: e.id })) +
-            (library
-              ? act("To library", library, "import-deezer", { id: e.id },
-                  { confirm: `Copy "${e.name}" into the library's Deezer folder?\n\nIt becomes an ordinary audio:// song, for you to tidy up in gaida-local's library.` })
-              : "") +
-            act("Evict", name, "evict", { id: e.id }) +
-          `</td>`
-        ]));
+        `<h3 class="section">Downloads</h3>
+        <div class="rowbar">${act("Evict everything", name, "evict-all", {},
+          { confirm: `Delete all ${s.count} cached track(s)?\n\nEach one is downloaded again the next time it is played.`,
+            danger: true })}</div>` +
+        browserSlot(name, "cache") +
+        `<h3 class="section">Search cache</h3>` +
+        browserSlot(name, "results");
+    },
+
+    // YouTube.db: every search result the pod has seen. Forgetting one leaves its webm on disk.
+    youtube(s, name) {
+      return `<div class="cards">
+          <div class="card"><b>${(s.results ?? 0).toLocaleString()}</b><span>cached results</span></div>
+        </div>
+        <h3 class="section">Search cache</h3>` + browserSlot(name, "results");
+    },
+
+    // Spotify hands over names only, so its cache is the whole of its state.
+    spotify(s, name) {
+      return `<div class="cards">
+          <div class="card"><b>${(s.results ?? 0).toLocaleString()}</b><span>remembered tracks</span></div>
+          <div class="card"><b>${s.searchLimit}</b><span>hits per search</span></div>
+        </div>
+        <h3 class="section">Search cache</h3>` + browserSlot(name, "results");
     }
   };
 
@@ -844,19 +977,25 @@
     el("url").textContent = service.url;
     el("meta").textContent = `${service.up ? "up" : "not answering"} · refreshed ${new Date(latest.at).toLocaleTimeString()}`;
 
-    // Not while the Deezer filter is being typed into, and not over a library that is being worked
-    // in: the State tab is redrawn on every poll, and replacing the body under an open editor, a
-    // selection or a focused input takes all three with it.
+    // Not while a cache browser is being typed or clicked in, and not over a library that is being
+    // worked in: the State tab is redrawn on every poll, and replacing the body under an open editor,
+    // a selection or a focused input takes all three with it.
     const libraryBusy = el("lib") && (editing || batch || picked.size || el("lib").contains(document.activeElement));
     // Same rule for the bot's status controls: the values survive a repaint in `statusDraft`, the
     // caret does not.
     const statusBusy = document.activeElement?.closest?.(".statusrow");
-    if (tab === "state" && document.activeElement?.id !== "dzq" && !libraryBusy && !statusBusy)
+    const browserBusy = document.activeElement?.closest?.("[data-browser]");
+    if (tab === "state" && !browserBusy && !libraryBusy && !statusBusy)
       el("body").innerHTML = renderState(service);
 
     // Keyed on what the service reports about itself, not on what the target is called in config.
     if (tab === "state" && service.up && service.snapshot?.service === "gaida-local" && libraryFor !== service.name)
       loadLibrary();
+
+    // Once per table: after that only a search, a page turn or an action reloads one.
+    if (tab === "state" && service.up)
+      for (const table of BROWSED[service.snapshot?.service] ?? [])
+        if (!browsers[`${service.name}/${table}`]) loadBrowser(`${service.name}/${table}`);
   }
 
   function syncTabs() {
@@ -922,6 +1061,10 @@
     if (!button) return;
 
     if (button.dataset.reload) return void loadLibrary();
+
+    const slot = button.closest("[data-browser]");
+    if (slot && button.dataset.browse) return void searchBrowser(slot);
+    if (slot && "goto" in button.dataset) return void loadBrowser(slot.dataset.browser, { offset: +button.dataset.goto });
     if (button.dataset.edit) { editing = button.dataset.edit; batch = draft = null; return void renderLibrary(); }
     if (button.dataset.cancel) { editing = null; return void renderLibrary(); }
     if (button.dataset.save) return void saveSong(button.dataset.save);
@@ -972,11 +1115,9 @@
 
   el("body").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && e.target.id === "libq") { e.preventDefault(); loadLibrary(); }
+    if (e.key === "Enter" && "browseQ" in e.target.dataset) { e.preventDefault(); searchBrowser(e.target.closest("[data-browser]")); }
   });
 
-  // The Deezer cache filter runs over rows the snapshot already carries, so it never leaves the page.
-  // It redraws the body itself rather than through draw(), which deliberately holds off while this
-  // input has focus — and then puts the caret back, the same trick the row checkboxes use above.
   el("body").addEventListener("input", (e) => {
     // Typing in a status field only feeds the draft: no redraw, so no caret to put back.
     const field = e.target.closest("input[data-st]");
@@ -985,19 +1126,8 @@
       return;
     }
 
-    if (e.target.id !== "dzq") return;
-
-    deezerFilter = e.target.value;
-    const caret = e.target.selectionStart;
-    const service = (latest?.services ?? []).find((s) => s.name === selected);
-    if (!service) return;
-
-    el("body").innerHTML = renderState(service);
-    const box = el("dzq");
-    if (!box) return;
-
-    box.focus();
-    box.setSelectionRange(caret, caret);
+    // A search typed but not run yet survives the repaint that follows the box losing focus.
+    if ("browseQ" in e.target.dataset) browsers[e.target.closest("[data-browser]").dataset.browser].draft = e.target.value;
   });
 
   // Both the nav entries and the label on the bar at the bottom, which is the short way to the
@@ -1023,7 +1153,7 @@
     if (document.hidden) closeFeed(); else { openFeed(); poll(); }
   });
 
-  if (new URLSearchParams(location.search).has("self-check")) batchFieldsCheck();
+  if (new URLSearchParams(location.search).has("self-check")) { batchFieldsCheck(); pagerCheck(); }
 
   poll();
   setInterval(poll, POLL_MS);

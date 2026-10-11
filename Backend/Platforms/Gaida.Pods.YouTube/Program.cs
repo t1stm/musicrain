@@ -28,10 +28,6 @@ builder.Services.AddSingleton(Log.Logger);
 
 var app = builder.Build();
 
-// The request ring is this pod's whole admin payload -- it holds no state an operator edits.
-// No-op without ADMIN_TOKEN. See ADMIN_PLAN.md.
-app.MapAdmin(() => new { service = "gaida-youtube" });
-
 // One instance for the process lifetime: this pod owns exactly one platform. Initialize() opens the
 // search cache (YouTubeSearchProviderCached.Initialize) and orders the content downloaders
 // by priority (GetterLocalCache 99 > GetterYouTubeExplode 40 > GetterYtDlp 20).
@@ -39,6 +35,24 @@ app.MapAdmin(() => new { service = "gaida-youtube" });
 var youTube = new YouTubePlatform(Log.Logger,
     new YouTubeOptions(Setting("YOUTUBE_CACHE_DB"), Setting("YOUTUBE_CACHE")));
 youTube.Initialize();
+
+// No state an operator edits, only a search cache an operator may page through and prune.
+// No-op without ADMIN_TOKEN. See ADMIN_PLAN.md and CACHE_BROWSER_PLAN.md.
+var admin = app.MapAdmin(() => new { service = "gaida-youtube", results = youTube.Cache.Count() });
+
+// GETs, so Oko forwards them through its read proxy and leaves them out of the audit log.
+admin?.MapGet("/results", async Task<IResult> (string? q, int? offset, int? take, long? top, CancellationToken ct) =>
+{
+    var page = await youTube.Cache.PageAsync(q, offset ?? 0, take ?? 100, top, ct);
+    return Results.Ok(new ResultsPageDto(page.Top, page.Total, page.Offset, page.Take,
+        page.Rows.Select(ResultMapper.Map).OfType<ResultDto>()));
+});
+
+// The one write: a cached result, gone. The webm in YOUTUBE_CACHE stays where it is.
+admin?.MapPost("/forget", async Task<IResult> (string? id, CancellationToken ct) =>
+    string.IsNullOrWhiteSpace(id)
+        ? Results.BadRequest(new { error = "A YouTube video ID is required." })
+        : Results.Ok(new { forgotten = await youTube.Cache.ForgetAsync(id, ct) ? 1 : 0 }));
 
 app.MapGet("/classify", (string? query) =>
 {

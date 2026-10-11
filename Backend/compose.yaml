@@ -123,6 +123,11 @@ services:
       # How many search hits to hand back. Each one costs Gaida.API a lookup against the library or
       # YouTube, so it is a budget rather than a page size.
       SPOTIFY_SEARCH_LIMIT: ${SPOTIFY_SEARCH_LIMIT:-15}
+      SPOTIFY_CACHE: /cache
+    volumes:
+      # Every track it has handed back, so a later /resolve costs no Spotify call. A real cache:
+      # losing it costs Spotify calls, nothing else.
+      - ${SPOTIFY_CACHE_PATH:-./data/spotify-cache}:/cache
 
   # The other Python pod, and the only one that both finds tracks and owns their audio. Metadata comes
   # from Deezer's public REST API and needs nothing; the audio needs DEEZER_ARL, an account cookie —
@@ -146,7 +151,6 @@ services:
       # A disk budget, like Dunav's, sized against free space on the volume below. 20 GiB is roughly
       # 2000 tracks at MP3 320 or 500 at FLAC; the oldest go first when it is reached.
       DEEZER_CACHE_MAX_BYTES: ${DEEZER_CACHE_MAX_BYTES:-21474836480}
-      DEEZER_ADMIN_ROWS: ${DEEZER_ADMIN_ROWS:-200}
       # Where downloaded lyrics are registered. Unset, this pod keeps its words to itself: they still
       # go into the file's tags, stih just falls back to LRCLIB for these tracks.
       STIH_URL: http://stih:8080

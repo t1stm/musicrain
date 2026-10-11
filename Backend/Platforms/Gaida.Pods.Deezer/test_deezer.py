@@ -274,14 +274,24 @@ def test_cache_survives_a_restart():
         assert not (Path(directory) / f"{TRACK}.json").exists()
 
 
-def test_cache_recent_caps_newest_first_and_0_lifts_the_cap():
+def test_cache_pages_stay_pinned_to_what_page_one_saw():
+    """Oko pages with the pin page 1 handed back, so a download meanwhile shifts nothing."""
     with tempfile.TemporaryDirectory() as directory:
         songs = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
         for track in ("1", "2", "3"):
             songs.store(track, b"z" * 10, stream.MP3, _dto())
 
-        assert [entry.id for entry in songs.recent(2)] == ["3", "2"]
-        assert [entry.id for entry in songs.recent(0)] == ["3", "2", "1"]
+        first = songs.browse("entries", None, 0, 2, None)
+        songs.store("4", b"z" * 10, stream.MP3, _dto())
+        second = songs.browse("entries", None, 2, 2, first["top"])
+
+        assert [row["id"] for row in first["rows"]] == ["deezer://3", "deezer://2"]
+        assert [row["id"] for row in second["rows"]] == ["deezer://1"]
+        assert second["total"] == 3
+        assert songs.browse("entries", None, 0, 2, None)["total"] == 4
+        # A re-download is the newest row again, as it is the newest file.
+        songs.store("1", b"y" * 10, stream.FLAC, _dto())
+        assert songs.browse("entries", None, 0, 1, None)["rows"][0]["format"] == stream.FLAC
 
 
 _JPEG = b"\xff\xd8\xff" + b"j" * 500
@@ -455,6 +465,29 @@ def test_search_results_are_remembered_first_seen_wins():
         assert songs.result("1") is None
         # Remembered is not downloaded: nothing here is audio /content could serve.
         assert songs.get(TRACK) is None
+
+
+def test_search_results_fold_cyrillic_and_match_the_full_id():
+    with tempfile.TemporaryDirectory() as directory:
+        songs = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
+        songs.remember([to_dto(_track(id=1, title="Тази песен не е за Любов")), to_dto(_track(id=2))])
+
+        assert songs.results_count() == 2
+        assert songs.browse("results", "любов", 0, 10, None)["total"] == 1
+        assert songs.browse("results", "deezer://2", 0, 10, None)["rows"][0]["id"] == "deezer://2"
+        assert songs.browse("results", None, 0, 500, None)["take"] == cache.PAGE_MAX
+
+
+def test_forgetting_a_result_leaves_its_download_alone():
+    with tempfile.TemporaryDirectory() as directory:
+        songs = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
+        songs.remember([to_dto(_track())])
+        songs.store(TRACK, b"x" * 10, stream.MP3, _dto())
+
+        assert songs.forget_result(TRACK)
+        assert not songs.forget_result(TRACK)
+        assert songs.result(TRACK) is None
+        assert songs.get(TRACK) is not None
 
 
 def test_a_version_1_cache_gains_the_results_table():

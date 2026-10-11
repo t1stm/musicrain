@@ -11,6 +11,9 @@ Every track a search, playlist, artist or album listed is one row in ``results``
 later ``/resolve`` of it costs no Deezer call -- the same job ``YouTube.db`` does for the YouTube pod.
 Those rows are never held in memory and never evicted: a row is a few hundred bytes, not a song.
 
+Oko pages through both tables (:func:`page`) and can forget a search result; that, eviction and promotion
+are the only writes it makes.
+
 Older versions wrote a ``<id>.json`` sidecar per track instead. A ``cache.db`` that is new imports them
 once and leaves them where they are, so an older image pointed at this volume still finds its index.
 
@@ -75,6 +78,15 @@ _INSERT = f"INSERT OR REPLACE INTO entries VALUES ({', '.join('?' * len(_COLUMNS
 _RESULT_COLUMNS = ("name", "artist", "album", "duration", "thumbnailUrl")
 _REMEMBER = f"INSERT OR IGNORE INTO results (id, {', '.join(_RESULT_COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?)"
 
+_BROWSE = {
+    "entries": "name, artist, album, duration, format, bytes, at",
+    "results": ", ".join(_RESULT_COLUMNS),
+}
+"""What Oko's browser shows of each table, beside the ID."""
+
+PAGE_MAX = 200
+"""The most rows one page of :func:`page` carries."""
+
 SCHEMA_VERSION = 2
 """
 ``PRAGMA user_version`` once every table exists and the sidecars are imported. 0 is a new file, 1 one
@@ -108,6 +120,7 @@ class Cache:
         self._db = sqlite3.connect(self.directory / "cache.db", check_same_thread=False)
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA synchronous=NORMAL")
+        self._db.create_function("fold", 1, _fold, deterministic=True)
         self._load()
 
     # ── reading ─────────────────────────────────────────────────────────────────────────────────
@@ -124,12 +137,14 @@ class Cache:
         with self._lock:
             return len(self._entries), sum(entry.bytes for entry in self._entries.values())
 
-    def recent(self, limit: int) -> list[Entry]:
-        """The newest entries, for the admin table. A limit of 0 or less means all of them."""
+    def browse(self, table: str, query: str | None, offset: int, take: int, top: int | None) -> dict[str, Any]:
+        """One page of ``entries`` or ``results`` for Oko -- see :func:`page`."""
         with self._lock:
-            entries = sorted(self._entries.values(), key=lambda entry: entry.at, reverse=True)
+            return page(self._db, table, "deezer://", _BROWSE[table], query, offset, take, top)
 
-        return entries[:limit] if limit > 0 else entries
+    def results_count(self) -> int:
+        with self._lock:
+            return self._db.execute("SELECT count(*) FROM results").fetchone()[0]
 
     def result(self, track_id: str) -> dict[str, Any] | None:
         """A track some search listed, in pod-result shape, or ``None`` when none ever did."""
@@ -219,6 +234,14 @@ class Cache:
 
         log.info("Cached %s as %s (%d bytes)", track_id, audio_format, entry.bytes)
         return entry
+
+    def forget_result(self, track_id: str) -> bool:
+        """
+        Drops one remembered search result. A downloaded copy stays: that is :meth:`remove`'s, and
+        ``/resolve`` answers from it first anyway. The next search that lists the track remembers it again.
+        """
+        with self._lock, self._db:
+            return self._db.execute("DELETE FROM results WHERE id = ?", (track_id,)).rowcount > 0
 
     def remove(self, track_id: str) -> bool:
         """Deletes every file one track owns. ``False`` when it was not cached."""
@@ -363,6 +386,45 @@ class Cache:
             self._delete(entry)
 
         log.info("Evicted %d track(s) to stay under %d bytes", len(doomed), self.max_bytes)
+
+
+def page(db: sqlite3.Connection, table: str, prefix: str, columns: str, query: str | None, offset: int,
+         take: int, top: int | None) -> dict[str, Any]:
+    """
+    One page of ``table`` for Oko's cache browser, newest first, in the shape every pod answers with.
+
+    ``top`` pins the pages to the rows page 1 saw, so rows written meanwhile shift nothing; page 1 passes
+    ``None`` and gets the pin back. The search folds case in Cyrillic too, through ``fold`` -- SQLite's
+    own ``LIKE`` and ``lower()`` fold ASCII only. Caller holds the connection's lock, and ``fold`` is
+    registered on it.
+
+    Byte-for-byte the same function as Gaida.Pods.Spotify/cache.py's, for the reason admin.py gives.
+    Change one, change the other.
+
+    ponytail: every search is a full scan. Fine at thousands of rows; an FTS5 table is the upgrade.
+    """
+    needle = (query or "").strip()
+    offset, take = max(0, offset), min(max(1, take), PAGE_MAX)
+    key = f"'{prefix}' || id"
+    if top is None:
+        top = db.execute(f"SELECT coalesce(max(rowid), 0) FROM {table}").fetchone()[0]
+
+    where, parameters = "rowid <= ?", [top]
+    if needle:
+        where += (" AND (instr(fold(coalesce(name, '') || char(10) || coalesce(artist, '') || char(10) || "
+                  f"coalesce(album, '')), ?) OR instr({key}, ?))")
+        parameters += [_fold(needle), needle]
+
+    total = db.execute(f"SELECT count(*) FROM {table} WHERE {where}", parameters).fetchone()[0]
+    cursor = db.execute(f"SELECT {key} AS id, {columns} FROM {table} WHERE {where} "
+                        "ORDER BY rowid DESC LIMIT ? OFFSET ?", [*parameters, take, offset])
+    names = [column[0] for column in cursor.description]
+    return {"top": top, "total": total, "offset": offset, "take": take,
+            "rows": [dict(zip(names, row)) for row in cursor]}
+
+
+def _fold(text: str | None) -> str | None:
+    return text.casefold() if text else text
 
 
 def _remove(path: Path) -> None:

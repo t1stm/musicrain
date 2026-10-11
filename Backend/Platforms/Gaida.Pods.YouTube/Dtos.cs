@@ -19,6 +19,10 @@ public sealed record ResultDto(
     string? OriginalTitle,
     string? OriginalArtist);
 
+/// <summary>One page of <c>/Admin/results</c>. Same shape as the Python pods' — see CACHE_BROWSER_PLAN.md.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
+public sealed record ResultsPageDto(long Top, int Total, int Offset, int Take, IEnumerable<ResultDto> Rows);
+
 /// <summary><c>/classify</c> response body. On a 200, only Kind/Id are set; on a 400, only Error.</summary>
 [UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record ClassifyDto(string? Kind, string? Id, string? Error);
