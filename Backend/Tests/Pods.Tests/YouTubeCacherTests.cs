@@ -10,6 +10,7 @@ public class YouTubeCacherTests : IDisposable
     public void Dispose()
     {
         Directory.Delete(_directory, true);
+        GC.SuppressFinalize(this);
     }
 
     [Fact]

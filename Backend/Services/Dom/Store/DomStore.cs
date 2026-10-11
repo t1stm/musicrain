@@ -754,7 +754,7 @@ public sealed class DomStore
     ///     Public for everybody; otherwise the owner and the collaborators, and for a friends-only
     ///     playlist the owner's friends too. Caller holds <see cref="_gate" />.
     /// </summary>
-    private bool CanSeeLocked(Playlist playlist, User? viewer)
+    private static bool CanSeeLocked(Playlist playlist, User? viewer)
     {
         if (playlist.Visibility == Visibility.Public) return true;
         if (viewer is null) return false;

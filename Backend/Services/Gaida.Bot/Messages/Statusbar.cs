@@ -2,8 +2,8 @@ using System.Diagnostics;
 using System.Globalization;
 using DSharpPlus.Entities;
 using DSharpPlus.Exceptions;
-using Gaida.Bot.Enums;
 using Gaida.Bot.Commands;
+using Gaida.Bot.Enums;
 using Gaida.Bot.Players;
 
 namespace Gaida.Bot.Messages;

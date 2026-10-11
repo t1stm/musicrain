@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json.Serialization;
 using Gaida.Core.Platforms;
@@ -76,6 +77,8 @@ public sealed record QueryResolutionDto
 ///     failure can only truncate it, so everything that can still answer 400 has to happen before the
 ///     sequence is handed over.
 /// </remarks>
+[SuppressMessage("Microsoft.Naming", "CA1711:IdentifiersShouldNotHaveIncorrectSuffix",
+    Justification = "It streams discovery results to the response; it is not a Stream.")]
 public static class DiscoveryStream
 {
     public static async IAsyncEnumerable<SearchResultDto> Mapped(this ControllerBase controller,

@@ -1,8 +1,8 @@
 using System.Text;
 using Dom.Store;
 using Microsoft.Data.Sqlite;
-using ILogger = Serilog.ILogger;
 using Serilog;
+using ILogger = Serilog.ILogger;
 
 namespace Dom;
 

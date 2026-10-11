@@ -2,7 +2,7 @@ using Gaida.Core.Platforms;
 using Gaida.Core.Platforms.Optional.Supports;
 using Gaida.Platforms.MusicDatabase.Getters;
 using Gaida.Platforms.MusicDatabase.Manager;
-using Gaida.Platforms.MusicDatabase.Search_Providers;
+using Gaida.Platforms.MusicDatabase.SearchProviders;
 using Serilog;
 
 namespace Gaida.Platforms.MusicDatabase;

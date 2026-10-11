@@ -1,0 +1,14 @@
+# The style the code already follows. Formatting only: nothing here raises a build warning.
+root = true
+
+[*]
+end_of_line = lf
+indent_style = space
+
+[*.cs]
+indent_size = 4
+dotnet_sort_system_directives_first = true
+csharp_style_namespace_declarations = file_scoped:suggestion
+
+[*.{csproj,props,slnx,xml,json,yaml,yml}]
+indent_size = 2

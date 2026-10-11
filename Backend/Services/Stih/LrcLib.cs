@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -18,6 +19,8 @@ namespace Stih;
 ///         afternoon costs a retry rather than a permanent "no lyrics" for a track that has them.
 ///     </para>
 /// </remarks>
+[SuppressMessage("Microsoft.Design", "CA1001:TypesThatOwnDisposableFieldsShouldBeDisposable",
+    Justification = "One instance for the life of the process, and its SemaphoreSlim never hands out a wait handle.")]
 public sealed class LrcLib
 {
     private static readonly JsonSerializerOptions Json = new()

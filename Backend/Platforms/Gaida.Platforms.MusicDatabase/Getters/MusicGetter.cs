@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using Gaida.Infrastructure.FFmpeg;
 using Gaida.Core.Platforms;
 using Gaida.Core.Streams;
+using Gaida.Infrastructure.FFmpeg;
 using Gaida.Platforms.MusicDatabase.Manager;
 using Serilog;
 

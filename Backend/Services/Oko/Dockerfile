@@ -8,9 +8,9 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 COPY Services/Oko/Oko.csproj Services/Oko/
-# Every project's PackageReference to JetBrains.Annotations lives here, so the props file has to
-# be in the context before the restore or [UsedImplicitly] stops compiling.
-COPY Directory.Build.props .
+# Every project's PackageReference to JetBrains.Annotations lives in Directory.Build.props and every
+# package version in Directory.Packages.props, so both have to be in the context before the restore.
+COPY Directory.Build.props Directory.Packages.props ./
 RUN dotnet restore Services/Oko/Oko.csproj
 
 COPY Services/Oko/ Services/Oko/

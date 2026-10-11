@@ -1,4 +1,4 @@
-using Gaida.Platforms.YouTube.Search_Providers;
+using Gaida.Platforms.YouTube.SearchProviders;
 using YoutubeExplode.Common;
 
 namespace Pods.Tests;

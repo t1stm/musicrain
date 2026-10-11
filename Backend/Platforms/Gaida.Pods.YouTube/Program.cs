@@ -1,5 +1,6 @@
-using Gaida.Admin;
+using System.Globalization;
 using System.Runtime.CompilerServices;
+using Gaida.Admin;
 using Gaida.Core.Platforms;
 using Gaida.Core.Streams;
 using Gaida.Core.Utils;
@@ -17,7 +18,7 @@ if (args.Contains("--self-check"))
 
 Log.Logger = new LoggerConfiguration()
     .Enrich.FromLogContext()
-    .WriteTo.Console()
+    .WriteTo.Console(formatProvider: CultureInfo.CurrentCulture)
     .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);

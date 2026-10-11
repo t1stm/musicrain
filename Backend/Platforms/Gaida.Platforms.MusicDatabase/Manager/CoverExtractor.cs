@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using ATL;
 using Serilog;
@@ -55,6 +56,9 @@ public class CoverExtractor(ILogger logger, string exportLocation)
     ///     addressing is what makes that safe: an album imported twice writes one file.
     /// </remarks>
     /// <returns>The cover's file name (<c>&lt;hash&gt;.jpg</c>).</returns>
+    [SuppressMessage("Microsoft.Security", "CA5350:DoNotUseWeakCryptographicAlgorithms",
+        Justification = "A content address for a file name, not a security boundary, and changing it would " +
+                        "rename every stored cover.")]
     public string StoreCover(byte[] image)
     {
         var name = $"{Convert.ToHexStringLower(SHA1.HashData(image))}.{ImageFiletype(image)}";

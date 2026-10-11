@@ -7,7 +7,7 @@ using YoutubeExplode;
 using YoutubeExplode.Common;
 using YoutubeExplode.Videos;
 
-namespace Gaida.Platforms.YouTube.Search_Providers;
+namespace Gaida.Platforms.YouTube.SearchProviders;
 
 public sealed class YouTubeSearchProviderExplode(ILogger logger, YoutubeClient client) : SearchProvider(logger),
     ISupportsId, ISupportsPlaylist, ISupportsSearch
@@ -20,12 +20,12 @@ public sealed class YouTubeSearchProviderExplode(ILogger logger, YoutubeClient c
         return Result(await client.Videos.GetAsync(id, cancellationToken));
     }
 
-    public async IAsyncEnumerable<PlatformResult> SearchPlaylist(string playlistUrl,
+    public async IAsyncEnumerable<PlatformResult> SearchPlaylist(string playlist,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var playlistId = playlistUrl.StartsWith(YouTubeResult.PlaylistPrefix, StringComparison.OrdinalIgnoreCase)
-            ? playlistUrl[YouTubeResult.PlaylistPrefix.Length..]
-            : playlistUrl.AsSpan().SliceAfter("list=").SliceTo("&").ToString();
+        var playlistId = playlist.StartsWith(YouTubeResult.PlaylistPrefix, StringComparison.OrdinalIgnoreCase)
+            ? playlist[YouTubeResult.PlaylistPrefix.Length..]
+            : playlist.AsSpan().SliceAfter("list=").SliceTo("&").ToString();
 
         if (string.IsNullOrWhiteSpace(playlistId)) yield break;
 

@@ -18,7 +18,11 @@ public class DomPersistenceTests : IDisposable
 
     private readonly string _directory = Directory.CreateTempSubdirectory("dom-persistence").FullName;
 
-    public void Dispose() => Directory.Delete(_directory, true);
+    public void Dispose()
+    {
+        Directory.Delete(_directory, true);
+        GC.SuppressFinalize(this);
+    }
 
     [Fact]
     public void EveryChangeSurvivesARestart()

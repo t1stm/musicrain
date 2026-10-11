@@ -1,8 +1,8 @@
 using System.Net;
 using System.Text;
-using Microsoft.Extensions.Primitives;
-using Microsoft.Extensions.Options;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using Serilog.Core;
 
 namespace Oko;
@@ -153,10 +153,10 @@ internal static class SelfCheck
             {
                 var host = request.RequestUri!.Host;
 
-                if (host.StartsWith("down"))
+                if (host.StartsWith("down", StringComparison.Ordinal))
                     throw new HttpRequestException("connection refused");
 
-                if (host.StartsWith("no-token"))
+                if (host.StartsWith("no-token", StringComparison.Ordinal))
                     return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
 
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)

@@ -1,11 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
-
   <ItemGroup>
     <!-- Endpoint routing, TypedResults and the SSE result live in the ASP.NET Core shared framework.
          Referenced rather than packaged: every consumer is already a Microsoft.NET.Sdk.Web project. -->

@@ -3,7 +3,7 @@ using Gaida.Core.Platforms.Optional.Supports;
 using Gaida.Platforms.YouTube.Cache;
 using Serilog;
 
-namespace Gaida.Platforms.YouTube.Search_Providers;
+namespace Gaida.Platforms.YouTube.SearchProviders;
 
 public class YouTubeSearchProviderCached(ILogger logger, YouTubeCacher cacher) : SearchProvider(logger), ISupportsId
 {

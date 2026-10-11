@@ -1,7 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using Gaida.Bot.Admin;
 using Gaida.Bot;
+using Gaida.Bot.Admin;
 using Gaida.Bot.Commands;
 using Gaida.Bot.Enums;
 using Gaida.Bot.Gaida;
@@ -17,6 +17,8 @@ namespace Gaida.Tests;
 /// </summary>
 public class BotPlaybackTests
 {
+    private static readonly JsonSerializerOptions CaseInsensitive = new() { PropertyNameCaseInsensitive = true };
+
     private static Track Track(string name, string id = "audio://x", string duration = "00:03:00",
         string artist = "Artist") =>
         new()
@@ -397,8 +399,8 @@ public class BotPlaybackTests
         // JSON carries no comments, so the example file is the shape's documentation. This keeps it
         // honest when the configuration type changes under it.
         var path = Path.Combine(SourceDirectory(), "..", "..", "Services", "Gaida.Bot", ".env.example.json");
-        var accounts = JsonSerializer.Deserialize<BotParametersConfiguration[]>(File.ReadAllText(path),
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var accounts =
+            JsonSerializer.Deserialize<BotParametersConfiguration[]>(File.ReadAllText(path), CaseInsensitive);
 
         Assert.NotNull(accounts);
         Assert.NotEmpty(accounts);

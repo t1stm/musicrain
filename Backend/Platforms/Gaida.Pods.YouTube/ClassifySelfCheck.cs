@@ -35,7 +35,7 @@ public static class ClassifySelfCheck
     {
         if (actual.Status == status && actual.Kind == kind && actual.Id == id && actual.Error == error) return;
 
-        throw new Exception(
+        throw new InvalidOperationException(
             $"ClassifySelfCheck failed: expected ({status},{kind},{id},{error}) got " +
             $"({actual.Status},{actual.Kind},{actual.Id},{actual.Error})");
     }

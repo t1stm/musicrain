@@ -2,14 +2,6 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-
-    <!-- The project builds clean at this level; the two rules it cannot satisfy are suppressed at
-         the type that trips them, with the reason. -->
-    <AnalysisMode>Recommended</AnalysisMode>
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
 
     <!-- The DSharpPlus.Natives.Opus pin below is a deliberate downgrade from what DSharpPlus.Voice
          asks for, which NuGet reports as NU1605 and the SDK escalates to an error. -->
@@ -29,18 +21,18 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="DSharpPlus" Version="5.0.0-nightly-02609"/>
-    <PackageReference Include="DSharpPlus.Commands" Version="5.0.0-nightly-02609"/>
-    <PackageReference Include="DSharpPlus.Interactivity" Version="5.0.0-nightly-02609"/>
-    <PackageReference Include="DSharpPlus.Voice" Version="5.0.0-nightly-02609"/>
+    <PackageReference Include="DSharpPlus"/>
+    <PackageReference Include="DSharpPlus.Commands"/>
+    <PackageReference Include="DSharpPlus.Interactivity"/>
+    <PackageReference Include="DSharpPlus.Voice"/>
     <!-- Pinned below what DSharpPlus.Voice asks for. 1.6.1.34's libopus.so is built against
          GLIBC_2.43, which no current container base image has (Ubuntu 24.04 is 2.39), so it cannot
          load and every voice connect dies in opus_encoder_create. 1.6.1.31 needs only GLIBC_2.29
          and exports every dsharpplus_* wrapper 1.6.1.34 does, plus set_bandwidth. Stock libopus is
          not a substitute: these wrappers exist because opus_encoder_ctl is variadic. Drop this pin
          when upstream builds the native against an older glibc again. -->
-    <PackageReference Include="DSharpPlus.Natives.Opus" Version="1.6.1.31"/>
-    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1"/>
+    <PackageReference Include="DSharpPlus.Natives.Opus"/>
+    <PackageReference Include="Serilog.Sinks.Console"/>
   </ItemGroup>
 
   <ItemGroup>

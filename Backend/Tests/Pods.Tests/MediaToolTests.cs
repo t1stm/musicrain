@@ -1,7 +1,8 @@
 using System.Diagnostics;
+using System.Globalization;
 using Gaida.Core.Streams;
-using Gaida.Platforms.MusicDatabase;
 using Gaida.Infrastructure.FFmpeg;
+using Gaida.Platforms.MusicDatabase;
 using Gaida.Platforms.MusicDatabase.Getters;
 using Gaida.Platforms.YouTube;
 using Gaida.Platforms.YouTube.Getters;
@@ -186,7 +187,8 @@ public class MediaToolTests : IDisposable
             if (open < 0 || close < open) continue;
 
             var fields = stat[(close + 2)..].Split(' ');
-            if (fields.Length > 1 && fields[0] != "Z" && fields[1] == Environment.ProcessId.ToString())
+            if (fields.Length > 1 && fields[0] != "Z" &&
+                fields[1] == Environment.ProcessId.ToString(CultureInfo.InvariantCulture))
                 yield return stat[(open + 1)..close];
         }
     }

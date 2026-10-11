@@ -14,7 +14,11 @@ public class DomSettingsTests : IDisposable
 
     private readonly string _directory = Directory.CreateTempSubdirectory("dom-settings").FullName;
 
-    public void Dispose() => Directory.Delete(_directory, true);
+    public void Dispose()
+    {
+        Directory.Delete(_directory, true);
+        GC.SuppressFinalize(this);
+    }
 
     [Fact]
     public void AnAccountThatNeverSavedHasNoSettingsRatherThanEmptyOnes()

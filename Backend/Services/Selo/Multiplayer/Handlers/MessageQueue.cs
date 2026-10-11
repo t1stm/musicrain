@@ -1,7 +1,14 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 
 namespace Selo.Multiplayer.Handlers;
 
+[SuppressMessage("Microsoft.Design", "CA1001:TypesThatOwnDisposableFieldsShouldBeDisposable",
+    Justification = "The send lock is a SemaphoreSlim that never hands out its wait handle, so a room that is " +
+                    "dropped leaves nothing behind for the collector to miss.")]
+[SuppressMessage("Microsoft.Naming", "CA1711:IdentifiersShouldNotHaveIncorrectSuffix",
+    Justification = "It is a queue of messages to send, not a collection type; the name is the one the room " +
+                    "code uses.")]
 public class MessageQueue(UserStore store, ILogger logger)
 {
     private readonly SemaphoreSlim _sync = new(1);

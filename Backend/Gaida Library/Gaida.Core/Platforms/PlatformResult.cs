@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 using Gaida.Core.Platforms.Optional.Supports;
 using Gaida.Core.Streams;
@@ -5,6 +6,10 @@ using Gaida.Core.Utils;
 
 namespace Gaida.Core.Platforms;
 
+[SuppressMessage("Microsoft.Design", "CA1051:DoNotDeclareVisibleInstanceFields",
+    Justification = "YouTube.json's import deserializes results, and System.Text.Json skips a required field it " +
+                    "ignores but refuses a required property it ignores. As fields, the import reads them as it " +
+                    "always has.")]
 public abstract class PlatformResult
 {
     [JsonIgnore] public required IReadOnlyList<ContentGetter> Downloaders = [];

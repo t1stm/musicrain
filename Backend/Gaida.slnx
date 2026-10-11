@@ -5,6 +5,9 @@
     <Project Path="Gaida Library/Gaida.Infrastructure/Gaida.Infrastructure.csproj" />
     <Project Path="Gaida Library/Gaida.Sqlite/Gaida.Sqlite.csproj" />
   </Folder>
+  <Folder Name="/Scripts/">
+    <Project Path="scripts/FollowProbe/FollowProbe.csproj" />
+  </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/Gaida.Tests/Gaida.Tests.csproj" />
     <Project Path="Tests/Pods.Tests/Pods.Tests.csproj" />

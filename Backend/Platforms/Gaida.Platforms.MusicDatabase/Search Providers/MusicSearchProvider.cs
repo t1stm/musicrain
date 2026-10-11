@@ -4,7 +4,7 @@ using Gaida.Core.Utils;
 using Gaida.Platforms.MusicDatabase.Manager;
 using Serilog;
 
-namespace Gaida.Platforms.MusicDatabase.Search_Providers;
+namespace Gaida.Platforms.MusicDatabase.SearchProviders;
 
 public class MusicSearchProvider(ILogger logger, LibraryOptions options) : SearchProvider(logger),
     ISupportsId, ISupportsSearch, ISupportsRandomResults

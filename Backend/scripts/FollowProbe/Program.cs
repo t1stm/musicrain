@@ -6,11 +6,14 @@
 // verbatim from sections 1 and 3 of the plan -- if this file works, that design works.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 
 namespace FollowProbe;
 
 /// <summary>Section 1 of the plan, verbatim. The whole coordination surface between writer and readers.</summary>
+[SuppressMessage("Microsoft.Design", "CA1051:DoNotDeclareVisibleInstanceFields",
+    Justification = "Copied verbatim from the plan, and read through Volatile and ref: a property cannot be either.")]
 public sealed class CacheEntry
 {
     private TaskCompletionSource Signal = new(TaskCreationOptions.RunContinuationsAsynchronously);

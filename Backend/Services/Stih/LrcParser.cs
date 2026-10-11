@@ -92,7 +92,7 @@ public static partial class LrcParser
     }
 
     /// <summary>Drops the blank run at each end of a plain file, and the metadata header if it has one.</summary>
-    private static IEnumerable<string> Trimmed(List<string> lines)
+    private static List<string> Trimmed(List<string> lines)
     {
         var start = 0;
         var end = lines.Count;

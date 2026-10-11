@@ -22,7 +22,7 @@ if (args.Contains("--self-check"))
 
 Log.Logger = new LoggerConfiguration()
     .Enrich.FromLogContext()
-    .WriteTo.Console()
+    .WriteTo.Console(formatProvider: CultureInfo.CurrentCulture)
     .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
@@ -140,7 +140,7 @@ app.MapPost("/lyrics/stamp", async Task<IResult> (string? id, string? type, stri
 
     return Answer(await db.Library.StampLyricsAsync(StripAudioPrefix(id), kind, origin, ct),
         entry => new LyricsRowDto(MusicResult.Prefix + entry.Id, entry.LyricsType?.ToString(),
-            entry.LyricsSource?.ToString(), entry.LyricsChecked?.ToString("O")));
+            entry.LyricsSource?.ToString(), entry.LyricsChecked?.ToString("O", CultureInfo.InvariantCulture)));
 });
 
 // The routes hand back the sequence itself: ASP.NET serialises an IAsyncEnumerable element by element and
@@ -399,7 +399,7 @@ static async Task RunSelfCheck()
 
     void Assert(bool condition, string message)
     {
-        if (!condition) throw new Exception($"selftest failed: {message}");
+        if (!condition) throw new InvalidOperationException($"selftest failed: {message}");
     }
 }
 
@@ -468,7 +468,7 @@ static async Task ImportCheck(Action<bool, string> assert)
             new MemoryStream([4, 5, 6]), "not really a jpeg"u8.ToArray());
         assert(artError is null && art?.CoverUrl is { Length: > 0 },
             $"import: the supplied cover became this entry's artwork ({artError})");
-        assert(art!.CoverUrl!.StartsWith("https://music.example.com/Album_Covers/"),
+        assert(art!.CoverUrl!.StartsWith("https://music.example.com/Album_Covers/", StringComparison.Ordinal),
             $"import: the entry holds the substituted URL, not the placeholder ({art.CoverUrl})");
         assert(Directory.GetFiles(covers).Length == 1, "import: the cover file was written once");
     }

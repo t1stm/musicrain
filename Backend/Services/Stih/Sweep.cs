@@ -37,7 +37,7 @@ public sealed class Sweep(
     private TimeSpan Idle => options.Value.SweepIdle;
     private int RetryDays => options.Value.SweepRetryDays;
 
-    protected override async Task ExecuteAsync(CancellationToken ct)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!Enabled)
         {
@@ -55,13 +55,13 @@ public sealed class Sweep(
 
         // The host has to be listening before this starts asking other pods about tracks: they are
         // starting up too, and a page fetched into a connection-refused is a page wasted.
-        await Task.Delay(StartupGrace, ct);
+        await Task.Delay(StartupGrace, stoppingToken);
         _logger.Information("Lyrics sweep started, one track every {Delay}", Delay);
 
-        while (!ct.IsCancellationRequested)
+        while (!stoppingToken.IsCancellationRequested)
             try
             {
-                await PassAsync(ct);
+                await PassAsync(stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -70,7 +70,7 @@ public sealed class Sweep(
             catch (Exception e)
             {
                 _logger.Error(e, "The lyrics sweep stumbled; retrying in a minute");
-                await Task.Delay(TimeSpan.FromMinutes(1), ct);
+                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
             }
     }
 

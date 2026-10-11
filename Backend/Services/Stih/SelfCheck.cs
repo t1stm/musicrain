@@ -153,7 +153,8 @@ internal static class SelfCheck
         return Check("a library track's words land beside its audio",
                    beside.Relative == "Rock/Rammstein/Rammstein - Sonne.lrc" &&
                    beside.Absolute == Path.Combine(library, "Rock/Rammstein/Rammstein - Sonne.lrc"))
-               & Check("unsynchronized words get the other extension", plain.Relative!.EndsWith(".txt"))
+               & Check("unsynchronized words get the other extension",
+                   plain.Relative!.EndsWith(".txt", StringComparison.Ordinal))
                & Check("a Deezer track lands in stih's own volume",
                    own.Volume == LyricsVolume.Own && own.Relative == Path.Combine("deezer", "3135556.lrc"))
                & Check("a path climbing out of the library is refused",

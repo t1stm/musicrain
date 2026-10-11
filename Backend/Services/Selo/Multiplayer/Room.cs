@@ -14,12 +14,12 @@ public class Room
     private readonly MessageQueue _queue;
     private readonly UserStore _store;
 
-    public Room(Guid guid, HttpClient gaida, ILogger logger)
+    public Room(Guid id, HttpClient gaida, ILogger logger)
     {
-        RoomId = guid;
+        RoomId = id;
         _gaida = gaida;
         _logger = logger;
-        RoomName = guid.ToString();
+        RoomName = id.ToString();
 
         _store = new UserStore();
         _queue = new MessageQueue(_store, logger);

@@ -8,6 +8,8 @@ namespace Gaida.Tests;
 
 public class Utf8MessageTests
 {
+    private static readonly string[] Escaped = ["a+b", "&"];
+
     [Fact]
     public void AMessageGrowsPastItsRentalWithoutLosingWhatIsAlreadyWritten()
     {
@@ -47,7 +49,7 @@ public class Utf8MessageTests
 
         using (var writer = new Utf8JsonWriter(message, CustomSerializer.WriterOptions))
         {
-            JsonSerializer.Serialize(writer, new[] { "a+b", "&" });
+            JsonSerializer.Serialize(writer, Escaped);
         }
 
         // the strict encoder would have escaped these to + and &

@@ -1,10 +1,14 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using JetBrains.Annotations;
 
 namespace Selo.Multiplayer.Handlers;
 
+[SuppressMessage("Microsoft.Design", "CA1001:TypesThatOwnDisposableFieldsShouldBeDisposable",
+    Justification = "The room lock is a SemaphoreSlim that never hands out its wait handle, so a room that is " +
+                    "dropped leaves nothing behind for the collector to miss.")]
 public class VirtualPlayer(MessageQueue messageQueue)
 {
     /// <summary>Who reported the current item as played out.</summary>

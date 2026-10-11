@@ -304,7 +304,7 @@ public class MusicInfo : IJsonOnDeserialized
     private static string MainArtist(string credit)
     {
         var parts = TitleNormalizer.SplitArtists(credit);
-        return parts.Count > 1 ? parts[1] : parts.FirstOrDefault() ?? string.Empty;
+        return parts.Count > 1 ? parts[1] : parts.Count == 1 ? parts[0] : string.Empty;
     }
 
     /// <summary>

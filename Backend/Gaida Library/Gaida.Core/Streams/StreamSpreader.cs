@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Gaida.Core.Streams;
 
 /// <summary>
@@ -17,6 +19,8 @@ namespace Gaida.Core.Streams;
 /// already existed or is meant to outlive the spreader. Should be set to true for paths from Path.GetTempFileName()
 /// otherwise there is a risk of overflowing the 65535 limit.
 /// </param>
+[SuppressMessage("Microsoft.Naming", "CA1710:IdentifiersShouldHaveCorrectSuffix",
+    Justification = "The name every caller and every plan document uses; it spreads one stream across many.")]
 public class StreamSpreader(string? path = null, bool deleteOnClose = true) : Stream
 {
     /// <summary>

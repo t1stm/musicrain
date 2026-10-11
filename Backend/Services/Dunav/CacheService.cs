@@ -212,7 +212,7 @@ public class CacheService : BackgroundService
         }
     }
 
-    private string KeyOf(CacheEntry entry)
+    private static string KeyOf(CacheEntry entry)
     {
         return Path.GetFileName(entry.Body.Path);
     }

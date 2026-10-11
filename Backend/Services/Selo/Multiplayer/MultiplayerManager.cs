@@ -1,7 +1,10 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Selo.Multiplayer;
 
+[SuppressMessage("Microsoft.Design", "CA1001:TypesThatOwnDisposableFieldsShouldBeDisposable",
+    Justification = "One instance for the life of the process, and its SemaphoreSlim never hands out a wait handle.")]
 public class MultiplayerManager(IHttpClientFactory http, ILogger<MultiplayerManager> logger)
 {
     /// <summary>The named client a room resolves an <c>add</c> through: Gaida.API's public search.</summary>

@@ -26,7 +26,7 @@ public class StreamingTests
             var merged = await Collect(Numbered("yt", 4).RandomMerge(4, Numbered("local", 10), 10));
 
             Assert.Equal(10, merged.Count);
-            firstTotal += merged.Count(item => item.StartsWith("yt"));
+            firstTotal += merged.Count(item => item.StartsWith("yt", StringComparison.Ordinal));
         }
 
         // Four of ten from the first source every time, once neither source is short.
@@ -123,7 +123,7 @@ public class StreamingTests
         // Within one source the order still holds.
         foreach (var prefix in new[] { "slow", "fast", "mid" })
             Assert.Equal([$"{prefix}-0", $"{prefix}-1", $"{prefix}-2"],
-                merged.Where(item => item.StartsWith(prefix)));
+                merged.Where(item => item.StartsWith(prefix, StringComparison.Ordinal)));
 
         // Nothing to merge is an empty sequence, not a hang.
         Assert.Empty(await Collect(Array.Empty<IAsyncEnumerable<string>>().Merge()));

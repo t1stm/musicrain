@@ -4,7 +4,7 @@ using Gaida.Core.Platforms.Optional.Supports;
 using Gaida.Core.Utils;
 using Gaida.Platforms.YouTube.Cache;
 using Gaida.Platforms.YouTube.Getters;
-using Gaida.Platforms.YouTube.Search_Providers;
+using Gaida.Platforms.YouTube.SearchProviders;
 using Serilog;
 using YoutubeExplode;
 

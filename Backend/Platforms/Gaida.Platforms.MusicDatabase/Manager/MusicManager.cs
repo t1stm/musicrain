@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Gaida.Core.Utils;
@@ -6,6 +7,9 @@ using Serilog;
 
 namespace Gaida.Platforms.MusicDatabase.Manager;
 
+[SuppressMessage("Microsoft.Design", "CA1001:TypesThatOwnDisposableFieldsShouldBeDisposable",
+    Justification = "The edit gate is a SemaphoreSlim that never hands out its wait handle, so it holds nothing " +
+                    "to release, and the library lives as long as the pod.")]
 public partial class MusicManager(ILogger logger, LibraryOptions options)
 {
     private readonly CoverExtractor _coverExtractor = new(logger, options.CoverDirectory);

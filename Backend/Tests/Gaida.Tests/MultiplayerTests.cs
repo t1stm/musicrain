@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net.WebSockets;
 using System.Text;
 using Microsoft.AspNetCore.Http;
@@ -769,7 +770,7 @@ public class VirtualPlayerTests
     /// <summary>The position out of a `seek &lt;seconds&gt; &lt;stamp&gt;` frame.</summary>
     private static double SeekSeconds(string frame)
     {
-        return double.Parse(TestObjects.Unstamped(frame)["seek ".Length..]);
+        return double.Parse(TestObjects.Unstamped(frame)["seek ".Length..], CultureInfo.InvariantCulture);
     }
 }
 
@@ -975,7 +976,7 @@ internal static class TestObjects
         var split = frame.LastIndexOf(' ');
         Assert.True(split != -1 && long.TryParse(frame[(split + 1)..], out _), $"no stamp on '{frame}'");
 
-        var stamp = long.Parse(frame[(split + 1)..]);
+        var stamp = long.Parse(frame[(split + 1)..], CultureInfo.InvariantCulture);
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         Assert.InRange(stamp, now - 60_000, now);
 
@@ -989,7 +990,9 @@ internal static class TestObjects
     public static IEnumerable<string> Unstamped(IEnumerable<string> frames)
     {
         return frames.Select(frame =>
-            frame.StartsWith("seek ") || frame.StartsWith("sync ") ? Unstamped(frame) : frame);
+            frame.StartsWith("seek ", StringComparison.Ordinal) || frame.StartsWith("sync ", StringComparison.Ordinal)
+                ? Unstamped(frame)
+                : frame);
     }
 
     public static TrackDto Result(string id)
