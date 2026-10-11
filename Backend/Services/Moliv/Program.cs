@@ -1,4 +1,5 @@
 using Gaida.Admin;
+using Microsoft.Extensions.Options;
 using Moliv;
 using Serilog;
 using Serilog.Templates;
@@ -36,8 +37,9 @@ builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => poli
 // Dom is on the Docker network: a slow answer is a down one, and the client's outbox retries.
 builder.Services.AddHttpClient("dom", http => http.Timeout = TimeSpan.FromSeconds(5));
 
+builder.Services.AddOptions<MolivOptions>().Bind(builder.Configuration);
 builder.Services.AddSingleton(services => new Plays(
-    services.GetRequiredService<IConfiguration>()["Moliv:DataFile"] ?? "plays.db"));
+    services.GetRequiredService<IOptions<MolivOptions>>().Value.DataFile));
 builder.Services.AddSingleton<Identity>();
 
 var app = builder.Build();
@@ -111,9 +113,9 @@ app.MapDelete("/Audio/History", async (HttpRequest request, CancellationToken ct
 // Local only, like Stih's /register: not under /Audio, so no nginx location reaches it; the published port
 // is bound to 127.0.0.1; and with ADMIN_TOKEN set it wants the header Oko uses. Dom calls it when an
 // account is deleted.
-app.MapPost("/forget", (string? user, HttpRequest request) =>
+app.MapPost("/forget", (string? user, HttpRequest request, IOptions<MolivOptions> options) =>
 {
-    if (!AdminApi.Authorized(request, app.Configuration["ADMIN_TOKEN"])) return Results.Unauthorized();
+    if (!AdminApi.Authorized(request, options.Value.AdminToken)) return Results.Unauthorized();
 
     return string.IsNullOrWhiteSpace(user)
         ? Api.Invalid("Name the account to forget.")

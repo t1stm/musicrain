@@ -68,7 +68,7 @@ public class MultiplayerManager(IHttpClientFactory http, ILogger<MultiplayerMana
                 }
                 catch (Exception exception)
                 {
-                    logger.LogDebug(exception, "A room-list socket could not be told about a change");
+                    logger.RoomListNotTold(exception);
                 }
         }
         finally

@@ -79,10 +79,10 @@ public sealed record QueryResolutionDto
 public static class DiscoveryStream
 {
     public static async IAsyncEnumerable<SearchResultDto> Mapped(this ControllerBase controller,
-        IAsyncEnumerable<PlatformResult> source, IConfiguration configuration, IHostEnvironment environment)
+        IAsyncEnumerable<PlatformResult> source, GaidaApiOptions options, IHostEnvironment environment)
     {
         await foreach (var result in source.WithCancellation(controller.HttpContext.RequestAborted))
-            if (DiscoveryResultMapper.Map(result, controller.Request, configuration, environment) is { } mapped)
+            if (DiscoveryResultMapper.Map(result, controller.Request, options, environment) is { } mapped)
                 yield return mapped;
     }
 }
@@ -90,12 +90,12 @@ public static class DiscoveryStream
 public static class DiscoveryResultMapper
 {
     /// <summary>Maps a platform result without allowing platform-specific fields to leak into the API contract.</summary>
-    public static SearchResultDto? Map(PlatformResult result, HttpRequest request, IConfiguration configuration,
+    public static SearchResultDto? Map(PlatformResult result, HttpRequest request, GaidaApiOptions options,
         IHostEnvironment environment)
     {
         if (string.IsNullOrWhiteSpace(result.Id)) return null;
 
-        var publicBaseUrl = GetPublicBaseUrl(request, configuration, environment);
+        var publicBaseUrl = GetPublicBaseUrl(request, options, environment);
         var contentUrl = $"{publicBaseUrl}/Audio/DownloadRaw?id={Uri.EscapeDataString(result.Id)}";
 
         // The untransliterated title/artist is the display value when the platform has one; the romanized
@@ -137,10 +137,10 @@ public static class DiscoveryResultMapper
             .ToString("c", CultureInfo.InvariantCulture);
     }
 
-    private static string GetPublicBaseUrl(HttpRequest request, IConfiguration configuration,
+    private static string GetPublicBaseUrl(HttpRequest request, GaidaApiOptions options,
         IHostEnvironment environment)
     {
-        var configuredUrl = environment.IsDevelopment() ? null : configuration["PublicApiBaseUrl"];
+        var configuredUrl = environment.IsDevelopment() ? null : options.PublicApiBaseUrl;
         return Uri.TryCreate(configuredUrl, UriKind.Absolute, out var publicUri)
             ? publicUri.GetLeftPart(UriPartial.Authority).TrimEnd('/')
             : $"{request.Scheme}://{request.Host.Value}".TrimEnd('/');

@@ -118,7 +118,7 @@ public class StreamingTests
         Assert.Equal(9, merged.Count);
 
         // Mixed, not one block after another — the fast source is done before the slow one's second item.
-        Assert.NotEqual(merged, merged.OrderBy(item => item.Split('-')[0]).ToList());
+        Assert.NotEqual(merged, [.. merged.OrderBy(item => item.Split('-')[0])]);
 
         // Within one source the order still holds.
         foreach (var prefix in new[] { "slow", "fast", "mid" })

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Selo;
 using Selo.Multiplayer;
 using Serilog;
@@ -31,9 +32,11 @@ builder.Services.AddSingleton(Log.Logger);
 
 // Room.cs's one coupling to audio: resolving an `add <id>` through Gaida.API's public
 // /Audio/Search instead of an in-process AudioManager.
-var gaidaUrl = builder.Configuration["Gaida:Url"]
-               ?? throw new InvalidOperationException("Gaida:Url must be configured.");
-builder.Services.AddHttpClient(MultiplayerManager.Gaida, http => http.BaseAddress = new Uri(gaidaUrl));
+builder.Services.AddOptions<SeloOptions>().Bind(builder.Configuration)
+    .Validate(options => options.GaidaUrl is not null, "Gaida:Url must be configured.")
+    .ValidateOnStart();
+builder.Services.AddHttpClient(MultiplayerManager.Gaida, (services, http) =>
+    http.BaseAddress = new Uri(services.GetRequiredService<IOptions<SeloOptions>>().Value.GaidaUrl!));
 builder.Services.AddSingleton<MultiplayerManager>();
 
 var app = builder.Build();

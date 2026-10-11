@@ -215,20 +215,18 @@ public sealed class DomStore
     public List<Playlist> Mine(User owner)
     {
         lock (_gate)
-            return _playlists.Values
+            return [.. _playlists.Values
                 .Where(p => p.OwnerKey == owner.Key || Collaborates(p, owner))
-                .OrderByDescending(p => p.UpdatedUtc)
-                .ToList();
+                .OrderByDescending(p => p.UpdatedUtc)];
     }
 
     /// <summary>Everything anybody made public, newest first.</summary>
     public List<Playlist> Public()
     {
         lock (_gate)
-            return _playlists.Values
+            return [.. _playlists.Values
                 .Where(p => p.Visibility == Visibility.Public)
-                .OrderByDescending(p => p.UpdatedUtc)
-                .ToList();
+                .OrderByDescending(p => p.UpdatedUtc)];
     }
 
     /// <summary>
@@ -239,11 +237,10 @@ public sealed class DomStore
     public List<Playlist> FriendsPlaylists(User user)
     {
         lock (_gate)
-            return _playlists.Values
+            return [.. _playlists.Values
                 .Where(p => p.Visibility == Visibility.Friends && p.OwnerKey != user.Key
                             && IsFriend(user, p.Owner) && !Collaborates(p, user))
-                .OrderByDescending(p => p.UpdatedUtc)
-                .ToList();
+                .OrderByDescending(p => p.UpdatedUtc)];
     }
 
     /// <summary>
@@ -534,7 +531,7 @@ public sealed class DomStore
     {
         lock (_gate)
         {
-            var settings = user.Settings ??= new JsonObject();
+            var settings = user.Settings ??= [];
 
             foreach (var (key, value) in patch)
             {
@@ -822,10 +819,9 @@ public sealed class DomStore
 
     /// <summary>A code as somebody typed or read it: case, dashes and the look-alikes Crockford folds together.</summary>
     internal static string NormalizeCode(string? code) =>
-        new((code ?? "").ToUpperInvariant()
+        new([.. (code ?? "").ToUpperInvariant()
             .Where(char.IsAsciiLetterOrDigit)
-            .Select(c => c switch { 'O' => '0', 'I' or 'L' => '1', _ => c })
-            .ToArray());
+            .Select(c => c switch { 'O' => '0', 'I' or 'L' => '1', _ => c })]);
 
     /// <summary>A live invite by its code, however it was typed. Caller holds <see cref="_gate" />.</summary>
     private Invite? FindInviteLocked(string? code) =>

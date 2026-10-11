@@ -13,20 +13,20 @@ public static class Text
     public static string EnterChannelBeforeCommand(string command) =>
         $"Enter a channel before using the \"{command}\" command.";
 
-    public static string NoFreeBotAccounts() =>
+    public const string NoFreeBotAccounts =
         "No free bot accounts in this guild. You can add more bot accounts from the bot's support server.";
 
-    public static string ThisMessageWillUpdateShortly() => "Hello! This message will update shortly.";
+    public const string ThisMessageWillUpdateShortly = "Hello! This message will update shortly.";
 
-    public static string SelectVideo() => "Select a video.";
+    public const string SelectVideo = "Select a video.";
 
-    public static string SelectVideoTimeout() => "Time to select video ran out.";
+    public const string SelectVideoTimeout = "Time to select video ran out.";
 
     public static string NoResultsFound(string term) => $"No results could be found for the search term: \"{term}\"";
 
     public static string AddedItem(string term) => $"Added: {term}";
 
-    public static string BotIsNotInTheChannel() => "The bot isn't in the channel.";
+    public const string BotIsNotInTheChannel = "The bot isn't in the channel.";
 
     public static string LoopStatusUpdate(LoopMode loop) => "Loop status is now: " + loop switch
     {
@@ -47,11 +47,11 @@ public static class Text
 
     public static string RemovingItem(string name) => $"Removing \"{name}\"";
 
-    public static string FailedToMove() => "Failed to move.";
+    public const string FailedToMove = "Failed to move.";
 
     public static string Moved(int itemOne, string name, int itemTwo) => $"Moved ({itemOne}) \"{name}\" to ({itemTwo})";
 
-    public static string InvalidMoveFormat() =>
+    public const string InvalidMoveFormat =
         "Invalid move format.\n" +
         "You must use two numbers or use the format specified below:\n\n" +
         "-mv Exact Name !to Exact Name 2 ";
@@ -59,45 +59,45 @@ public static class Text
     public static string SwitchedThePlacesOf(string itemOne, string itemTwo) =>
         $"Switched the places of \"{itemOne}\" and \"{itemTwo}\"";
 
-    public static string CurrentQueue() => "Current Queue:";
+    public const string CurrentQueue = "Current Queue:";
 
     public static string GoingTo(int index, string? thing) => $"Going to ({index}) - \"{thing}\"";
 
-    public static string DiscordDidTheFunny() =>
+    public const string DiscordDidTheFunny =
         "Discord did the funny, so the bot tried to reconnect. If the playback stopped skip one time back and return to the current item.";
 
-    public static string UserNotInChannelLyrics() =>
+    public const string UserNotInChannelLyrics =
         "Enter a channel before using the lyrics command without a search term.";
 
-    public static string BotNotInChannelLyrics() =>
+    public const string BotNotInChannelLyrics =
         "The bot isn't in the channel. If you want to know the lyrics of a song add it's name after the command.";
 
     public static string NoResultsFoundLyrics(string search) => $"No results found for \"{search}\".";
 
-    public static string LyricsLong() =>
+    public const string LyricsLong =
         "The lyrics are longer than 2000 characters, which is Discord's length limit. Too bad. Sending song as a file.";
 
-    public static string YouAreNotInTheChannel() => "You're not in the bot's current channel.";
+    public const string YouAreNotInTheChannel = "You're not in the bot's current channel.";
 
-    public static string ShufflingTheQueue() => "Shuffling the queue.";
+    public const string ShufflingTheQueue = "Shuffling the queue.";
 
-    public static string SkippingOneTime() => "Skipping one time";
+    public const string SkippingOneTime = "Skipping one time";
 
-    public static string SkippingOneTimeBack() => "Skipping one time back.";
+    public const string SkippingOneTimeBack = "Skipping one time back.";
 
-    public static string PausingThePlayer() => "Pausing the player.";
+    public const string PausingThePlayer = "Pausing the player.";
 
-    public static string UnpausingThePlayer() => "Unpausing the player.";
+    public const string UnpausingThePlayer = "Unpausing the player.";
 
-    public static string Playing() => "Playing";
+    public const string Playing = "Playing";
 
-    public static string Loading() => "Loading";
+    public const string Loading = "Loading";
 
-    public static string RequestedBy() => "Requested by";
+    public const string RequestedBy = "Requested by";
 
-    public static string NextUp() => "Next";
+    public const string NextUp = "Next";
 
-    public static string TheQueueIsEmpty() => "The queue is empty";
+    public const string TheQueueIsEmpty = "The queue is empty";
 
     public static string CodeBlocked(this string text) => $"```{text}```";
 }

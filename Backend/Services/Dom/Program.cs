@@ -1,5 +1,6 @@
 using Dom;
 using Dom.Store;
+using Microsoft.Extensions.Options;
 using Serilog;
 using Serilog.Templates;
 using Serilog.Templates.Themes;
@@ -35,10 +36,11 @@ builder.Services.AddSingleton(Log.Logger);
 // Dom's one outbound call: telling Moliv an account is gone (AccountCleanup). Moliv is on the
 // Docker network, so a slow answer is a down one.
 builder.Services.AddHttpClient(AccountCleanup.Moliv, http => http.Timeout = TimeSpan.FromSeconds(5));
+builder.Services.AddOptions<DomOptions>().Bind(builder.Configuration);
 builder.Services.AddSingleton<CoverFiles>();
 builder.Services.AddSingleton<AccountCleanup>();
 builder.Services.AddSingleton(services => new DomStore(
-    services.GetRequiredService<IConfiguration>()["Dom:DataFile"] ?? "dom.db",
+    services.GetRequiredService<IOptions<DomOptions>>().Value.DataFile,
     Log.Logger));
 
 var app = builder.Build();

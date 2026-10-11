@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Options;
 using ILogger = Serilog.ILogger;
 
 namespace Stih;
@@ -33,12 +34,12 @@ public sealed class LrcLib
     private readonly string _baseUrl;
     private readonly string _userAgent;
 
-    public LrcLib(IHttpClientFactory factory, IConfiguration configuration, ILogger logger)
+    public LrcLib(IHttpClientFactory factory, IOptions<StihOptions> options, ILogger logger)
     {
         _factory = factory;
         _logger = logger.ForContext<LrcLib>();
-        _baseUrl = (configuration["LRCLIB_URL"] ?? string.Empty).TrimEnd('/');
-        _userAgent = configuration["LRCLIB_USER_AGENT"] ?? "musicrain/1.0 (+https://github.com/t1stm/musicrain)";
+        _baseUrl = options.Value.LrcLibUrl.TrimEnd('/');
+        _userAgent = options.Value.LrcLibUserAgent;
 
         if (!Enabled)
             _logger.Information("LRCLIB_URL is empty: stih serves the files it has and fetches nothing");

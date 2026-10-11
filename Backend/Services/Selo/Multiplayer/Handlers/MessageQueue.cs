@@ -36,7 +36,7 @@ public class MessageQueue(UserStore store, ILogger logger)
                 catch (Exception exception)
                 {
                     // a user went kaboom, will be removed on next heartbeat by other handlers
-                    logger.LogDebug(exception, "Sending to {User} failed", user.Id);
+                    logger.SendFailed(exception, user.Id);
                 }
         }
         finally

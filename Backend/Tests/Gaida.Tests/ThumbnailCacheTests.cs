@@ -1,6 +1,7 @@
 using System.Net;
 using Gaida.API;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace Gaida.Tests;
 
@@ -19,8 +20,8 @@ public class ThumbnailCacheTests : IDisposable
     {
         var upstream = new StubHandler(_ =>
             Task.FromResult(StubHandler.Reply(HttpStatusCode.OK, "png bytes", "image/png")));
-        var cache = new ThumbnailCache(new ConfigurationBuilder().AddInMemoryCollection(
-            new Dictionary<string, string?> { ["THUMBNAIL_CACHE"] = _directory }).Build(), new StubFactory(upstream));
+        var cache = new ThumbnailCache(Options.Create(new GaidaApiOptions { ThumbnailCache = _directory }),
+            new StubFactory(upstream));
 
         Assert.Null(cache.Find("audio://a"));
 

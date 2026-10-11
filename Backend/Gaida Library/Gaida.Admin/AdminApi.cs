@@ -60,7 +60,7 @@ public static class AdminApi
         var token = app.Configuration["ADMIN_TOKEN"];
         if (string.IsNullOrWhiteSpace(token))
         {
-            app.Logger.LogInformation("ADMIN_TOKEN is not set — the /Admin surface is disabled");
+            app.Logger.AdminDisabled();
             return null;
         }
 
@@ -171,7 +171,7 @@ public sealed class AdminFeed
 
     public RequestEntry[] Recent()
     {
-        lock (_gate) return _recent.ToArray();
+        lock (_gate) return [.. _recent];
     }
 
     /// <summary>Requests as they happen, for as long as the caller stays connected.</summary>

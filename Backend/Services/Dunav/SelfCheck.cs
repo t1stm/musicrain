@@ -57,7 +57,7 @@ internal static class SelfCheck
         using var http = new HttpClient(handler);
         http.BaseAddress = new Uri("http://unit-test.local");
         using var scratch = new ScratchDir();
-        var cache = new CacheService(http, Log.Logger, scratch.Configuration);
+        var cache = new CacheService(http, Log.Logger, scratch.Options);
 
         var results = await Task.WhenAll(Enumerable.Range(0, 20).Select(i => cache.GetOrStartAsync("check-key",
             entry => cache.FetchAsync(entry, "/probe", CancellationToken.None), out _)));
@@ -90,7 +90,7 @@ internal static class SelfCheck
             using var http = new HttpClient(new StatusHandler(upstream));
             http.BaseAddress = new Uri("http://unit-test.local");
             using var scratch = new ScratchDir();
-            var cache = new CacheService(http, Log.Logger, scratch.Configuration);
+            var cache = new CacheService(http, Log.Logger, scratch.Options);
 
             var entry = await cache.GetOrStartAsync("status-key",
                 fetching => cache.FetchAsync(fetching, "/probe", CancellationToken.None), out _);
@@ -195,13 +195,11 @@ internal static class SelfCheck
         {
             Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "dunav-selfcheck-" + Guid.NewGuid().ToString("n"));
             Directory.CreateDirectory(Path);
-            Configuration = new ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string?> { ["Dunav:CacheDir"] = Path })
-                .Build();
+            Options = new DunavOptions { CacheDir = Path };
         }
 
         public string Path { get; }
-        public IConfiguration Configuration { get; }
+        public DunavOptions Options { get; }
 
         public void Dispose()
         {

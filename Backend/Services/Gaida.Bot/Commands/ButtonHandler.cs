@@ -31,7 +31,7 @@ public static class ButtonHandler
             {
                 await args.Interaction.CreateFollowupMessageAsync(new DiscordFollowupMessageBuilder()
                     .AsEphemeral()
-                    .WithContent(Text.YouAreNotInTheChannel().CodeBlocked()));
+                    .WithContent(Text.YouAreNotInTheChannel.CodeBlocked()));
                 return;
             }
 
@@ -41,22 +41,22 @@ public static class ButtonHandler
             {
                 case Shuffle:
                     player.Shuffle();
-                    await EphemeralAsync(args, Text.ShufflingTheQueue());
+                    await EphemeralAsync(args, Text.ShufflingTheQueue);
                     break;
 
                 case Skip:
                     player.Skip();
-                    await EphemeralAsync(args, Text.SkippingOneTime());
+                    await EphemeralAsync(args, Text.SkippingOneTime);
                     break;
 
                 case Back:
                     player.Skip(-1);
-                    await EphemeralAsync(args, Text.SkippingOneTimeBack());
+                    await EphemeralAsync(args, Text.SkippingOneTimeBack);
                     break;
 
                 case Pause:
                     player.Pause();
-                    await EphemeralAsync(args, player.Paused ? Text.PausingThePlayer() : Text.UnpausingThePlayer());
+                    await EphemeralAsync(args, player.Paused ? Text.PausingThePlayer : Text.UnpausingThePlayer);
                     break;
 
                 case Leave:

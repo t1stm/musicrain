@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using Gaida.Core.Utils;
+using Microsoft.Extensions.Options;
 using ILogger = Serilog.ILogger;
 
 namespace Stih;
@@ -15,18 +16,18 @@ namespace Stih;
 ///     whatever the caller knew. A prefix with no configured URL, an unreachable pod or a 404 all come
 ///     back <c>null</c>, which the endpoint answers as 204.
 /// </remarks>
-public sealed class Tracks(IHttpClientFactory factory, IConfiguration configuration, ILogger logger)
+public sealed class Tracks(IHttpClientFactory factory, IOptions<StihOptions> options, ILogger logger)
 {
+    public const string LocalPrefix = "audio://";
+
     /// <summary>
     ///     Which pod owns which prefix. Adding YouTube lyrics one day is one entry here and nothing else —
     ///     which is the whole reason resolution goes through the owning pod rather than through the caller.
     /// </summary>
-    public const string LocalPrefix = "audio://";
-
-    private static readonly (string Prefix, string Setting)[] Owners =
+    private static readonly (string Prefix, Func<StihOptions, string?> Url)[] Owners =
     [
-        (LocalPrefix, "Local:Url"),
-        ("deezer://", "Deezer:Url")
+        (LocalPrefix, options => options.LocalUrl),
+        ("deezer://", options => options.DeezerUrl)
     ];
 
     private readonly ConcurrentDictionary<string, (Track? Track, DateTimeOffset At)> _cache = new();
@@ -40,9 +41,9 @@ public sealed class Tracks(IHttpClientFactory factory, IConfiguration configurat
     /// <summary>The URL of the pod that owns an ID, or <c>null</c> when nothing here does.</summary>
     public string? OwnerOf(string id)
     {
-        foreach (var (prefix, setting) in Owners)
+        foreach (var (prefix, owner) in Owners)
             if (id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                return configuration[setting]?.TrimEnd('/') is { Length: > 0 } url ? url : null;
+                return owner(options.Value)?.TrimEnd('/') is { Length: > 0 } url ? url : null;
 
         return null;
     }

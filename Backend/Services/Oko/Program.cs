@@ -29,8 +29,10 @@ builder.Services.AddHttpClient("events", http => http.Timeout = Timeout.Infinite
 
 // No CORS policy, unlike every other service here: nothing cross-origin should ever reach this one.
 
-var username = builder.Configuration["ADMIN_USERNAME"];
-var password = builder.Configuration["ADMIN_PASSWORD"];
+builder.Services.AddOptions<OkoOptions>().Bind(builder.Configuration);
+var settings = builder.Configuration.Get<OkoOptions>() ?? new OkoOptions();
+var username = settings.Username;
+var password = settings.Password;
 
 // Refuse to start rather than serve an open admin panel. Dunav's /Admin surface disables itself when
 // its token is missing because the rest of Dunav still has a job to do; Oko has no job but this one.
@@ -40,7 +42,7 @@ if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
     return 1;
 }
 
-if (string.IsNullOrWhiteSpace(builder.Configuration["ADMIN_TOKEN"]))
+if (string.IsNullOrWhiteSpace(settings.AdminToken))
     Log.Warning("ADMIN_TOKEN is not set — every target will answer 404 and render as down");
 
 var app = builder.Build();

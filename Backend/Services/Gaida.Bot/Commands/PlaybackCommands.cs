@@ -108,7 +108,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         if (player is null) return;
 
         player.Skip(times);
-        await Replies.AcknowledgeAsync(ctx, player, Text.SkippingOneTime());
+        await Replies.AcknowledgeAsync(ctx, player, Text.SkippingOneTime);
     }
 
     [Command("previous")]
@@ -119,7 +119,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         if (player is null) return;
 
         player.Skip(-times);
-        await Replies.AcknowledgeAsync(ctx, player, Text.SkippingOneTimeBack());
+        await Replies.AcknowledgeAsync(ctx, player, Text.SkippingOneTimeBack);
     }
 
     [Command("pause")]
@@ -130,7 +130,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         if (player is null) return;
 
         player.Pause();
-        await Replies.AcknowledgeAsync(ctx, player, player.Paused ? Text.PausingThePlayer() : Text.UnpausingThePlayer());
+        await Replies.AcknowledgeAsync(ctx, player, player.Paused ? Text.PausingThePlayer : Text.UnpausingThePlayer);
     }
 
     [Command("leave")]
@@ -171,7 +171,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
             player.Shuffle();
         }
 
-        await Replies.AcknowledgeAsync(ctx, player, Text.ShufflingTheQueue());
+        await Replies.AcknowledgeAsync(ctx, player, Text.ShufflingTheQueue);
     }
 
     [Command("remove")]
@@ -201,20 +201,20 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         {
             await Replies.AcknowledgeAsync(ctx, player, player.Queue.Move(from - 1, to - 1, out var moved)
                 ? Text.Moved(from, moved.DisplayName, to)
-                : Text.FailedToMove());
+                : Text.FailedToMove);
             return;
         }
 
         if (!move.Contains("!to"))
         {
-            await Replies.AcknowledgeAsync(ctx, player, Text.InvalidMoveFormat());
+            await Replies.AcknowledgeAsync(ctx, player, Text.InvalidMoveFormat);
             return;
         }
 
         var tracks = move.Split("!to");
         await Replies.AcknowledgeAsync(ctx, player, player.Queue.Move(tracks[0], tracks[1], out var one, out var two)
             ? Text.SwitchedThePlacesOf(one.DisplayName, two.DisplayName)
-            : Text.FailedToMove());
+            : Text.FailedToMove);
     }
 
     [Command("goto")]
@@ -236,7 +236,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         if (player is null) return;
 
         var builder = new DiscordMessageBuilder()
-            .WithContent(Text.CurrentQueue().CodeBlocked())
+            .WithContent(Text.CurrentQueue.CodeBlocked())
             .AddFile("queue.txt", new MemoryStream(Encoding.UTF8.GetBytes(player.Queue.ToString())));
 
         if (ctx is SlashCommandContext || player.Channel is null) await ctx.RespondAsync(builder);
@@ -250,7 +250,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         if (player is null) return;
 
         player.Queue.Clear();
-        await Replies.AcknowledgeAsync(ctx, player, Text.CurrentQueue());
+        await Replies.AcknowledgeAsync(ctx, player, Text.CurrentQueue);
     }
 
     [Command("lyrics")]
@@ -271,7 +271,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         if (lyrics.Text.Length + query.Length + LyricsPreambleLength > MessageLimit)
         {
             await ctx.RespondAsync(new DiscordMessageBuilder()
-                .WithContent(Text.LyricsLong().CodeBlocked())
+                .WithContent(Text.LyricsLong.CodeBlocked())
                 .AddFile("lyrics.txt", new MemoryStream(Encoding.UTF8.GetBytes(lyrics.Text))));
             return;
         }
@@ -293,13 +293,13 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         var channelId = ctx.Member?.VoiceState?.ChannelId;
         if (channelId is null || ctx.Guild is null || !ctx.Guild.Channels.TryGetValue(channelId.Value, out var voice))
         {
-            await Replies.RefuseAsync(ctx, Text.UserNotInChannelLyrics());
+            await Replies.RefuseAsync(ctx, Text.UserNotInChannelLyrics);
             return null;
         }
 
         if (controller.GetPlayer(voice)?.CurrentItem is { } current) return current;
 
-        await Replies.RefuseAsync(ctx, Text.BotNotInChannelLyrics());
+        await Replies.RefuseAsync(ctx, Text.BotNotInChannelLyrics);
         return null;
     }
 
@@ -313,7 +313,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         var player = controller.GetPlayer(voice, ctx.Channel, true);
         if (player is null)
         {
-            await Replies.RefuseAsync(ctx, Text.NoFreeBotAccounts());
+            await Replies.RefuseAsync(ctx, Text.NoFreeBotAccounts);
             return;
         }
 
@@ -412,7 +412,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
 
         var channel = player.Channel ?? ctx.Channel;
         var message = await channel.SendMessageAsync(new DiscordMessageBuilder()
-            .WithContent(Text.SelectVideo().CodeBlocked())
+            .WithContent(Text.SelectVideo.CodeBlocked())
             .AddActionRowComponent(new DiscordSelectComponent(SelectId, null!, options)));
 
         var response = await message.WaitForSelectAsync(ctx.User, SelectId, TimeSpan.FromSeconds(60));
@@ -420,12 +420,12 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         if (response.TimedOut)
         {
             await message.ModifyAsync(new DiscordMessageBuilder()
-                .WithContent(Text.SelectVideoTimeout().CodeBlocked()));
+                .WithContent(Text.SelectVideoTimeout.CodeBlocked()));
             return null;
         }
 
         await message.ModifyAsync(new DiscordMessageBuilder()
-            .WithContent(Text.ThisMessageWillUpdateShortly().CodeBlocked()));
+            .WithContent(Text.ThisMessageWillUpdateShortly.CodeBlocked()));
 
         // The statusbar takes over the message the user just answered, as the old bot did.
         player.Statusbar.Message = message;
@@ -457,7 +457,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
             logger.Error(e, "Connecting to {Channel} failed", player.VoiceChannel?.Name);
             player.Started = false;
             controller.Remove(player);
-            await Replies.RefuseAsync(ctx, Text.DiscordDidTheFunny());
+            await Replies.RefuseAsync(ctx, Text.DiscordDidTheFunny);
         }
     }
 
@@ -470,7 +470,7 @@ public sealed class PlaybackCommands(PlayerController controller, GaidaClient ap
         var player = controller.GetPlayer(voice);
         if (player is not null) return player;
 
-        await Replies.RefuseAsync(ctx, Text.BotIsNotInTheChannel());
+        await Replies.RefuseAsync(ctx, Text.BotIsNotInTheChannel);
         return null;
     }
 

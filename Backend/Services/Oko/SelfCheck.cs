@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using Microsoft.Extensions.Primitives;
+using Microsoft.Extensions.Options;
 using System.Text.Json;
 using Serilog.Core;
 
@@ -111,7 +112,10 @@ internal static class SelfCheck
             ["Targets:2:Url"] = "http://no-token.invalid"
         }).Build();
 
-        var fleet = new Fleet(new StubFactory(), configuration, Logger.None);
+        var options = new OkoOptions();
+        configuration.Bind(options);
+
+        var fleet = new Fleet(new StubFactory(), Options.Create(options), Logger.None);
         // Web defaults, because that is what Results.Json applies on the wire — a check that reads
         // PascalCase would pass while the panel got camelCase and rendered nothing.
         var json = JsonSerializer.SerializeToElement(await fleet.SnapshotAsync(CancellationToken.None),

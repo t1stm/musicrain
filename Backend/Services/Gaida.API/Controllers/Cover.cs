@@ -39,7 +39,7 @@ public class Cover(ILogger<Cover> logger, ThumbnailCache thumbnails) : Controlle
         if (result?.ThumbnailUrl is not { Length: > 0 } source)
             return NotFound(new ApiErrorBody(new ApiError("not_found", "This id has no artwork.")));
 
-        logger.LogInformation("Caching cover for '{ID}' from {Source}", id, source);
+        logger.CachingCover(id, source);
 
         try
         {
@@ -61,7 +61,7 @@ public class Cover(ILogger<Cover> logger, ThumbnailCache thumbnails) : Controlle
         }
         catch (HttpRequestException exception)
         {
-            logger.LogWarning(exception, "Fetching cover for '{ID}' failed", id);
+            logger.CoverFailed(exception, id);
             if (!Response.HasStarted)
                 return NotFound(new ApiErrorBody(new ApiError("not_found", "The artwork could not be fetched.")));
         }

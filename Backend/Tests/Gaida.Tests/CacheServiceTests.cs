@@ -74,7 +74,7 @@ public class CacheServiceTests : IDisposable
     public async Task ASweepEvictsWhatHasExpired()
     {
         var cache = Cache(new StubHandler(_ => Task.FromResult(StubHandler.Reply(HttpStatusCode.OK, "x"))),
-            retentionMinutes: "0");
+            retentionMinutes: 0);
         await Body(await Fetch(cache, "stale", out _));
 
         cache.Sweep();
@@ -86,7 +86,7 @@ public class CacheServiceTests : IDisposable
     public async Task ASweepOverTheCeilingEvictsTheLeastRecentlyUsedFirst()
     {
         var cache = Cache(new StubHandler(_ => Task.FromResult(StubHandler.Reply(HttpStatusCode.OK, "eleven byte"))),
-            maxBytes: "15");
+            maxBytes: 15);
         foreach (var key in (string[])["oldest", "older", "newest"])
         {
             await Body(await Fetch(cache, key, out _));
@@ -104,18 +104,17 @@ public class CacheServiceTests : IDisposable
         return snapshot.GetProperty("entries").EnumerateArray().Select(entry => entry.GetProperty("Key").GetString()!);
     }
 
-    private CacheService Cache(HttpMessageHandler upstream, string retentionMinutes = "45",
-        string maxBytes = "1000000")
+    private CacheService Cache(HttpMessageHandler upstream, int retentionMinutes = 45, long maxBytes = 1000000)
     {
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        var options = new DunavOptions
         {
-            ["Dunav:CacheDir"] = _directory,
-            ["Dunav:RetentionMinutes"] = retentionMinutes,
-            ["Dunav:MaxBytes"] = maxBytes
-        }).Build();
+            CacheDir = _directory,
+            RetentionMinutes = retentionMinutes,
+            MaxBytes = maxBytes
+        };
 
         return new CacheService(new HttpClient(upstream) { BaseAddress = new Uri("http://gaida.test") },
-            Logger.None, configuration);
+            Logger.None, options);
     }
 
     private static Task<CacheEntry> Fetch(CacheService cache, string key, out bool started)

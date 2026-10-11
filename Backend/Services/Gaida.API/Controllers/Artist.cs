@@ -1,11 +1,12 @@
 using Gaida.API.Contracts;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Gaida.API.Controllers;
 
 [ApiController]
 [Route("[controller]")]
-public class Artist(IConfiguration configuration, IHostEnvironment environment) : ControllerBase
+public class Artist(IOptionsSnapshot<GaidaApiOptions> options, IHostEnvironment environment) : ControllerBase
 {
     /// <summary>
     ///     Streams the library's tracks for an artist. The artist/name/id ordering API.md documents is applied
@@ -21,7 +22,7 @@ public class Artist(IConfiguration configuration, IHostEnvironment environment) 
         if (string.IsNullOrWhiteSpace(term) || managerService.Pod(Prefix.Local) is not { } local)
             return Ok(Array.Empty<SearchResultDto>());
 
-        return Ok(this.Mapped(local.ArtistAsync(term, HttpContext.RequestAborted), configuration, environment));
+        return Ok(this.Mapped(local.ArtistAsync(term, HttpContext.RequestAborted), options.Value, environment));
     }
 
     /// <summary>
@@ -38,7 +39,7 @@ public class Artist(IConfiguration configuration, IHostEnvironment environment) 
             managerService.Pod(Prefix.Deezer) is not { } deezer)
             return Ok(Array.Empty<SearchResultDto>());
 
-        return Ok(this.Mapped(deezer.ArtistAsync(term, HttpContext.RequestAborted), configuration, environment));
+        return Ok(this.Mapped(deezer.ArtistAsync(term, HttpContext.RequestAborted), options.Value, environment));
     }
 
     /// <summary>Relevance order, as YouTube returned it — see API.md.</summary>
@@ -52,6 +53,6 @@ public class Artist(IConfiguration configuration, IHostEnvironment environment) 
             return Ok(Array.Empty<SearchResultDto>());
 
         // Just a keyword search on the YouTube pod: there is no separate "artist" route for it.
-        return Ok(this.Mapped(youTube.SearchKeywords(term, HttpContext.RequestAborted), configuration, environment));
+        return Ok(this.Mapped(youTube.SearchKeywords(term, HttpContext.RequestAborted), options.Value, environment));
     }
 }

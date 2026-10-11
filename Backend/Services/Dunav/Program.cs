@@ -1,4 +1,5 @@
 using Dunav;
+using Microsoft.Extensions.Options;
 using Serilog;
 using Serilog.Templates;
 using Serilog.Templates.Themes;
@@ -25,10 +26,10 @@ builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => poli
     .AllowAnyHeader()
     .AllowAnyMethod()));
 
+builder.Services.AddOptions<DunavOptions>().Bind(builder.Configuration);
 builder.Services.AddHttpClient("Gaida", (services, http) =>
 {
-    http.BaseAddress = new Uri(services.GetRequiredService<IConfiguration>()["Gaida:Url"]
-                               ?? "http://localhost:8080");
+    http.BaseAddress = new Uri(services.GetRequiredService<IOptions<DunavOptions>>().Value.GaidaUrl);
 }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
 {
     // Docker DNS round-robins gaida-api across replicas, but the default pool pins to whichever IP it
@@ -39,7 +40,7 @@ builder.Services.AddHttpClient("Gaida", (services, http) =>
 builder.Services.AddSingleton(Log.Logger);
 builder.Services.AddSingleton<CacheService>(services =>
     new CacheService(services.GetRequiredService<IHttpClientFactory>().CreateClient("Gaida"),
-        Log.Logger, services.GetRequiredService<IConfiguration>()));
+        Log.Logger, services.GetRequiredService<IOptions<DunavOptions>>().Value));
 builder.Services.AddHostedService(services => services.GetRequiredService<CacheService>());
 
 var app = builder.Build();

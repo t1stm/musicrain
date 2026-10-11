@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 
 namespace Moliv;
 
@@ -14,11 +15,11 @@ namespace Moliv;
 ///     ponytail: an answer is kept five minutes, so a revoked token can still write history for up to
 ///     five minutes. Have Dom push revocations if that ever matters.
 /// </remarks>
-public sealed class Identity(IHttpClientFactory http, IConfiguration configuration, IMemoryCache cache)
+public sealed class Identity(IHttpClientFactory http, IOptions<MolivOptions> options, IMemoryCache cache)
 {
     private static readonly TimeSpan Remembered = TimeSpan.FromMinutes(5);
 
-    private readonly string _dom = (configuration["Dom:Url"] ?? "http://dom:8080").TrimEnd('/');
+    private readonly string _dom = options.Value.DomUrl.TrimEnd('/');
 
     /// <summary>The last time Dom could not be asked, and why. For Oko.</summary>
     public string? LastError { get; private set; }

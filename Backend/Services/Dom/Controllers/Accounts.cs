@@ -24,7 +24,7 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
         var outcome = store.Register(body.Username ?? "", body.Password ?? "");
         if (!outcome.Ok) return Api.Refuse(outcome.Refusal);
 
-        logger.LogInformation("New account: {Username}", outcome.Value.User.Username);
+        logger.NewAccount(outcome.Value.User.Username);
 
         return new JsonResult(Session(outcome.Value.User, outcome.Value.Token)) { StatusCode = 201 };
     }
@@ -118,7 +118,7 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
         var outcome = store.ChangePassword(user, body.Current, body.Password);
         if (!outcome.Ok) return Api.Refuse(outcome.Refusal);
 
-        logger.LogInformation("{Username} changed their password", user.Username);
+        logger.PasswordChanged(user.Username);
         return new JsonResult(Session(user, outcome.Value));
     }
 
@@ -131,7 +131,7 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
         var previous = user.Username;
         if (store.Rename(user, body.Password, body.Username) is { } refusal) return Api.Refuse(refusal);
 
-        logger.LogInformation("{Previous} is now {Username}", previous, user.Username);
+        logger.Renamed(previous, user.Username);
         return new JsonResult(new { username = user.Username });
     }
 

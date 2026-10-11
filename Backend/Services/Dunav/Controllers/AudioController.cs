@@ -52,7 +52,7 @@ public class AudioController(ILogger<AudioController> logger, CacheService cache
         // just pushed its expiry back, which is the whole of what a repeat preload can usefully do.
         if (cache.Has(key)) return Ok();
 
-        logger.LogInformation("Preloading '{ID}' {Codec} {Bitrate}", id, codec, bitrate);
+        logger.Preloading(id, codec, bitrate);
         var entry = await GetOrFetch(key, UpstreamDownloadPath(codec, bitrate, id), out var started,
             Label(codec, bitrate, id));
         if (entry.Failure is { } failure) return StatusCode(failure);
@@ -106,7 +106,7 @@ public class AudioController(ILogger<AudioController> logger, CacheService cache
             // Eviction unlinked the body between the lookup that refreshed its expiry and our open. Narrow,
             // but reachable -- EvictOverCeiling can fire in that window. The entry has outlived its file, so
             // drop it and let the client retry into a fresh fetch.
-            logger.LogInformation("Cache entry {Key} was evicted before it could be served", key);
+            logger.EvictedBeforeServed(key);
             cache.Forget(key);
             // The year-long header above is for the audio. Left on this, the browser keeps the 503 instead:
             // every retry is answered from its cache, and the track never plays there again.

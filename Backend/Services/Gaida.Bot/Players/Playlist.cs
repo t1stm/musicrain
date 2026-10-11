@@ -1,4 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
+using System.Text;
 using Gaida.Bot.Gaida;
 using Gaida.Bot.Tools;
 
@@ -100,8 +102,8 @@ public sealed class Playlist
     {
         lock (_gate)
         {
-            var random = new Random();
-            var queue = _items.OrderBy(_ => random.Next()).ToList();
+            List<Track> queue = [.. _items];
+            Random.Shared.Shuffle(CollectionsMarshal.AsSpan(queue));
             var current = GetCurrent();
             if (current is not null)
             {
@@ -218,27 +220,26 @@ public sealed class Playlist
     /// <summary>What the <c>list</c> command sends as <c>queue.txt</c>, dashes and all.</summary>
     public override string ToString()
     {
-        var result = "";
+        var result = new StringBuilder();
         lock (_gate)
         {
-            if (_items.Count < 1) return Text.TheQueueIsEmpty();
+            if (_items.Count < 1) return Text.TheQueueIsEmpty;
 
             for (var index = 0; index < _items.Count; index++)
             {
                 var item = _items[index];
-                if (index == Current)
+                var line = $"({index + 1}) - \"{item.DisplayName}\"\n";
+                if (index != Current)
                 {
-                    result += new string('-', item.DisplayName.Length + 8) + '\n';
-                    result += $"({index + 1}) - \"{item.DisplayName}\"\n";
-                    result += new string('-', item.DisplayName.Length + 8) + '\n';
+                    result.Append(line);
+                    continue;
                 }
-                else
-                {
-                    result += $"({index + 1}) - \"{item.DisplayName}\"\n";
-                }
+
+                var rule = new string('-', item.DisplayName.Length + 8) + '\n';
+                result.Append(rule).Append(line).Append(rule);
             }
         }
 
-        return result;
+        return result.ToString();
     }
 }

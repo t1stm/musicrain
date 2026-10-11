@@ -3,12 +3,13 @@ using Gaida.API.Contracts;
 using Gaida.Core;
 using Gaida.Infrastructure.Platforms;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Gaida.API.Controllers;
 
 [ApiController]
 [Route("[controller]")]
-public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnvironment environment) : ControllerBase
+public class Query(ILogger<Query> logger, IOptionsSnapshot<GaidaApiOptions> options, IHostEnvironment environment) : ControllerBase
 {
     [HttpGet]
     [Route("/Audio/FindQueryType")]
@@ -43,7 +44,7 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
         }
         catch (Exception exception)
         {
-            logger.LogError(exception, "Failed to resolve query {Query}", trimmed);
+            logger.QueryFailed(exception, trimmed);
             return StatusCode(StatusCodes.Status503ServiceUnavailable,
                 Error("resolver_unavailable", "The query resolver is temporarily unavailable."));
         }
@@ -77,7 +78,7 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
 
         // The variant's matched track arrives as a sub-resource rather than through a search, and becomes a
         // result the same way a search's would.
-        var mapped = DiscoveryResultMapper.Map(local.ToResult(found.Result), Request, configuration, environment);
+        var mapped = DiscoveryResultMapper.Map(local.ToResult(found.Result), Request, options.Value, environment);
         if (mapped is null) return NoContent();
 
         return Ok(new LocalVariantDto(
@@ -97,7 +98,7 @@ public class Query(ILogger<Query> logger, IConfiguration configuration, IHostEnv
         var result = await resolver.LookUpAsync(id, HttpContext.RequestAborted);
         if (result is null) return NotFound(Error("not_found", "No result was found for this ID."));
 
-        var mapped = DiscoveryResultMapper.Map(result, Request, configuration, environment);
+        var mapped = DiscoveryResultMapper.Map(result, Request, options.Value, environment);
         return mapped is null
             ? NotFound(Error("not_found", "No result was found for this ID."))
             : Ok(new QueryResolutionDto { Kind = KindOf(result.Id), Query = id, Result = mapped });

@@ -3,7 +3,7 @@ using JetBrains.Annotations;
 namespace Selo.Multiplayer;
 
 [UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed class TrackDto
+public sealed record TrackDto
 {
     public required string Id { get; init; }
     public string? Name { get; init; }

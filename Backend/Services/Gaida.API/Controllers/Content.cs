@@ -5,12 +5,13 @@ using Gaida.Core.Utils;
 using Gaida.Infrastructure.FFmpeg;
 using Gaida.Infrastructure.Platforms;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Gaida.API.Controllers;
 
 [ApiController]
 [Route("[controller]")]
-public class Content(ILogger<Content> logger, IConfiguration configuration, IHostEnvironment environment)
+public class Content(ILogger<Content> logger, IOptionsSnapshot<GaidaApiOptions> options, IHostEnvironment environment)
     : ControllerBase
 {
     /// <summary>
@@ -26,7 +27,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
         [FromServices] PlayableResolver resolver)
     {
         if (string.IsNullOrWhiteSpace(query)) return Ok(Array.Empty<SearchResultDto>());
-        logger.LogInformation("Searching for {Query}", query);
+        logger.Searching(query);
 
         var cancellationToken = HttpContext.RequestAborted;
 
@@ -39,7 +40,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
                 // A pod recognised the query as its own but rejected it (e.g. a malformed yt:// id). Discovery
                 // stays a valid empty result rather than surfacing the resolver's 400 here — that belongs to
                 // /Audio/FindQueryType, which callers use before they commit to a search.
-                logger.LogWarning("Classify rejected {Query}: {Error}", query, claim.Error);
+                logger.ClassifyRejected(query, claim.Error);
                 return Ok(Array.Empty<SearchResultDto>());
             }
 
@@ -56,11 +57,11 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
         catch (Exception exception)
         {
             // Discovery remains a valid JSON response even when an upstream provider is unavailable.
-            logger.LogError(exception, "Search failed for {Query}", query);
+            logger.SearchFailed(exception, query);
             return Ok(Array.Empty<SearchResultDto>());
         }
 
-        return Ok(this.Mapped(resolver.Discover(claim, cancellationToken), configuration, environment));
+        return Ok(this.Mapped(resolver.Discover(claim, cancellationToken), options.Value, environment));
     }
 
     /// <summary>
@@ -81,7 +82,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
             return BadRequest(new ApiErrorBody(new ApiError("invalid_query",
                 "Send 1 to 50 ids, each like audio://… or yt://….")));
 
-        logger.LogInformation("Resolving {Count} ids", id.Length);
+        logger.Resolving(id.Length);
 
         // The same budget the resolver keeps, since most of these are a YouTube or Deezer lookup.
         return Ok(id.Distinct(StringComparer.Ordinal).AsAsync().SelectParallel<string, ResolvedDto>(
@@ -95,7 +96,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
                 }
                 catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
                 {
-                    logger.LogWarning(exception, "Resolving {Id} failed", one);
+                    logger.ResolvingFailed(exception, one);
                     return null;
                 }
             }, HttpContext.RequestAborted));
@@ -106,7 +107,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
         CancellationToken cancellationToken)
     {
         var found = await resolver.LookUpAsync(id, cancellationToken);
-        return found is null ? null : DiscoveryResultMapper.Map(found, Request, configuration, environment);
+        return found is null ? null : DiscoveryResultMapper.Map(found, Request, options.Value, environment);
     }
 
     [HttpGet]
@@ -120,13 +121,13 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
         if (count is < 1 or > 200)
             return BadRequest(new ApiErrorBody(new ApiError("invalid_count", "count must be between 1 and 200.")));
 
-        var share = youTubeShare ?? configuration.GetValue("Random:Shares:youtube", 0.4);
+        var share = youTubeShare ?? options.Value.RandomYouTubeShare;
         if (share is < 0 or > 1 or double.NaN)
             return BadRequest(new ApiErrorBody(new ApiError("invalid_share", "youTubeShare must be between 0 and 1.")));
 
-        logger.LogInformation("Returning {Count} random results with a {Share} YouTube share", count, share);
+        logger.ReturningRandom(count, share);
         return Ok(this.Mapped(managerService.RandomResults(count, share, HttpContext.RequestAborted),
-            configuration, environment));
+            options.Value, environment));
     }
 
     [HttpGet]
@@ -135,7 +136,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
     public async Task<IActionResult> DownloadRaw(string id, [FromServices] ManagerService managerService)
     {
         if (string.IsNullOrWhiteSpace(id)) return NotFound();
-        logger.LogInformation("Downloading Raw '{ID}'", id);
+        logger.DownloadingRaw(id);
 
         var start = Stopwatch.GetTimestamp();
         var platform = PlatformFor(managerService, id);
@@ -151,7 +152,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
 
         await upstream.Content.CopyToAsync(Response.Body, HttpContext.RequestAborted);
 
-        logger.LogInformation("Finishing '{ID}' took '{Duration}'", id, Stopwatch.GetElapsedTime(start));
+        logger.Finished(id, Stopwatch.GetElapsedTime(start));
         return new EmptyResult();
     }
 
@@ -163,7 +164,7 @@ public class Content(ILogger<Content> logger, IConfiguration configuration, IHos
     {
         if (bitrate < 8) return BadRequest("Bitrate must be at least 8");
         if (string.IsNullOrWhiteSpace(id)) return NotFound("No ID provided");
-        logger.LogInformation("Downloading '{ID}' {Codec} {Bitrate}", id, codec, bitrate);
+        logger.Downloading(id, codec, bitrate);
 
         if (Encoding(codec) is not { } encoding) return BadRequest($"Unknown codec '{codec}'");
 

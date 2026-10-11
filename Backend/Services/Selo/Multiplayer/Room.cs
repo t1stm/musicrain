@@ -208,7 +208,7 @@ public class Room
         }
         catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
         {
-            _logger.LogWarning(exception, "Room {Room} could not look up {Id}", RoomId, id);
+            _logger.LookupFailed(exception, RoomId, id);
             return;
         }
 

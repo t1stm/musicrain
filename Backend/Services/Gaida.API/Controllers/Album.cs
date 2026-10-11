@@ -3,12 +3,13 @@ using Gaida.API.Contracts;
 using Gaida.Core.Platforms;
 using Gaida.Infrastructure.Platforms;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Gaida.API.Controllers;
 
 [ApiController]
 [Route("[controller]")]
-public class Album(IConfiguration configuration, IHostEnvironment environment) : ControllerBase
+public class Album(IOptionsSnapshot<GaidaApiOptions> options, IHostEnvironment environment) : ControllerBase
 {
     /// <summary>
     ///     Streams one album's tracks. The library is asked first and Deezer only if it had none, so a record
@@ -30,7 +31,7 @@ public class Album(IConfiguration configuration, IHostEnvironment environment) :
             return Ok(Array.Empty<SearchResultDto>());
 
         return Ok(this.Mapped(FirstNonEmpty(artist, album, managerService, HttpContext.RequestAborted),
-            configuration, environment));
+            options.Value, environment));
     }
 
     /// <summary>

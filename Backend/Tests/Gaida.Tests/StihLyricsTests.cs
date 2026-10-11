@@ -1,5 +1,6 @@
 using System.Net;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using Stih;
 
 namespace Gaida.Tests;
@@ -77,27 +78,27 @@ public class StihLyricsTests : IDisposable
             return StubHandler.Reply(HttpStatusCode.OK, Synced);
         });
 
-        var configuration = Configuration();
+        var options = Options();
         var data = Path.Combine(_directory, "data");
-        var lyrics = new Lyrics(new LyricsIndex(data, Quiet), new LrcLib(new StubFactory(lrclib), configuration, Quiet),
-            new Tracks(new StubFactory(pods), configuration, Quiet), new StubFactory(pods), configuration, Quiet);
+        var lyrics = new Lyrics(new LyricsIndex(data, Quiet), new LrcLib(new StubFactory(lrclib), options, Quiet),
+            new Tracks(new StubFactory(pods), options, Quiet), new StubFactory(pods), options, Quiet);
 
         return (lyrics, lrclib);
     }
 
     private LrcLib LrcLib(StubHandler handler)
     {
-        return new LrcLib(new StubFactory(handler), Configuration(), Quiet);
+        return new LrcLib(new StubFactory(handler), Options(), Quiet);
     }
 
-    private IConfiguration Configuration()
+    private IOptions<StihOptions> Options()
     {
-        return new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        return Microsoft.Extensions.Options.Options.Create(new StihOptions
         {
-            ["LRCLIB_URL"] = "https://lrclib.test",
-            ["Deezer:Url"] = "http://deezer.test",
-            ["MUSIC_LIBRARY"] = Path.Combine(_directory, "music"),
-            ["LYRICS_DATA"] = Path.Combine(_directory, "data")
-        }).Build();
+            LrcLibUrl = "https://lrclib.test",
+            DeezerUrl = "http://deezer.test",
+            MusicLibrary = Path.Combine(_directory, "music"),
+            LyricsData = Path.Combine(_directory, "data")
+        });
     }
 }

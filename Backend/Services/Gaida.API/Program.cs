@@ -35,6 +35,7 @@ builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => poli
 
 builder.Services.AddHttpClient(ThumbnailCache.Client, http => http.Timeout = TimeSpan.FromSeconds(15));
 
+builder.Services.AddOptions<GaidaApiOptions>().Bind(builder.Configuration);
 builder.Services.AddSingleton(Log.Logger);
 builder.Services.AddSingleton<ManagerService>();
 builder.Services.AddSingleton<PlayableResolver>();

@@ -401,9 +401,10 @@ public class MusicInfo : IJsonOnDeserialized
         var source = variants.FirstOrDefault(IsLatin)
                      ?? variants.FirstOrDefault(variant => variant.Any(char.IsAsciiLetterOrDigit))
                      ?? string.Empty;
-        var clean = new string(source.Select(character => character == ' ' ? '-' : character)
-            .Where(character => char.IsAsciiLetterOrDigit(character) || character == '-')
-            .ToArray()).ToLowerInvariant();
+        var clean = new string([
+            .. source.Select(character => character == ' ' ? '-' : character)
+                .Where(character => char.IsAsciiLetterOrDigit(character) || character == '-')
+        ]).ToLowerInvariant();
 
         return clean.Length >= length
             ? clean[..length]

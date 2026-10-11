@@ -20,20 +20,13 @@ public class CacheService : BackgroundService
     private readonly long _maxBytes;
     private readonly TimeSpan _retention;
 
-    public CacheService(HttpClient http, ILogger logger, IConfiguration configuration)
+    public CacheService(HttpClient http, ILogger logger, DunavOptions options)
     {
         _http = http;
         Logger = logger;
-        _retention = TimeSpan.FromMinutes(configuration.GetValue("Dunav:RetentionMinutes", 45));
-
-        // A disk budget, not a memory one. Bodies live in CacheDir; what this bounds is how much of the
-        // filesystem they may occupy, so it is sized against free disk rather than the pod's mem_limit.
-        _maxBytes = configuration.GetValue("Dunav:MaxBytes", 20L * 1024 * 1024 * 1024);
-
-        // Deliberately NOT a tmpfs mount: tmpfs pages are charged to the container's memory cgroup and
-        // cannot be reclaimed, which is the OOM this whole design exists to avoid. Ordinary files on an
-        // ordinary filesystem give reclaimable page cache instead. See DUNAV_SPILL_PLAN.md.
-        _cacheDir = configuration.GetValue("Dunav:CacheDir", "/tmp/dunav");
+        _retention = TimeSpan.FromMinutes(options.RetentionMinutes);
+        _maxBytes = options.MaxBytes;
+        _cacheDir = options.CacheDir;
         Directory.CreateDirectory(_cacheDir);
 
         // Wipe on boot. _cachedEntries starts empty, so nothing can reference a leftover file, and this is

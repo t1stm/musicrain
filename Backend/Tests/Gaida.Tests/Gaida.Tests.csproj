@@ -29,6 +29,8 @@
     <ProjectReference Include="..\..\Services\Dom\Dom.csproj"/>
     <ProjectReference Include="..\..\Services\Dunav\Dunav.csproj"/>
     <ProjectReference Include="..\..\Services\Stih\Stih.csproj"/>
+    <ProjectReference Include="..\..\Services\Moliv\Moliv.csproj"/>
+    <ProjectReference Include="..\..\Services\Oko\Oko.csproj"/>
   </ItemGroup>
 
 </Project>

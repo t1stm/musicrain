@@ -14,29 +14,22 @@ namespace Gaida.Platforms.YouTube.Cache;
 ///     Nothing is held in memory. The JSON file this replaced was rewritten whole on every new search
 ///     and held whole on the heap, and it had reached half a million entries.
 /// </remarks>
-public class YouTubeCacher
+/// <param name="logger">Where the cache reports what it did.</param>
+/// <param name="path">
+///     Where the database lives. Whatever extension it carries, the database is the <c>.db</c> beside it
+///     and a <c>.json</c> there is the legacy import — see <see cref="YouTubeOptions.CacheDatabase" />.
+/// </param>
+public class YouTubeCacher(ILogger logger, string path)
 {
     /// <summary><c>PRAGMA user_version</c> once the table exists and <c>YouTube.json</c> is imported.</summary>
     private const int SchemaVersion = 1;
 
     private const string Columns = "Id, Name, Artist, Album, Duration, ThumbnailUrl, OriginalTitle, OriginalArtist";
 
-    private readonly string _connectionString;
-    private readonly string _path;
+    private readonly string _path = Path.ChangeExtension(path, ".db");
+    private readonly string _connectionString = Database.At(Path.ChangeExtension(path, ".db"));
 
-    /// <param name="logger">Where the cache reports what it did.</param>
-    /// <param name="path">
-    ///     Where the database lives. Whatever extension it carries, the database is the <c>.db</c> beside it
-    ///     and a <c>.json</c> there is the legacy import — see <see cref="YouTubeOptions.CacheDatabase" />.
-    /// </param>
-    public YouTubeCacher(ILogger logger, string path)
-    {
-        Logger = logger.ForContext<YouTubeCacher>();
-        _path = Path.ChangeExtension(path, ".db");
-        _connectionString = Database.At(_path);
-    }
-
-    private ILogger Logger { get; }
+    private ILogger Logger { get; } = logger.ForContext<YouTubeCacher>();
 
     public void Initialize()
     {
@@ -65,9 +58,9 @@ public class YouTubeCacher
         // ponytail: ORDER BY random() visits every row, ~55 ms at half a million. Sample rowids if the
         // discovery endpoint ever shows up in a trace.
         await using var db = Database.Open(_connectionString);
-        return (await db.QueryAsync<YouTubeResult>(new CommandDefinition(
+        return [.. (await db.QueryAsync<YouTubeResult>(new CommandDefinition(
             $"SELECT {Columns} FROM results ORDER BY random() LIMIT @count", new { count },
-            cancellationToken: cancellationToken))).ToArray();
+            cancellationToken: cancellationToken)))];
     }
 
     /// <param name="id">The bare video ID, without <c>yt://</c>.</param>

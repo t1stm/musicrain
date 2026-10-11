@@ -1,12 +1,13 @@
-using Gaida.Core.Utils;
 using Gaida.API.Contracts;
+using Gaida.Core.Utils;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Gaida.API.Controllers;
 
 [ApiController]
 [Route("[controller]")]
-public class Browse(IConfiguration configuration, IHostEnvironment environment) : ControllerBase
+public class Browse(IOptionsSnapshot<GaidaApiOptions> options, IHostEnvironment environment) : ControllerBase
 {
     /// <summary>
     ///     One level of the library's folder tree. A path nobody has is an empty folder rather than a 404:
@@ -29,7 +30,7 @@ public class Browse(IConfiguration configuration, IHostEnvironment environment) 
         var (folders, files) = await local.BrowseAsync(folder, HttpContext.RequestAborted);
 
         var mapped = new List<SearchResultDto>(files.Count);
-        mapped.AddRange(files.Select(file => DiscoveryResultMapper.Map(file, Request, configuration, environment))
+        mapped.AddRange(files.Select(file => DiscoveryResultMapper.Map(file, Request, options.Value, environment))
             .OfType<SearchResultDto>());
 
         return Ok(new BrowseDto(
@@ -57,7 +58,7 @@ public class Browse(IConfiguration configuration, IHostEnvironment environment) 
         if (managerService.Pod(Prefix.Local) is not { } local)
             return Ok(Array.Empty<SearchResultDto>());
 
-        return Ok(this.Mapped(local.BrowseTracksAsync(folder, HttpContext.RequestAborted), configuration,
+        return Ok(this.Mapped(local.BrowseTracksAsync(folder, HttpContext.RequestAborted), options.Value,
             environment));
     }
 }

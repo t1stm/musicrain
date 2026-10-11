@@ -2,6 +2,7 @@ using Gaida.Core;
 using Gaida.Core.Platforms;
 using Gaida.Core.Utils;
 using Gaida.Infrastructure.Platforms;
+using Microsoft.Extensions.Options;
 
 namespace Gaida.API;
 
@@ -19,10 +20,10 @@ namespace Gaida.API;
 /// </remarks>
 public sealed class PlayableResolver(
     ManagerService managerService,
-    IConfiguration configuration,
+    IOptions<GaidaApiOptions> options,
     ILogger<PlayableResolver> logger)
 {
-    public int Concurrency => Math.Max(1, configuration.GetValue("Resolve:Concurrency", 4));
+    public int Concurrency => Math.Max(1, options.Value.ResolveConcurrency);
 
     /// <summary>
     ///     Resolves a stream of metadata-only results. Tracks nothing playable was found for are dropped
@@ -95,7 +96,7 @@ public sealed class PlayableResolver(
             await foreach (var hit in youTube.SearchKeywords(term, cancellationToken))
                 return hit;
 
-        logger.LogDebug("Nothing playable for {ID} ({Artist} — {Name})", result.Id, artist, name);
+        logger.NothingPlayable(result.Id, artist, name);
         return null;
     }
 }

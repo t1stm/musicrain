@@ -1,5 +1,6 @@
 using System.Net;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Options;
 
 namespace Stih;
 
@@ -220,13 +221,9 @@ internal static class SelfCheck
 
     private static LrcLib Client(Stub stub, string url = "https://lrclib.test")
     {
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["LRCLIB_URL"] = url,
-            ["LRCLIB_USER_AGENT"] = "musicrain-selfcheck"
-        }).Build();
+        var options = Options.Create(new StihOptions { LrcLibUrl = url, LrcLibUserAgent = "musicrain-selfcheck" });
 
-        return new LrcLib(new StubFactory(stub), configuration, Quiet);
+        return new LrcLib(new StubFactory(stub), options, Quiet);
     }
 
     private static HttpResponseMessage Reply(HttpStatusCode status, string json)
@@ -264,18 +261,14 @@ internal static class SelfCheck
     /// <summary>A Lyrics with no pods configured: every path here is the part that touches no network.</summary>
     private static Lyrics Build(string library, string data)
     {
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["MUSIC_LIBRARY"] = library,
-            ["LYRICS_DATA"] = data
-        }).Build();
+        var options = Options.Create(new StihOptions { MusicLibrary = library, LyricsData = data });
 
         var factory = new ServiceCollection().AddHttpClient().BuildServiceProvider()
             .GetRequiredService<IHttpClientFactory>();
 
         var index = new LyricsIndex(data, Quiet);
-        return new Lyrics(index, new LrcLib(factory, configuration, Quiet),
-            new Tracks(factory, configuration, Quiet), factory, configuration, Quiet);
+        return new Lyrics(index, new LrcLib(factory, options, Quiet), new Tracks(factory, options, Quiet), factory,
+            options, Quiet);
     }
 
     private static LrcLibResult Candidate(int id, string title, string artist, double duration,

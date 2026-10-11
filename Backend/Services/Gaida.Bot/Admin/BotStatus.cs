@@ -21,22 +21,13 @@ public sealed record BotStatusEntry(string Presence, string? Activity, string? T
 ///     rename in the developer portal, and it is known before the account connects — which is what
 ///     lets the status ride the IDENTIFY instead of being a second round-trip after it.
 /// </remarks>
-public sealed class BotStatusStore
+public sealed class BotStatusStore(string path, ILogger logger)
 {
     /// <summary>Discord's limit on an activity name.</summary>
     private const int MaxTextLength = 128;
 
-    private readonly Dictionary<string, BotStatusEntry> _entries;
+    private readonly Dictionary<string, BotStatusEntry> _entries = Load(path, logger);
     private readonly Lock _gate = new();
-    private readonly ILogger _logger;
-    private readonly string _path;
-
-    public BotStatusStore(string path, ILogger logger)
-    {
-        _path = path;
-        _logger = logger;
-        _entries = Load(path, logger);
-    }
 
     public BotStatusEntry? For(string account)
     {
@@ -166,12 +157,12 @@ public sealed class BotStatusStore
     {
         try
         {
-            File.WriteAllText(_path, JsonSerializer.Serialize(_entries, JsonSerializerOptions.Web));
+            File.WriteAllText(path, JsonSerializer.Serialize(_entries, JsonSerializerOptions.Web));
         }
         catch (Exception e)
         {
             // The status is already live on the account; only its survival of a restart is lost.
-            _logger.Warning(e, "Could not save the statuses to {Path}", _path);
+            logger.Warning(e, "Could not save the statuses to {Path}", path);
         }
     }
 }

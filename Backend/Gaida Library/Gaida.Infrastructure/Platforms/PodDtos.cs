@@ -4,7 +4,7 @@ using JetBrains.Annotations;
 namespace Gaida.Infrastructure.Platforms;
 
 /// <summary>A search/resolve/playlist/random result as a pod hands it over — no <c>contentUrl</c>, no public host.</summary>
-public sealed class PodResultDto
+public sealed record PodResultDto
 {
     public string? Id { get; init; }
     public string? Name { get; init; }
@@ -17,21 +17,21 @@ public sealed class PodResultDto
 }
 
 [UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed class PodBrowseFolderDto
+public sealed record PodBrowseFolderDto
 {
     public string? Name { get; set; }
     public int Songs { get; set; }
 }
 
 [UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed class PodBrowseDto
+public sealed record PodBrowseDto
 {
     public List<PodBrowseFolderDto>? Folders { get; set; }
     public List<PodResultDto>? Files { get; set; }
 }
 
 [UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed class PodVariantDto
+public sealed record PodVariantDto
 {
     public string? Match { get; set; }
     public double Score { get; set; }
@@ -41,7 +41,7 @@ public sealed class PodVariantDto
     public PodResultDto? Result { get; set; }
 }
 
-internal sealed class ClassifyDto
+internal sealed record ClassifyDto
 {
     public string? Kind { get; init; }
     public string? Id { get; init; }

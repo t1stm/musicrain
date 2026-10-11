@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Options;
 
 namespace Gaida.API;
 
@@ -8,7 +9,7 @@ namespace Gaida.API;
 ///     id is a URL of sorts, so it is hashed rather than sanitised: no traversal, no illegal characters, and the
 ///     extension is the only thing that has to be recovered at serve time.
 /// </summary>
-public sealed class ThumbnailCache(IConfiguration configuration, IHttpClientFactory http)
+public sealed class ThumbnailCache(IOptions<GaidaApiOptions> options, IHttpClientFactory http)
 {
     /// <summary>The named client artwork is fetched with.</summary>
     public const string Client = "thumbnails";
@@ -26,7 +27,7 @@ public sealed class ThumbnailCache(IConfiguration configuration, IHttpClientFact
     {
         get
         {
-            var directory = Path.GetFullPath(configuration["THUMBNAIL_CACHE"] is { Length: > 0 } configured
+            var directory = Path.GetFullPath(options.Value.ThumbnailCache is { Length: > 0 } configured
                 ? configured
                 : Path.Combine(Path.GetTempPath(), "gaida-thumbnails"));
             System.IO.Directory.CreateDirectory(directory);

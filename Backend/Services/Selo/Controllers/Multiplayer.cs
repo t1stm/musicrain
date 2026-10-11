@@ -12,7 +12,7 @@ public class Multiplayer(ILogger<Multiplayer> logger, MultiplayerManager manager
     public IActionResult CreateRoom()
     {
         var roomId = manager.CreateNewRoom();
-        logger.LogInformation("Room created: {Room}", roomId);
+        logger.RoomCreated(roomId);
 
         return new JsonResult(manager.GetRoom(roomId));
     }
@@ -25,14 +25,13 @@ public class Multiplayer(ILogger<Multiplayer> logger, MultiplayerManager manager
             if (!HttpContext.WebSockets.IsWebSocketRequest) return new BadRequestResult();
 
             using var webSocket = await HttpContext.WebSockets.AcceptWebSocketAsync();
-            logger.LogDebug("Room update websocket '{ID}' connected, with IP: {IP}", HttpContext.TraceIdentifier,
-                HttpContext.Connection.RemoteIpAddress);
+            logger.RoomListConnected(HttpContext.TraceIdentifier, HttpContext.Connection.RemoteIpAddress);
 
             await HandleRoomUpdateWebSocket(webSocket, HttpContext.RequestAborted);
         }
         catch (Exception e)
         {
-            logger.LogError(e, "WebSocket '{ID}' encountered error", HttpContext.TraceIdentifier);
+            logger.SocketFailed(e, HttpContext.TraceIdentifier);
             throw;
         }
 
@@ -48,14 +47,13 @@ public class Multiplayer(ILogger<Multiplayer> logger, MultiplayerManager manager
             if (!HttpContext.WebSockets.IsWebSocketRequest || !Guid.TryParse(room, out var guid)) return BadRequest();
 
             using var webSocket = await HttpContext.WebSockets.AcceptWebSocketAsync();
-            logger.LogDebug("WebSocket '{ID}' connected, with IP: {IP}", HttpContext.TraceIdentifier,
-                HttpContext.Connection.RemoteIpAddress);
+            logger.SocketConnected(HttpContext.TraceIdentifier, HttpContext.Connection.RemoteIpAddress);
             await HandleRoomJoinWebSocket(webSocket, guid, username, HttpContext.TraceIdentifier,
                 HttpContext.RequestAborted);
         }
         catch (Exception e)
         {
-            logger.LogError(e, "WebSocket '{ID}' encountered error", HttpContext.TraceIdentifier);
+            logger.SocketFailed(e, HttpContext.TraceIdentifier);
             throw;
         }
 
@@ -132,7 +130,7 @@ public class Multiplayer(ILogger<Multiplayer> logger, MultiplayerManager manager
             var room = manager.GetRoom(roomId);
             await (room?.RemoveUser(id) ?? Task.CompletedTask);
 
-            logger.LogDebug("WebSocket '{ID}' disconnected", id);
+            logger.SocketDisconnected(id);
         }
     }
 
@@ -157,7 +155,7 @@ public class Multiplayer(ILogger<Multiplayer> logger, MultiplayerManager manager
     {
         // guarded: the frame only becomes a string when someone is actually listening for it
         if (logger.IsEnabled(LogLevel.Debug))
-            logger.LogDebug("WebSocket '{ID}' received: '{Message}'", id, message.ToString());
+            logger.SocketReceived(id, message.ToString());
 
         var room = manager.GetRoom(roomId);
         if (room is null) return false;

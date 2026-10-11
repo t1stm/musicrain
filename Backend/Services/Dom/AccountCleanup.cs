@@ -1,4 +1,5 @@
 using Gaida.Admin;
+using Microsoft.Extensions.Options;
 
 namespace Dom;
 
@@ -10,7 +11,7 @@ namespace Dom;
 public sealed class AccountCleanup(
     CoverFiles covers,
     IHttpClientFactory http,
-    IConfiguration configuration,
+    IOptions<DomOptions> options,
     ILogger<AccountCleanup> log)
 {
     /// <summary>The named client Moliv is called with.</summary>
@@ -32,21 +33,21 @@ public sealed class AccountCleanup(
     /// </remarks>
     private async Task ForgetHistoryAsync(string userId)
     {
-        var moliv = configuration["Moliv:Url"];
+        var moliv = options.Value.MolivUrl;
         if (string.IsNullOrWhiteSpace(moliv)) return;
 
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Post,
                 $"{moliv.TrimEnd('/')}/forget?user={Uri.EscapeDataString(userId)}");
-            if (configuration["ADMIN_TOKEN"] is { Length: > 0 } token) request.Headers.Add(AdminApi.TokenHeader, token);
+            if (options.Value.AdminToken is { Length: > 0 } token) request.Headers.Add(AdminApi.TokenHeader, token);
 
             using var response = await http.CreateClient(Moliv).SendAsync(request);
             response.EnsureSuccessStatusCode();
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
         {
-            log.LogWarning(exception, "Moliv did not forget the history of account {Id}", userId);
+            log.HistoryNotForgotten(exception, userId);
         }
     }
 }

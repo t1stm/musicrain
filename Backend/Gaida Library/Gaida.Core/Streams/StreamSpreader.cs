@@ -8,7 +8,16 @@ namespace Gaida.Core.Streams;
 ///     locking at all; on Windows it is legal as long as every opener agrees on the sharing mode, which
 ///     is why <see cref="Share" /> is used on both sides and is not decoration.
 /// </remarks>
-public class StreamSpreader : Stream
+/// <param name="path">
+/// Where the body lives. Defaults to a fresh temp file. Pass a path to write straight to its final
+/// home -- the caller then almost certainly wants <paramref name="deleteOnClose" /> <c>false</c>.
+/// </param>
+/// <param name="deleteOnClose">
+/// Whether <see cref="Dispose" /> removes the file. True for scratch bodies, false when the file 
+/// already existed or is meant to outlive the spreader. Should be set to true for paths from Path.GetTempFileName()
+/// otherwise there is a risk of overflowing the 65535 limit.
+/// </param>
+public class StreamSpreader(string? path = null, bool deleteOnClose = true) : Stream
 {
     /// <summary>
     ///     <c>ReadWrite</c> lets the writer and the readers hold the file at the same time. <c>Delete</c> lets
@@ -27,25 +36,10 @@ public class StreamSpreader : Stream
     private string? _keepAsPath;
     private TaskCompletionSource _signal = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    /// <param name="path">
-    /// Where the body lives. Defaults to a fresh temp file. Pass a path to write straight to its final
-    /// home -- the caller then almost certainly wants <paramref name="deleteOnClose" /> <c>false</c>.
-    /// </param>
-    /// <param name="deleteOnClose">
-    /// Whether <see cref="Dispose" /> removes the file. True for scratch bodies, false when the file 
-    /// already existed or is meant to outlive the spreader. Should be set to true for paths from Path.GetTempFileName()
-    /// otherwise there is a risk of overflowing the 65535 limit.
-    /// </param>
-    public StreamSpreader(string? path = null, bool deleteOnClose = true)
-    {
-        Path = path ?? System.IO.Path.GetTempFileName();
-        DeleteOnClose = deleteOnClose;
-    }
-
     /// <summary>The file backing this body. Stable except across <see cref="KeepAs" />, which moves it on close.</summary>
-    public string Path { get; private set; }
+    public string Path { get; private set; } = path ?? System.IO.Path.GetTempFileName();
 
-    private bool DeleteOnClose { get; set; }
+    private bool DeleteOnClose { get; set; } = deleteOnClose;
 
     /// <summary>Set once the source data is complete. A reader that observes this and then reads 0 bytes is done.</summary>
     public bool Closed { get; private set; }

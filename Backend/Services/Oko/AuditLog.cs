@@ -44,7 +44,7 @@ public sealed class AuditLog
 
     public AuditEntry[] Recent()
     {
-        lock (_gate) return _entries.ToArray();
+        lock (_gate) return [.. _entries];
     }
 
     /// <summary>

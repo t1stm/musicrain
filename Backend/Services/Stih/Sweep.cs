@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.Extensions.Options;
 using ILogger = Serilog.ILogger;
 
 namespace Stih;
@@ -14,7 +15,7 @@ public sealed class Sweep(
     Lyrics lyrics,
     LrcLib lrcLib,
     IHttpClientFactory factory,
-    IConfiguration configuration,
+    IOptions<StihOptions> options,
     ILogger logger) : BackgroundService
 {
     /// <summary>How long the sweep lets the stack come up before asking it about tracks.</summary>
@@ -31,21 +32,10 @@ public sealed class Sweep(
     private DateTimeOffset? LastPage { get; set; }
     private string? LastTrack { get; set; }
 
-    private bool Enabled => configuration["LYRICS_SWEEP"] is not { } value ||
-                            !bool.TryParse(value, out var on) || on;
-
-    private TimeSpan Delay => TimeSpan.FromMilliseconds(
-        int.TryParse(configuration["LYRICS_SWEEP_DELAY_MS"], CultureInfo.InvariantCulture, out var ms)
-            ? Math.Max(0, ms)
-            : 1000);
-
-    private TimeSpan Idle => TimeSpan.FromHours(
-        double.TryParse(configuration["LYRICS_SWEEP_IDLE_HOURS"], CultureInfo.InvariantCulture, out var hours)
-            ? Math.Max(0.1, hours)
-            : 6);
-
-    private int RetryDays =>
-        int.TryParse(configuration["LYRICS_RETRY_DAYS"], CultureInfo.InvariantCulture, out var days) ? days : 30;
+    private bool Enabled => options.Value.SweepEnabled;
+    private TimeSpan Delay => options.Value.SweepDelay;
+    private TimeSpan Idle => options.Value.SweepIdle;
+    private int RetryDays => options.Value.SweepRetryDays;
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -143,7 +133,7 @@ public sealed class Sweep(
     /// </summary>
     private async Task<IReadOnlyList<MissingLyricsDto>> PageAsync(CancellationToken ct)
     {
-        if (configuration["Local:Url"]?.TrimEnd('/') is not { Length: > 0 } local) return [];
+        if (options.Value.LocalUrl?.TrimEnd('/') is not { Length: > 0 } local) return [];
 
         var http = factory.CreateClient("pods");
         return await http.GetFromJsonAsync<List<MissingLyricsDto>>(

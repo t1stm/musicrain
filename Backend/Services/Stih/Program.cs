@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Serilog;
 using Serilog.Templates;
 using Serilog.Templates.Themes;
@@ -30,8 +31,9 @@ builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => poli
 builder.Services.AddHttpClient("pods", http => http.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddHttpClient("lrclib", http => http.Timeout = TimeSpan.FromSeconds(10));
 
+builder.Services.AddOptions<StihOptions>().Bind(builder.Configuration);
 builder.Services.AddSingleton(services => new LyricsIndex(
-    services.GetRequiredService<IConfiguration>()["LYRICS_DATA"] ?? "/lyrics", Log.Logger));
+    services.GetRequiredService<IOptions<StihOptions>>().Value.LyricsData, Log.Logger));
 builder.Services.AddSingleton<LrcLib>();
 builder.Services.AddSingleton<Tracks>();
 builder.Services.AddSingleton<Lyrics>();
@@ -69,9 +71,10 @@ app.MapGet("/Audio/Lyrics/Get", async (string? id, Lyrics lyrics, HttpResponse r
 // Local only, in three layers: it is not under /Audio, so no nginx location reaches it; the published
 // port is bound to 127.0.0.1; and with ADMIN_TOKEN set it wants the same header Oko uses, through
 // Gaida.Admin's constant-time compare rather than a second secret of its own.
-app.MapPost("/register", async (RegisterDto body, HttpRequest request, Lyrics lyrics, CancellationToken ct) =>
+app.MapPost("/register", async (RegisterDto body, HttpRequest request, Lyrics lyrics,
+    IOptions<StihOptions> options, CancellationToken ct) =>
 {
-    if (!Gaida.Admin.AdminApi.Authorized(request, app.Configuration["ADMIN_TOKEN"])) return Results.Unauthorized();
+    if (!Gaida.Admin.AdminApi.Authorized(request, options.Value.AdminToken)) return Results.Unauthorized();
 
     var error = await lyrics.RegisterAsync(body, ct);
     return error is null

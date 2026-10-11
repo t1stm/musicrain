@@ -100,13 +100,12 @@ public partial class MusicManager
     /// <summary>The normalizer's readings of a title, in the form songs are scored against, minus any with no title.</summary>
     private static (string Artist, string Title)[] Searchable(NormalizedTitle normalized)
     {
-        return normalized.Candidates
+        return [.. normalized.Candidates
             .Select(candidate => (
                 Artist: LevenshteinDistance.RemoveFormatting(candidate.Artist) ?? string.Empty,
                 Title: LevenshteinDistance.RemoveFormatting(candidate.Title) ?? string.Empty))
             .Where(candidate => candidate.Title.Length > 0)
-            .Distinct()
-            .ToArray();
+            .Distinct()];
     }
 
     /// <summary>

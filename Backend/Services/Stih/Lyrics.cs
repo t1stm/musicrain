@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using Microsoft.Extensions.Options;
 using ILogger = Serilog.ILogger;
 
 namespace Stih;
@@ -12,7 +13,7 @@ public sealed class Lyrics(
     LrcLib lrcLib,
     Tracks tracks,
     IHttpClientFactory factory,
-    IConfiguration configuration,
+    IOptions<StihOptions> options,
     ILogger logger)
 {
     private readonly ILogger _logger = logger.ForContext<Lyrics>();
@@ -23,14 +24,9 @@ public sealed class Lyrics(
     /// </summary>
     private readonly ConcurrentDictionary<string, Lazy<Task<LyricsDto?>>> _inFlight = new();
 
-    private string MusicLibrary => configuration["MUSIC_LIBRARY"] ?? "/music";
-    private string DataDirectory => configuration["LYRICS_DATA"] ?? "/lyrics";
-
-    private TimeSpan RetryAfter =>
-        TimeSpan.FromDays(double.TryParse(configuration["LYRICS_RETRY_DAYS"], CultureInfo.InvariantCulture,
-            out var days)
-            ? days
-            : 30);
+    private string MusicLibrary => options.Value.MusicLibrary;
+    private string DataDirectory => options.Value.LyricsData;
+    private TimeSpan RetryAfter => options.Value.RetryAfter;
 
     /// <summary>The words for one track, or <c>null</c> when there are none anywhere.</summary>
     /// <remarks>

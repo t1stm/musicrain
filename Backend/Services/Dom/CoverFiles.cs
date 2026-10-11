@@ -1,9 +1,11 @@
+using Microsoft.Extensions.Options;
+
 namespace Dom;
 
 /// <summary>Playlist covers on disk under <c>Dom:CoverDir</c>. The store keeps a file name; this owns the files.</summary>
-public sealed class CoverFiles(IConfiguration configuration)
+public sealed class CoverFiles(IOptions<DomOptions> options)
 {
-    private string Directory => configuration["Dom:CoverDir"] ?? "covers";
+    private string Directory => options.Value.CoverDir;
 
     /// <returns>The file name the playlist now records: one per playlist, so a second upload replaces the first.</returns>
     public async Task<string> SaveAsync(string playlistId, string extension, IFormFile file,

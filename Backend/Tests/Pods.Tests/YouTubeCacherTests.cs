@@ -15,7 +15,7 @@ public class YouTubeCacherTests : IDisposable
     [Fact]
     public async Task GetRandomAsyncCapsAtTheRequestedCountAndNeverRepeatsAResult()
     {
-        var cacher = await Cacher(Enumerable.Range(0, 20).Select(i => Result($"yt://{i}")).ToArray());
+        var cacher = await Cacher([.. Enumerable.Range(0, 20).Select(i => Result($"yt://{i}"))]);
 
         var results = await cacher.GetRandomAsync(4);
 

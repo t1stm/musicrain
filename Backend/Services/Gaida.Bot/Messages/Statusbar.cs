@@ -45,7 +45,7 @@ public sealed class Statusbar
                 if (Channel is not null)
                 {
                     Message = await Channel.SendMessageAsync(
-                        Text.ThisMessageWillUpdateShortly().CodeBlocked());
+                        Text.ThisMessageWillUpdateShortly.CodeBlocked());
                 }
             }
             catch (Exception e)
@@ -88,7 +88,7 @@ public sealed class Statusbar
         {
             Message = Channel is null
                 ? null
-                : await Channel.SendMessageAsync(Text.ThisMessageWillUpdateShortly().CodeBlocked());
+                : await Channel.SendMessageAsync(Text.ThisMessageWillUpdateShortly.CodeBlocked());
         }
         catch (Exception e)
         {
@@ -180,7 +180,7 @@ public sealed class Statusbar
 
     private string GenerateStatusbar()
     {
-        if (Player is null) return Text.ThisMessageWillUpdateShortly().CodeBlocked();
+        if (Player is null) return Text.ThisMessageWillUpdateShortly.CodeBlocked();
 
         var player = Player;
         var next = player.Queue.GetNext();
@@ -191,17 +191,17 @@ public sealed class Statusbar
         // Nothing has arrived yet, so the clock is meaningless: run the unknown-length animation
         // and say what it is waiting for instead of a bar frozen at zero.
         var progress = player.Loading
-            ? $"{GenerateProgressbar(0, 0)} ( ⏳ {Text.Loading()} )"
+            ? $"{GenerateProgressbar(0, 0)} ( ⏳ {Text.Loading} )"
             : $"{GenerateProgressbar((long)time.TotalMilliseconds, (long)length.TotalMilliseconds)} " +
               $"( {(player.Paused ? "⏸️" : "▶️")} {Time(time)} - {(length == TimeSpan.Zero ? "∞" : Time(length))} )";
 
         return
-            $"```{Text.Playing()}: \"{player.CurrentItem?.Kind}\"\n" +
+            $"```{Text.Playing}: \"{player.CurrentItem?.Kind}\"\n" +
             $"({player.Queue.Current + 1} - {player.Queue.Count}) {player.CurrentItem?.DisplayName ?? "Something's broken."}\n" +
             progress +
             $"{player.LoopStatus switch { LoopMode.One => " ( 🔂 )", LoopMode.WholeQueue => " ( 🔁 )", _ => "" }}" +
-            $"{(requester is null ? "" : $"\n{Text.RequestedBy()}: {requester.Username}")}" +
-            $"{(next is null ? "" : $"\n\n{Text.NextUp()}: ({player.Queue.Current + 2}) {next.DisplayName}")}```";
+            $"{(requester is null ? "" : $"\n{Text.RequestedBy}: {requester.Username}")}" +
+            $"{(next is null ? "" : $"\n\n{Text.NextUp}: ({player.Queue.Current + 2}) {next.DisplayName}")}```";
     }
 
     public async Task UpdateMessageAndStopAsync(string message)

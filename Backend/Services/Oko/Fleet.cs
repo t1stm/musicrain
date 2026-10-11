@@ -3,13 +3,14 @@ using System.Net.ServerSentEvents;
 using System.Text.Json;
 using System.Threading.Channels;
 using JetBrains.Annotations;
+using Microsoft.Extensions.Options;
 using ILogger = Serilog.ILogger;
 
 namespace Oko;
 
 /// <summary>One service Oko watches. Name is what the panel shows; Url is where it lives.</summary>
 [UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed class Target
+public sealed record Target
 {
     public required string Name { get; set; }
     public required string Url { get; set; }
@@ -24,7 +25,7 @@ public sealed class Target
 ///     stops talking to anything at all. That is the whole reason the panel pulls instead of the
 ///     services pushing: there is no state to keep warm, so there is no reason to poll.
 /// </remarks>
-public sealed class Fleet(IHttpClientFactory factory, IConfiguration configuration, ILogger log)
+public sealed class Fleet(IHttpClientFactory factory, IOptions<OkoOptions> options, ILogger log)
 {
     /// <summary>How long a target has to answer a snapshot before it is rendered as down.</summary>
     private static readonly TimeSpan SnapshotTimeout = TimeSpan.FromSeconds(5);
@@ -32,10 +33,9 @@ public sealed class Fleet(IHttpClientFactory factory, IConfiguration configurati
     /// <summary><c>AdminApi.TokenHeader</c>. Oko does not reference Gaida.Admin, so it keeps its own copy.</summary>
     private const string TokenHeader = "X-Admin-Token";
 
-    private readonly string _token = configuration["ADMIN_TOKEN"] ?? "";
+    private readonly string _token = options.Value.AdminToken ?? "";
 
-    public IReadOnlyList<Target> Targets { get; } =
-        configuration.GetSection("Targets").Get<Target[]>() ?? [];
+    public IReadOnlyList<Target> Targets { get; } = options.Value.Targets;
 
     /// <summary>
     ///     Every target's snapshot, fanned out in parallel. A target that is down, slow or answering

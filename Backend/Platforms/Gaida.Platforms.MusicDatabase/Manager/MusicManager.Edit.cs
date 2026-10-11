@@ -175,9 +175,10 @@ public partial class MusicManager
     /// </summary>
     private static string CleanForFilename(string? value)
     {
-        var cleaned = new string((value ?? string.Empty)
-            .Select(character => Path.GetInvalidFileNameChars().Contains(character) ? '_' : character)
-            .ToArray());
+        var cleaned = new string([
+            .. (value ?? string.Empty)
+                .Select(character => Path.GetInvalidFileNameChars().Contains(character) ? '_' : character)
+        ]);
 
         return cleaned.Replace(" - ", " ").Replace('/', '_').Replace('\\', '_').Trim().Trim('.');
     }
