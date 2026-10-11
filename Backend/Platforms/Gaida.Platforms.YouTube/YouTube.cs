@@ -18,7 +18,7 @@ public sealed class YouTube : Platform, ISupportsSearch, ISupportsPlaylist, ISup
 
     public YouTube(ILogger logger, YouTubeOptions options) : base(logger)
     {
-        Cache = new YouTubeCacher(logger, options.CacheDatabasePath);
+        Cache = new YouTubeCacher(logger, options.CacheDatabasePath, options.AudioCacheDirectory);
 
         // One client for the platform, shared by the search provider and the downloader.
         var client = new YoutubeClient();

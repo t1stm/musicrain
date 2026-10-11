@@ -9,10 +9,12 @@ a pod that restarts rebuilds its whole index from one query.
 
 Every track a search, playlist, artist or album listed is one row in ``results`` in the same file, so a
 later ``/resolve`` of it costs no Deezer call -- the same job ``YouTube.db`` does for the YouTube pod.
-Those rows are never held in memory and never evicted: a row is a few hundred bytes, not a song.
+Those rows are never held in memory and never evicted: a row is a few hundred bytes, not a song. Every
+download is remembered there too, so ``results`` is every track this pod knows and ``entries`` the ones it
+also has the audio of.
 
-Oko pages through both tables (:func:`page`) and can forget a search result; that, eviction and promotion
-are the only writes it makes.
+Oko pages through ``results`` with each track's download beside it (:meth:`Cache.browse`), and can forget a
+track that is not downloaded; that, eviction and promotion are the only writes it makes.
 
 Older versions wrote a ``<id>.json`` sidecar per track instead. A ``cache.db`` that is new imports them
 once and leaves them where they are, so an older image pointed at this volume still finds its index.
@@ -78,19 +80,24 @@ _INSERT = f"INSERT OR REPLACE INTO entries VALUES ({', '.join('?' * len(_COLUMNS
 _RESULT_COLUMNS = ("name", "artist", "album", "duration", "thumbnailUrl")
 _REMEMBER = f"INSERT OR IGNORE INTO results (id, {', '.join(_RESULT_COLUMNS)}) VALUES (?, ?, ?, ?, ?, ?)"
 
-_BROWSE = {
-    "entries": "name, artist, album, duration, format, bytes, at",
-    "results": ", ".join(_RESULT_COLUMNS),
-}
-"""What Oko's browser shows of each table, beside the ID."""
+_BACKFILL = (f"INSERT OR IGNORE INTO results (id, {', '.join(_RESULT_COLUMNS)}) "
+             f"SELECT id, {', '.join(_RESULT_COLUMNS)} FROM entries ORDER BY at")
+"""Remembers every download not remembered yet, oldest first, so the newest is the newest row."""
+
+_TRACKS = """(SELECT results.rowid AS rowid, results.*, entries.format, entries.bytes, entries.at
+    FROM results LEFT JOIN entries USING (id){})"""
+"""Every known track with its download beside it, as one table :func:`page` can read."""
+
+_TRACK_COLUMNS = f"{', '.join(_RESULT_COLUMNS)}, format, bytes, at"
 
 PAGE_MAX = 200
 """The most rows one page of :func:`page` carries."""
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 """
-``PRAGMA user_version`` once every table exists and the sidecars are imported. 0 is a new file, 1 one
-written before the ``results`` table.
+``PRAGMA user_version`` once every table exists, the sidecars are imported and every download is
+remembered. 0 is a new file, 1 one written before the ``results`` table, 2 one whose downloads were not
+remembered.
 """
 
 
@@ -137,10 +144,15 @@ class Cache:
         with self._lock:
             return len(self._entries), sum(entry.bytes for entry in self._entries.values())
 
-    def browse(self, table: str, query: str | None, offset: int, take: int, top: int | None) -> dict[str, Any]:
-        """One page of ``entries`` or ``results`` for Oko -- see :func:`page`."""
+    def browse(self, query: str | None, offset: int, take: int, top: int | None,
+               downloaded: bool = False) -> dict[str, Any]:
+        """
+        One page of every track this pod knows, for Oko -- see :func:`page`. A downloaded one carries its
+        ``format``, ``bytes`` and ``at``; the rest carry ``None`` there. ``downloaded`` keeps only the first.
+        """
+        table = _TRACKS.format(" WHERE entries.id IS NOT NULL" if downloaded else "")
         with self._lock:
-            return page(self._db, table, "deezer://", _BROWSE[table], query, offset, take, top)
+            return page(self._db, table, "deezer://", _TRACK_COLUMNS, query, offset, take, top)
 
     def results_count(self) -> int:
         with self._lock:
@@ -229,6 +241,8 @@ class Cache:
 
             with self._db:
                 self._db.execute(_INSERT, astuple(entry))
+                self._db.execute(_REMEMBER, (track_id, entry.name, entry.artist, entry.album, entry.duration,
+                                             entry.thumbnailUrl))
 
         self._evict_to_cap()
 
@@ -237,8 +251,10 @@ class Cache:
 
     def forget_result(self, track_id: str) -> bool:
         """
-        Drops one remembered search result. A downloaded copy stays: that is :meth:`remove`'s, and
-        ``/resolve`` answers from it first anyway. The next search that lists the track remembers it again.
+        Drops one remembered track. The next search that lists it remembers it again.
+
+        Not for a downloaded track: it would vanish from Oko's table while its audio stayed. ``main``
+        refuses those; :meth:`remove` first.
         """
         with self._lock, self._db:
             return self._db.execute("DELETE FROM results WHERE id = ?", (track_id,)).rowcount > 0
@@ -300,6 +316,7 @@ class Cache:
                     self._db.execute("""CREATE TABLE IF NOT EXISTS results (
                         id TEXT PRIMARY KEY, name TEXT NOT NULL, artist TEXT NOT NULL, album TEXT,
                         duration TEXT NOT NULL, thumbnailUrl TEXT)""")
+                    self._db.execute(_BACKFILL)
                     self._db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
             rows = [Entry(*row) for row in self._db.execute(f"SELECT {', '.join(_COLUMNS)} FROM entries")]

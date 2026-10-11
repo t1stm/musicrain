@@ -277,17 +277,14 @@ async def evict(id: str | None = None) -> Response:
     return JSONResponse({"evicted": 1 if removed else 0})
 
 
-@operations.get("/cache")
-async def browse_cache(q: str | None = None, offset: int = 0, take: int = 100, top: int | None = None) -> Response:
-    """One page of the downloads, newest first. A GET, so Oko reads it without auditing it."""
-    return JSONResponse(await asyncio.to_thread(songs.browse, "entries", q, offset, take, top))
-
-
-@operations.get("/results")
-async def browse_results(q: str | None = None, offset: int = 0, take: int = 100,
-                         top: int | None = None) -> Response:
-    """One page of the remembered search results, newest first."""
-    return JSONResponse(await asyncio.to_thread(songs.browse, "results", q, offset, take, top))
+@operations.get("/tracks")
+async def browse_tracks(q: str | None = None, offset: int = 0, take: int = 100, top: int | None = None,
+                        downloaded: bool = False) -> Response:
+    """
+    One page of every track this pod knows, newest first, each with its download beside it when there is
+    one. A GET, so Oko reads it without auditing it.
+    """
+    return JSONResponse(await asyncio.to_thread(songs.browse, q, offset, take, top, downloaded))
 
 
 @operations.post("/forget")
@@ -295,6 +292,9 @@ async def forget(id: str | None = None) -> Response:
     track_id = classify.track_id(id or "")
     if not track_id:
         return JSONResponse({"error": "That is not a Deezer track ID."}, status_code=400)
+    # Forgotten, a downloaded track would drop out of Oko's table while its audio stayed on disk.
+    if songs.get(track_id) is not None:
+        return JSONResponse({"error": "That track is downloaded. Evict it first."}, status_code=409)
 
     return JSONResponse({"forgotten": 1 if await asyncio.to_thread(songs.forget_result, track_id) else 0})
 
@@ -307,7 +307,7 @@ async def evict_all() -> Response:
 def snapshot() -> dict[str, Any]:
     """
     What an operator sees at a glance: counts off the in-memory index, and one count(*) over a table of
-    thousands. The rows themselves are paged on request -- see /Admin/cache and /Admin/results.
+    thousands. The rows themselves are paged on request -- see /Admin/tracks.
     """
     count, total = songs.stats()
     return {

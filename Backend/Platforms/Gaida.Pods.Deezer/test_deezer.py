@@ -274,24 +274,25 @@ def test_cache_survives_a_restart():
         assert not (Path(directory) / f"{TRACK}.json").exists()
 
 
-def test_cache_pages_stay_pinned_to_what_page_one_saw():
-    """Oko pages with the pin page 1 handed back, so a download meanwhile shifts nothing."""
+def test_tracks_page_stays_pinned_and_carries_each_download():
+    """Oko pages with the pin page 1 handed back, so a track remembered meanwhile shifts nothing."""
     with tempfile.TemporaryDirectory() as directory:
         songs = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
-        for track in ("1", "2", "3"):
-            songs.store(track, b"z" * 10, stream.MP3, _dto())
+        songs.remember([to_dto(_track(id=1)), to_dto(_track(id=2))])
+        songs.store("3", b"z" * 10, stream.MP3, _dto())
 
-        first = songs.browse("entries", None, 0, 2, None)
-        songs.store("4", b"z" * 10, stream.MP3, _dto())
-        second = songs.browse("entries", None, 2, 2, first["top"])
+        first = songs.browse(None, 0, 2, None)
+        songs.remember([to_dto(_track(id=4))])
+        second = songs.browse(None, 2, 2, first["top"])
 
         assert [row["id"] for row in first["rows"]] == ["deezer://3", "deezer://2"]
         assert [row["id"] for row in second["rows"]] == ["deezer://1"]
         assert second["total"] == 3
-        assert songs.browse("entries", None, 0, 2, None)["total"] == 4
-        # A re-download is the newest row again, as it is the newest file.
-        songs.store("1", b"y" * 10, stream.FLAC, _dto())
-        assert songs.browse("entries", None, 0, 1, None)["rows"][0]["format"] == stream.FLAC
+        assert songs.browse(None, 0, 2, None)["total"] == 4
+        # A download is a remembered track too, with its file beside it; the rest have none.
+        assert first["rows"][0]["format"] == stream.MP3 and first["rows"][0]["bytes"] == 10
+        assert first["rows"][1]["format"] is None
+        assert [row["id"] for row in songs.browse(None, 0, 10, None, downloaded=True)["rows"]] == ["deezer://3"]
 
 
 _JPEG = b"\xff\xd8\xff" + b"j" * 500
@@ -473,25 +474,25 @@ def test_search_results_fold_cyrillic_and_match_the_full_id():
         songs.remember([to_dto(_track(id=1, title="Тази песен не е за Любов")), to_dto(_track(id=2))])
 
         assert songs.results_count() == 2
-        assert songs.browse("results", "любов", 0, 10, None)["total"] == 1
-        assert songs.browse("results", "deezer://2", 0, 10, None)["rows"][0]["id"] == "deezer://2"
-        assert songs.browse("results", None, 0, 500, None)["take"] == cache.PAGE_MAX
+        assert songs.browse("любов", 0, 10, None)["total"] == 1
+        assert songs.browse("deezer://2", 0, 10, None)["rows"][0]["id"] == "deezer://2"
+        assert songs.browse(None, 0, 500, None)["take"] == cache.PAGE_MAX
 
 
-def test_forgetting_a_result_leaves_its_download_alone():
-    with tempfile.TemporaryDirectory() as directory:
-        songs = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
-        songs.remember([to_dto(_track())])
-        songs.store(TRACK, b"x" * 10, stream.MP3, _dto())
+def test_a_downloaded_track_is_evicted_before_it_is_forgotten():
+    """Forgotten while downloaded, a track would drop out of Oko's table with its audio still on disk."""
+    main.songs.remember([to_dto(_track(id=7))])
+    main.songs.store("8", b"x" * 10, stream.MP3, _dto())
 
-        assert songs.forget_result(TRACK)
-        assert not songs.forget_result(TRACK)
-        assert songs.result(TRACK) is None
-        assert songs.get(TRACK) is not None
+    assert asyncio.run(main.forget("deezer://8")).status_code == 409
+    assert main.songs.result("8") is not None
+
+    assert json.loads(asyncio.run(main.forget("deezer://7")).body) == {"forgotten": 1}
+    assert main.songs.result("7") is None
 
 
 def test_a_version_1_cache_gains_the_results_table():
-    """The volume every deployment already has: its entries stay, and searches start being remembered."""
+    """An old volume: its entries stay, they are remembered, and searches start being remembered."""
     with tempfile.TemporaryDirectory() as directory:
         songs = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
         songs.store(TRACK, b"x" * 10, stream.MP3, _dto())
@@ -501,6 +502,8 @@ def test_a_version_1_cache_gains_the_results_table():
 
         reopened = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
         assert reopened.get(TRACK) is not None
+        # ...and the download it already had is remembered, so Oko's one table lists it.
+        assert reopened.result(TRACK)["name"] == _dto()["name"]
         reopened.remember([to_dto(_track(id=1))])
         assert reopened.result("1")["id"] == "deezer://1"
 

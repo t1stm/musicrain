@@ -6,7 +6,7 @@ It owns two caches on disk — the SQLite search cache and the downloaded audio 
 
 | Variable | What it does |
 | --- | --- |
-| `YOUTUBE_CACHE_DB` | The search cache database. A `YouTube.json` beside it is imported on the first start. |
+| `YOUTUBE_CACHE_DB` | The search cache database. A `YouTube.json` beside it is imported on the first start. Its `downloads` table indexes the webm cache, refreshed from disk at startup and whenever Oko loads a first page, so Oko can list, search and evict downloads beside their names. |
 | `YOUTUBE_CACHE` | The directory of downloaded audio. Point it somewhere new and the pod starts empty and re-downloads everything. |
 
 ## Running it

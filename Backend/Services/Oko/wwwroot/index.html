@@ -78,6 +78,10 @@
     button.act:disabled { opacity: .4; cursor: default; }
     button.act:disabled:hover { color: var(--dim); border-color: var(--line); }
     .rowbar { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+    /* A narrow window wraps the pager onto its own line rather than squeezing its count into a column. */
+    .rowbar { flex-wrap: wrap; }
+    .rowbar > .hint { white-space: nowrap; }
+    .rowbar label { display: flex; gap: 5px; align-items: center; white-space: nowrap; }
     .rowbar input[type=search] {
       flex: 1; max-width: 420px; background: var(--panel); color: var(--text);
       border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px; font: inherit;
@@ -227,7 +231,7 @@
 
     if (!response.ok) alert(`${button.dataset.a} failed (${response.status})\n\n${await failure(response)}`);
     // Every table of the pod that was acted on, not only the one the button sat in: Deezer's
-    // "Evict everything" sits outside both of its tables and empties one of them.
+    // "Evict every download" sits outside its table and changes every downloaded row in it.
     for (const key of Object.keys(browsers)) if (key.startsWith(button.dataset.t + "/")) loadBrowser(key);
     await refresh();
     if (page || tab !== "state") render();
@@ -324,43 +328,55 @@
   const browsers = {};
 
   // Which tables each pod's view shows, keyed on what the pod reports about itself.
-  const BROWSED = { "gaida-youtube": ["results"], "gaida-spotify": ["results"], "gaida-deezer": ["cache", "results"] };
+  const BROWSED = { "gaida-youtube": ["tracks"], "gaida-spotify": ["results"], "gaida-deezer": ["tracks"] };
+
+  const forget = (r, name) => act("Forget", name, "forget", { id: r.id },
+    { confirm: `Forget "${r.name}" from the search cache?\n\nThe next search that lists it adds it back.`, danger: true });
 
   const TABLES = {
     results: {
       columns: ["Track", "Artist", "Album", "Length", "ID", ""],
       row: (r, name) => [
         cell(r.name ?? "—", "wrap"), cell(r.artist ?? "—", "wrap"), cell(r.album ?? "—", "wrap"),
-        cell((r.duration ?? "").split(".")[0], "mono"), cell(r.id, "mono"),
-        `<td>${act("Forget", name, "forget", { id: r.id },
-          { confirm: `Forget "${r.name}" from the search cache?\n\nThe next search that lists it adds it back.`,
-            danger: true })}</td>`
+        cell((r.duration ?? "").split(".")[0], "mono"), cell(r.id, "mono"), `<td>${forget(r, name)}</td>`
       ]
     },
 
-    // Deezer's downloads. Everything Deezer hands over is MP3 320 unless someone asked for lossless,
-    // so promoting is how a track worth keeping becomes a FLAC and demoting is how the space comes
-    // back. "To library" is the one button here that acts on another service.
-    cache: {
-      columns: ["Track", "Artist", "Format", "Size", "Cached", ""],
+    // Every track the YouTube or Deezer pod knows, downloaded or only listed by a search — and, on
+    // YouTube, the old webms no search result describes, by ID alone. A download carries its format
+    // and size, and the buttons that act on the file: everything Deezer hands over is MP3 320 unless
+    // someone asked for lossless, so promoting is how a track worth keeping becomes a FLAC and demoting
+    // is how the space comes back; a webm can only be evicted. A track with no file can only be
+    // forgotten — both pods refuse to forget a downloaded one, which would drop it from here with its
+    // audio still on disk.
+    tracks: {
+      columns: ["Track", "Artist", "Album", "Length", "Downloaded", "ID", ""],
+      filter: { name: "downloaded", label: "Downloaded only" },
       row: (r, name) => {
         // Keyed on what the pod reports about itself, like the library table — not on what the target
         // happens to be called in this deployment's config.
         const library = (latest?.services ?? []).find((x) => x.snapshot?.service === "gaida-local")?.name;
+        const what = r.name ?? r.id;
         return [
-          cell(r.name, "wrap"), cell(r.artist, "wrap"),
-          `<td><span class="pill">${esc(r.format)}</span></td>`,
-          cell(bytes(r.bytes), "mono"), cell(new Date(r.at * 1000).toLocaleString()),
-          `<td>` +
-            (r.format === "flac"
-              ? act("Demote to 320", name, "demote", { id: r.id }, { confirm: `Replace the FLAC of "${r.name}" with MP3 320?` })
-              : act("Promote to FLAC", name, "promote", { id: r.id })) +
-            (library
-              ? act("To library", library, "import-deezer", { id: r.id },
-                  { confirm: `Copy "${r.name}" into the library's Deezer folder?\n\nIt becomes an ordinary audio:// song, for you to tidy up in gaida-local's library.` })
-              : "") +
-            act("Evict", name, "evict", { id: r.id }) +
-          `</td>`
+          cell(r.name ?? "—", "wrap"), cell(r.artist ?? "—", "wrap"), cell(r.album ?? "—", "wrap"),
+          cell(r.duration ? r.duration.split(".")[0] : "—", "mono"),
+          r.format
+            ? `<td title="Downloaded ${esc(new Date(r.at * 1000).toLocaleString())}"><span class="pill">${esc(r.format)}</span>
+                 <span class="mono">${bytes(r.bytes)}</span></td>`
+            : cell("—"),
+          cell(r.id, "mono"),
+          `<td>` + (r.format
+            ? (r.format === "flac"
+                ? act("Demote to 320", name, "demote", { id: r.id }, { confirm: `Replace the FLAC of "${what}" with MP3 320?` })
+                : r.format === "mp3" ? act("Promote to FLAC", name, "promote", { id: r.id }) : "") +
+              // "To library" is the one button here that acts on another service, and only takes Deezer IDs.
+              (library && r.id.startsWith("deezer://")
+                ? act("To library", library, "import-deezer", { id: r.id },
+                    { confirm: `Copy "${what}" into the library's Deezer folder?\n\nIt becomes an ordinary audio:// song, for you to tidy up in gaida-local's library.` })
+                : "") +
+              act("Evict", name, "evict", { id: r.id },
+                { confirm: `Delete the downloaded file of "${what}"?\n\nIt is downloaded again the next time it is played.` })
+            : forget(r, name)) + `</td>`
         ];
       }
     }
@@ -380,7 +396,7 @@
   };
 
   async function loadBrowser(key, changes = {}) {
-    const state = browsers[key] ??= { q: "", draft: null, offset: 0, top: null, page: null, error: null, html: "" };
+    const state = browsers[key] ??= { q: "", draft: null, filtered: false, offset: 0, top: null, page: null, error: null, html: "" };
     Object.assign(state, changes);
 
     // A ticket rather than a flag: a newer load (the next page clicked before this one landed) wins,
@@ -389,6 +405,7 @@
     const [target, kind] = key.split("/");
     const query = new URLSearchParams({ q: state.q, offset: state.offset, take: PAGE_SIZE });
     if (state.top !== null) query.set("top", state.top);
+    if (state.filtered) query.set(TABLES[kind].filter.name, "true");
 
     let page = null, error = null;
     try {
@@ -419,6 +436,7 @@
       `<div class="rowbar">
          <input type="search" data-browse-q placeholder="Search names, artists, albums or IDs…" value="${esc(state.draft ?? state.q)}">
          <button class="act" data-browse="1" title="Search — again with the same words to take in rows added since">Search</button>
+         ${spec.filter ? `<label class="hint"><input type="checkbox" data-browse-filter${state.filtered ? " checked" : ""}> ${esc(spec.filter.label)}</label>` : ""}
          ${at ? go("«", 0, at.page > 1, "First page") + go("‹", p.offset - p.take, at.page > 1, "Previous page") +
            `<span class="hint">Page ${at.page} of ${at.pages} · rows ${at.from}–${at.to} of ${p.total.toLocaleString()}</span>` +
            go("›", p.offset + p.take, at.page < at.pages, "Next page") + go("»", at.last, at.page < at.pages, "Last page") : ""}
@@ -854,34 +872,32 @@
         ]));
     },
 
-    // Deezer's cache.db: the downloads, and every track a search listed.
+    // Deezer's cache.db: every track a search listed or a play downloaded, in one table.
     deezer(s, name) {
       const pct = s.maxBytes ? Math.min(100, (s.totalBytes / s.maxBytes) * 100) : 0;
       return `<div class="cards">
-          <div class="card"><b>${s.count}</b><span>cached tracks</span></div>
+          <div class="card"><b>${(s.results ?? 0).toLocaleString()}</b><span>tracks</span></div>
+          <div class="card"><b>${s.count}</b><span>downloaded</span></div>
           <div class="card"><b>${bytes(s.totalBytes)}</b><span>of ${bytes(s.maxBytes)}</span>
             <div class="bar"><i style="width:${pct.toFixed(1)}%"></i></div></div>
-          <div class="card"><b>${(s.results ?? 0).toLocaleString()}</b><span>remembered results</span></div>
           <div class="card"><b>${s.canDownload ? "yes" : "no"}</b><span>can download</span></div>
         </div>` +
         (s.canDownload ? "" : `<div class="scroll"><div class="error">No DEEZER_ARL — this pod is
           metadata only. Deezer results still show up, but Gaida resolves them against the library or
           YouTube, and nothing here can be promoted.</div></div>`) +
-        `<h3 class="section">Downloads</h3>
-        <div class="rowbar">${act("Evict everything", name, "evict-all", {},
-          { confirm: `Delete all ${s.count} cached track(s)?\n\nEach one is downloaded again the next time it is played.`,
+        `<div class="rowbar">${act("Evict every download", name, "evict-all", {},
+          { confirm: `Delete all ${s.count} downloaded track(s)?\n\nEach one is downloaded again the next time it is played, and stays listed here meanwhile.`,
             danger: true })}</div>` +
-        browserSlot(name, "cache") +
-        `<h3 class="section">Search cache</h3>` +
-        browserSlot(name, "results");
+        browserSlot(name, "tracks");
     },
 
-    // YouTube.db: every search result the pod has seen. Forgetting one leaves its webm on disk.
+    // YouTube.db: every search result the pod has seen, and the webm cache indexed beside it.
     youtube(s, name) {
       return `<div class="cards">
           <div class="card"><b>${(s.results ?? 0).toLocaleString()}</b><span>cached results</span></div>
-        </div>
-        <h3 class="section">Search cache</h3>` + browserSlot(name, "results");
+          <div class="card"><b>${(s.downloads ?? 0).toLocaleString()}</b><span>downloaded</span></div>
+          <div class="card"><b>${bytes(s.downloadBytes)}</b><span>of webm</span></div>
+        </div>` + browserSlot(name, "tracks");
     },
 
     // Spotify hands over names only, so its cache is the whole of its state.
@@ -1102,6 +1118,10 @@
         `.statusrow[data-account="${CSS.escape(account)}"] [data-st="${field.dataset.st}"]`)?.focus();
       return;
     }
+
+    if ("browseFilter" in e.target.dataset)
+      return void loadBrowser(e.target.closest("[data-browser]").dataset.browser,
+        { filtered: e.target.checked, offset: 0, top: null });
 
     const box = e.target.closest("input[data-pick]");
     if (!box) return;

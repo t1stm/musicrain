@@ -7,6 +7,8 @@ public class YouTubeCacherTests : IDisposable
 {
     private readonly string _directory = Directory.CreateTempSubdirectory("youtube-cache-").FullName;
 
+    private string Webm => Path.Combine(_directory, "webm");
+
     public void Dispose()
     {
         Directory.Delete(_directory, true);
@@ -68,7 +70,7 @@ public class YouTubeCacherTests : IDisposable
               "OriginalArtist":null,"Id":"yt://QcqaQ47ywD0"}]
             """);
 
-        var cacher = new YouTubeCacher(Serilog.Core.Logger.None, legacy);
+        var cacher = new YouTubeCacher(Serilog.Core.Logger.None, legacy, Webm);
         cacher.Initialize();
 
         var imported = await cacher.GetFromCacheAsync("QcqaQ47ywD0");
@@ -78,7 +80,7 @@ public class YouTubeCacherTests : IDisposable
         Assert.True(File.Exists(Path.Combine(_directory, "YouTube.db")));
 
         await File.WriteAllTextAsync(legacy, "[]");
-        var reopened = new YouTubeCacher(Serilog.Core.Logger.None, legacy);
+        var reopened = new YouTubeCacher(Serilog.Core.Logger.None, legacy, Webm);
         reopened.Initialize();
         Assert.NotNull(await reopened.GetFromCacheAsync("QcqaQ47ywD0"));
     }
@@ -112,6 +114,59 @@ public class YouTubeCacherTests : IDisposable
         Assert.Equal(0, (await cacher.PageAsync("qcqaq47", 0, 10, null)).Total);
     }
 
+    /// <summary>
+    ///     The webm cache on disk is the truth: a start fills the index from it, and a first page takes in what
+    ///     landed or left since. Only .webm counts, because that is all the getter serves.
+    /// </summary>
+    [Fact]
+    public async Task DownloadsAreIndexedFromDiskAndListedBesideTheirResults()
+    {
+        Directory.CreateDirectory(Webm);
+        await File.WriteAllBytesAsync(Path.Combine(Webm, "a.webm"), new byte[10]);
+        await File.WriteAllBytesAsync(Path.Combine(Webm, "orphan.webm"), new byte[30]);
+        await File.WriteAllBytesAsync(Path.Combine(Webm, "old.mp4"), new byte[5]);
+        await File.WriteAllBytesAsync(Path.Combine(Webm, "b.webm.old"), new byte[5]);
+        // Older first, so the index's order is the order they were downloaded in.
+        File.SetLastWriteTimeUtc(Path.Combine(Webm, "a.webm"), new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        var cacher = await Cacher(Result("yt://a"), Result("yt://b"));
+
+        Assert.Equal((2, 2, 40L), cacher.Count());
+
+        // Every result, newest first, then the downloads no result describes.
+        var all = await cacher.PageAsync(null, 0, 10, null);
+        Assert.Equal(["yt://b", "yt://a", "yt://orphan"], all.Rows.Select(row => row.Id));
+        Assert.Equal(3, all.Total);
+        Assert.Null(all.Rows[0].Format);
+        Assert.Equal(("webm", 10L), (all.Rows[1].Format, all.Rows[1].Bytes));
+        Assert.Null(all.Rows[2].Name);
+
+        // A page that starts past the results reads on into the downloads.
+        Assert.Equal(["yt://orphan"], (await cacher.PageAsync(null, 2, 10, all.Top)).Rows.Select(row => row.Id));
+        Assert.Equal(["yt://orphan", "yt://a"],
+            (await cacher.PageAsync(null, 0, 10, null, downloaded: true)).Rows.Select(row => row.Id));
+
+        File.Delete(Path.Combine(Webm, "a.webm"));
+        Assert.Equal(1, (await cacher.PageAsync(null, 0, 10, null, downloaded: true)).Total);
+    }
+
+    [Fact]
+    public async Task EvictDeletesTheWebmAndNeverLeavesTheCache()
+    {
+        Directory.CreateDirectory(Webm);
+        await File.WriteAllBytesAsync(Path.Combine(Webm, "a.webm"), new byte[10]);
+        await File.WriteAllBytesAsync(Path.Combine(_directory, "outside.webm"), new byte[10]);
+        var cacher = await Cacher(Result("yt://a"));
+
+        Assert.True(await cacher.IsDownloadedAsync("a"));
+        Assert.False(await cacher.EvictAsync("../outside"));
+        Assert.True(File.Exists(Path.Combine(_directory, "outside.webm")));
+
+        Assert.True(await cacher.EvictAsync("yt://a"));
+        Assert.False(File.Exists(Path.Combine(Webm, "a.webm")));
+        Assert.False(await cacher.IsDownloadedAsync("yt://a"));
+        Assert.NotNull(await cacher.GetFromCacheAsync("a"));
+    }
+
     [Fact]
     public async Task ForgetTakesTheIdWithOrWithoutItsPrefix()
     {
@@ -120,7 +175,7 @@ public class YouTubeCacherTests : IDisposable
         Assert.True(await cacher.ForgetAsync("yt://a"));
         Assert.True(await cacher.ForgetAsync("b"));
         Assert.False(await cacher.ForgetAsync("a"));
-        Assert.Equal(0, cacher.Count());
+        Assert.Equal(0, cacher.Count().Results);
     }
 
     private static YouTubeResult Result(string id)
@@ -135,7 +190,7 @@ public class YouTubeCacherTests : IDisposable
 
     private async Task<YouTubeCacher> Cacher(string name, params YouTubeResult[] results)
     {
-        var cacher = new YouTubeCacher(Serilog.Core.Logger.None, Path.Combine(_directory, name + ".db"));
+        var cacher = new YouTubeCacher(Serilog.Core.Logger.None, Path.Combine(_directory, name + ".db"), Webm);
         cacher.Initialize();
         await cacher.AddToCacheAsync(results);
         return cacher;

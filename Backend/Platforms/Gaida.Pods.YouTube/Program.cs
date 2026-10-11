@@ -36,23 +36,35 @@ var youTube = new YouTubePlatform(Log.Logger,
     new YouTubeOptions(Setting("YOUTUBE_CACHE_DB"), Setting("YOUTUBE_CACHE")));
 youTube.Initialize();
 
-// No state an operator edits, only a search cache an operator may page through and prune.
+// No state an operator edits, only a search cache and a webm cache an operator may page through and prune.
 // No-op without ADMIN_TOKEN. See ADMIN_PLAN.md and CACHE_BROWSER_PLAN.md.
-var admin = app.MapAdmin(() => new { service = "gaida-youtube", results = youTube.Cache.Count() });
-
-// GETs, so Oko forwards them through its read proxy and leaves them out of the audit log.
-admin?.MapGet("/results", async Task<IResult> (string? q, int? offset, int? take, long? top, CancellationToken ct) =>
+var admin = app.MapAdmin(() =>
 {
-    var page = await youTube.Cache.PageAsync(q, offset ?? 0, take ?? 100, top, ct);
-    return Results.Ok(new ResultsPageDto(page.Top, page.Total, page.Offset, page.Take,
-        page.Rows.Select(ResultMapper.Map).OfType<ResultDto>()));
+    var (results, downloads, downloadBytes) = youTube.Cache.Count();
+    return new { service = "gaida-youtube", results, downloads, downloadBytes };
 });
 
-// The one write: a cached result, gone. The webm in YOUTUBE_CACHE stays where it is.
+// Every cached result with its webm beside it, then the webms nothing describes. A GET, so Oko forwards
+// it through its read proxy and leaves it out of the audit log.
+admin?.MapGet("/tracks", async Task<IResult> (string? q, int? offset, int? take, long? top, bool? downloaded,
+    CancellationToken ct) => Results.Ok(await youTube.Cache.PageAsync(q, offset ?? 0, take ?? 100, top,
+    downloaded ?? false, ct)));
+
+// The writes: a cached result, gone, or a webm, gone. A downloaded one is evicted first, or it would drop
+// out of Oko's table while its webm stayed on disk.
 admin?.MapPost("/forget", async Task<IResult> (string? id, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(id)) return Results.BadRequest(new { error = "A YouTube video ID is required." });
+    if (await youTube.Cache.IsDownloadedAsync(id, ct))
+        return Results.Conflict(new { error = "That video is downloaded. Evict it first." });
+
+    return Results.Ok(new { forgotten = await youTube.Cache.ForgetAsync(id, ct) ? 1 : 0 });
+});
+
+admin?.MapPost("/evict", async Task<IResult> (string? id, CancellationToken ct) =>
     string.IsNullOrWhiteSpace(id)
         ? Results.BadRequest(new { error = "A YouTube video ID is required." })
-        : Results.Ok(new { forgotten = await youTube.Cache.ForgetAsync(id, ct) ? 1 : 0 }));
+        : Results.Ok(new { evicted = await youTube.Cache.EvictAsync(id, ct) ? 1 : 0 }));
 
 app.MapGet("/classify", (string? query) =>
 {
