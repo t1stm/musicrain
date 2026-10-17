@@ -20,8 +20,20 @@
 			return;
 		}
 		clearTimeout(seekTimer);
-		seekTimer = setTimeout(() => seekTo(seconds), 150);
+		seekTimer = setTimeout(() => {
+			seekTimer = undefined;
+			seekTo(seconds);
+		}, 150);
 	};
+
+	// The slider steps by percent from where the bar was last dragged. The arrow keys
+	// step by seconds from where playback is, or, while a room seek is still waiting
+	// to go out, from that seek, so a held key adds up instead of starting over.
+	function keydown(event: KeyboardEvent) {
+		if (!seekTimer) slider.percentage = currentPercentage;
+		slider.stepValue = (seekSeconds / current.lengthSeconds) * 100;
+		slider.keydown(event);
+	}
 
 	let buffered = $derived(current.lengthSeconds > 0 ? (audio.bufferedSeconds / current.lengthSeconds) * 100 : 0);
 	let currentPercentage = $derived(current.lengthSeconds > 0 ? (audio.currentSeconds / current.lengthSeconds) * 100 : 0);
@@ -43,19 +55,18 @@
 	let currentTime = $derived(getTimeString(audio.currentSeconds));
 	let maxTime = $derived(getTimeString(current.lengthSeconds));
 
+  // The OS buttons step from where playback is. Through the slider they stepped
+  // from wherever the bar was last dragged, and by percent rather than seconds.
+  // `seekto` is the scrub on the notification's bar; without it the drag is dropped.
   $effect(() => {
     // in a separate effect to avoid re-running on every audio time update
-    navigator.mediaSession.setActionHandler('seekbackward', () => {
-      slider.keydown({
-        key: 'ArrowLeft'
-      } as KeyboardEvent)
-    })
-
-    navigator.mediaSession.setActionHandler('seekforward', () => {
-      slider.keydown({
-        key: 'ArrowRight'
-      } as KeyboardEvent)
-    })
+    const by = (delta: number) =>
+      seekTo(Math.min(Math.max(audio.currentSeconds + delta, 0), current.lengthSeconds));
+    navigator.mediaSession.setActionHandler('seekbackward', (details) => by(-(details.seekOffset ?? 10)));
+    navigator.mediaSession.setActionHandler('seekforward', (details) => by(details.seekOffset ?? 10));
+    navigator.mediaSession.setActionHandler('seekto', (details) => {
+      if (details.seekTime != null) seekTo(details.seekTime);
+    });
   })
 
   // ponytail: whole seconds. This crosses into the browser process to redraw the
@@ -109,7 +120,7 @@
 		onpointercancel={slider.pointerUp}
 		onpointerdown={slider.pointerDown}
 		onpointermove={slider.pointerMove}
-		onkeydown={slider.keydown}
+		onkeydown={keydown}
 	>
 		<!-- The fills are clipped to the track's own ends — rounded, or square in micro. A
 		     track just started fills a pixel or two, narrower than a fill's rounding, and that
