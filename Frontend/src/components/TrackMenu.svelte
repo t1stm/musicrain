@@ -2,6 +2,7 @@
 	import {
 		ArrowDownTray,
 		ArrowsRightLeft,
+		BarsArrowDown,
 		Check,
 		ChevronLeft,
 		ChevronRight,
@@ -29,8 +30,8 @@
 	// A track's menu. Bindable so a swipe on a row or a held press on a card can open it
 	// without the "…". `trigger={false}` leaves the "…" out for a caller that opens it itself.
 	// `replace`, when given, is one more action: a search under the lifted track, and the
-	// pick handed to the caller. `next`, when given, is what Play Next does instead of
-	// queueing a copy: a track already in the queue moves up.
+	// pick handed to the caller. `next` and `last`, when given, are what Play Next and Add to
+	// Queue do instead of queueing a copy: a track already in the queue moves up or down.
 	//
 	// It lifts the track out, on every screen (Lift).
 	let {
@@ -39,6 +40,7 @@
 		trigger = true,
 		replace,
 		next,
+		last,
 		class: className = ''
 	}: {
 		result: SearchResult;
@@ -46,6 +48,7 @@
 		trigger?: boolean;
 		replace?: (result: SearchResult) => void;
 		next?: () => void;
+		last?: () => void;
 		class?: string;
 	} = $props();
 
@@ -65,6 +68,12 @@
 	function playNext() {
 		if (next) next();
 		else queue.playNext(result);
+		open = false;
+	}
+
+	function addToQueue() {
+		if (last) last();
+		else queue.add(result);
 		open = false;
 	}
 
@@ -207,6 +216,9 @@
 {#snippet trackActions(item: string, size: string)}
 	<button type="button" class={item} onclick={playNext}>
 		<Icon src={QueueList} mini {size} class="shrink-0 text-primary-500" /> Play Next
+	</button>
+	<button type="button" class={item} onclick={addToQueue}>
+		<Icon src={BarsArrowDown} mini {size} class="shrink-0 text-fog" /> Add to Queue
 	</button>
 	<!-- a playlist is an account's, so signed out there is nothing to add to -->
 	{#if account.token}

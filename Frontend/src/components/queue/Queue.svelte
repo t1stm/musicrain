@@ -50,6 +50,11 @@
 		if (at !== -1) queue.setNext(at);
 	}
 
+	function moveLast(item: SearchResult) {
+		const at = queue.items.indexOf(item);
+		if (at !== -1) queue.move(at, queue.items.length - 1);
+	}
+
 	// The track whose menu is open, by its key in the queue: a held press or a right-click
 	// on what is playing, or on a row's words (the grip is the reorder's). None again once
 	// the track changes — every row moves, and what is playing is another track. A close
@@ -209,6 +214,7 @@
 								trigger={false}
 								bind:open={() => menuAt === key, (open) => (menuAt = open ? key : null)}
 								next={() => moveNext(item)}
+								last={() => moveLast(item)}
 							/>
 						</div>
 					</SwipeRow>
