@@ -435,4 +435,21 @@
 	}
 </script>
 
-<audio bind:this={keeper} src={keeperSrc} loop preload="auto"></audio>
+<!-- A phone call, or another app taking the audio, pauses the keeper itself:
+	the browser suspends the page's media for it and never asks the action
+	handlers, and the graph is not media it knows to suspend. So the keeper is the
+	only thing that hears it, and the music follows it — both ways, since the
+	browser plays it again once the call is over. Only what this component did
+	not ask for is followed: its own play and pause already agree with the intent. -->
+<audio
+	bind:this={keeper}
+	src={keeperSrc}
+	loop
+	preload="auto"
+	onpause={() => {
+		if (!audio.paused && current.id) audio.paused = true;
+	}}
+	onplay={() => {
+		if (audio.paused && current.id && !keeper?.paused) audio.paused = false;
+	}}
+></audio>
