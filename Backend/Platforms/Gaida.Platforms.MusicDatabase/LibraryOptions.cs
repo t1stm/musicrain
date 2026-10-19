@@ -1,46 +1,47 @@
 namespace Gaida.Platforms.MusicDatabase;
 
 /// <summary>
-///     Where the library lives and where its covers are served from. Each one is optional, as the pod's
-///     settings always were: unset means the default below, and only a directory that was set is created at boot.
+///     Where the library lives and where its covers are kept. Each one is optional, as the pod's settings always
+///     were: unset means the default below, and only a directory that was set is created at boot.
 /// </summary>
 /// <param name="Storage">The library root (<c>STORAGE</c>).</param>
-/// <param name="AlbumCovers">Where extracted artwork is written (<c>ALBUM_COVERS</c>).</param>
-/// <param name="Domain">The public host the covers directory is served under (<c>DOMAIN</c>).</param>
-public sealed record LibraryOptions(string? Storage = null, string? AlbumCovers = null, string? Domain = null)
+/// <param name="Snimka">
+///     The cover service extracted artwork is uploaded to (<c>SNIMKA_URL</c>). Unset, no cover is kept and every
+///     song without one is tried again on the next scan.
+/// </param>
+public sealed record LibraryOptions(string? Storage = null, HttpClient? Snimka = null)
 {
-    /// <summary>What a stored cover URL carries in place of <see cref="AlbumCoverLocation" />.</summary>
-    private const string DomainPlaceholder = "$[DOMAIN]";
+    /// <summary>
+    ///     A library cover as every track hands it out: <c>cover://&lt;sha1&gt;.jpg</c>, the name Snimka keeps it
+    ///     under. Like <c>audio://</c> for a track, it names the thing rather than a host it happens to be on, so
+    ///     nothing in library.db or in a saved playlist moves when a host does.
+    /// </summary>
+    public const string CoverScheme = "cover://";
+
+    /// <summary>
+    ///     What older versions wrote in front of a cover's file name: a placeholder for the host that
+    ///     <c>DOMAIN</c> filled in on the way out. Rows still carry it until they are next written.
+    /// </summary>
+    private const string DomainPlaceholder = "$[DOMAIN]/";
 
     public string StorageDirectory => Storage ?? "./";
 
-    public string CoverDirectory => AlbumCovers ?? "./Album_Covers";
-
-    // TrimEnd because DOMAIN is written with a trailing slash as often as not, and concatenating it
-    // straight onto "/Album_Covers" produced "https://host//Album_Covers/<hash>.jpg" — a URL that
-    // renders in a browser but that Cover.cs's HttpClient fetch and any strict client both choke on.
-    public string AlbumCoverLocation => (Domain ?? string.Empty).TrimEnd('/') + "/Album_Covers";
-
-    /// <summary>
-    ///     A cover URL as <c>library.db</c> keeps it: the host is the <c>$[DOMAIN]</c> placeholder, so the rows
-    ///     survive <c>DOMAIN</c> changing. <see cref="Served" /> is the way back.
-    /// </summary>
-    /// <remarks>
-    ///     The substitution used to be one-way, which was harmless while only the loader wrote the index — it
-    ///     writes entries it has not substituted yet. An admin edit saves an entry that has been, and without
-    ///     this it would bake this host's domain into the library's rows. With <c>DOMAIN</c> unset the host is a
-    ///     bare "/Album_Covers", which is a prefix of far too much to go substituting blindly.
-    /// </remarks>
-    public string? Stored(string? coverUrl)
+    public static string CoverUrl(string name)
     {
-        return coverUrl is null || string.IsNullOrEmpty(Domain)
-            ? coverUrl
-            : coverUrl.Replace(AlbumCoverLocation, DomainPlaceholder);
+        return CoverScheme + name;
     }
 
-    /// <summary>The absolute cover URL everything downstream wants, from what <see cref="Stored" /> wrote.</summary>
-    public string? Served(string? storedCoverUrl)
+    /// <summary>
+    ///     A cover as library.db or an older Info.json holds it, as a <c>cover://</c> URL: the placeholder older
+    ///     versions stored, and the absolute <c>…/Album_Covers/</c> URL an admin edit could bake in, both name the
+    ///     file last. Anything else is passed through.
+    /// </summary>
+    public static string? Served(string? stored)
     {
-        return storedCoverUrl?.Replace(DomainPlaceholder, AlbumCoverLocation);
+        if (stored is null || !(stored.StartsWith(DomainPlaceholder, StringComparison.Ordinal) ||
+                                stored.Contains("/Album_Covers/", StringComparison.Ordinal)))
+            return stored;
+
+        return CoverUrl(stored[(stored.LastIndexOf('/') + 1)..]);
     }
 }

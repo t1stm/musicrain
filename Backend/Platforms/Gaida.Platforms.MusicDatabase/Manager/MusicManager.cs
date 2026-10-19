@@ -12,7 +12,7 @@ namespace Gaida.Platforms.MusicDatabase.Manager;
                     "to release, and the library lives as long as the pod.")]
 public partial class MusicManager(ILogger logger, LibraryOptions options)
 {
-    private readonly CoverExtractor _coverExtractor = new(logger, options.CoverDirectory);
+    private readonly CoverExtractor _coverExtractor = new(logger, options.Snimka);
     private readonly LibraryDatabase _database = new(options);
 
     /// <summary>

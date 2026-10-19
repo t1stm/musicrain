@@ -17,30 +17,27 @@ public class LibraryDatabaseTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    [Fact]
-    public void ACoverIsStoredUnderThePlaceholderAndServedUnderTheDomain()
+    [Theory]
+    [InlineData("$[DOMAIN]/abc.jpg")]
+    [InlineData("https://music.example.com/Album_Covers/abc.jpg")]
+    [InlineData("cover://abc.jpg")]
+    public void EveryFormACoverWasStoredInIsServedAsCoverScheme(string stored)
     {
-        var options = new LibraryOptions(Domain: "https://music.example.com/");
-        var served = "https://music.example.com/Album_Covers/abc.jpg";
-
-        Assert.Equal("$[DOMAIN]/abc.jpg", options.Stored(served));
-        Assert.Equal(served, options.Served("$[DOMAIN]/abc.jpg"));
+        Assert.Equal("cover://abc.jpg", LibraryOptions.Served(stored));
     }
 
     [Fact]
-    public void WithNoDomainACoverIsStoredAsItIs()
+    public void AnythingElseIsServedAsItIs()
     {
-        var options = new LibraryOptions();
-
-        Assert.Equal("/Album_Covers/abc.jpg", options.Stored("/Album_Covers/abc.jpg"));
-        Assert.Equal("./", options.StorageDirectory);
-        Assert.Equal("./Album_Covers", options.CoverDirectory);
+        Assert.Null(LibraryOptions.Served(null));
+        Assert.Equal("https://i.ytimg.com/vi/x/hqdefault.jpg", LibraryOptions.Served("https://i.ytimg.com/vi/x/hqdefault.jpg"));
+        Assert.Equal("./", new LibraryOptions().StorageDirectory);
     }
 
     [Fact]
     public void AnEntryRoundTripsThroughLibraryDb()
     {
-        var options = new LibraryOptions(_storage, Domain: "https://music.example.com");
+        var options = new LibraryOptions(_storage);
         var database = new LibraryDatabase(options);
         var entry = new MusicInfo
         {
@@ -50,7 +47,7 @@ public class LibraryDatabaseTests : IDisposable
             Artists = ["Rammstein", "Ramstein"],
             Album = "Mutter",
             Scan = MusicManager.ScanVersion,
-            CoverUrl = "https://music.example.com/Album_Covers/abc.jpg",
+            CoverUrl = "cover://abc.jpg",
             LyricsType = LyricsKind.Synchronized,
             LyricsSource = LyricsOrigin.Lrclib,
             Duration = TimeSpan.FromSeconds(272)
@@ -63,7 +60,7 @@ public class LibraryDatabaseTests : IDisposable
         Assert.Equal(entry.Titles, read.Titles);
         Assert.Equal(entry.Artists, read.Artists);
         Assert.Equal("Mutter", read.Album);
-        Assert.Equal("$[DOMAIN]/abc.jpg", read.CoverUrl);
+        Assert.Equal("cover://abc.jpg", read.CoverUrl);
         Assert.Equal(LyricsOrigin.Lrclib, read.LyricsSource);
         Assert.Equal(entry.Duration, read.Duration);
     }

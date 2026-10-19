@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Snimka</RootNamespace>
+    <!-- ImageSharp.Web 4 refuses to build without a Six Labors license. The key comes from the environment
+         at build time and never from the repository: compose hands it to the image build as a secret. -->
+    <SixLaborsLicenseKey>$(SIXLABORS_LICENSE_KEY)</SixLaborsLicenseKey>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Serilog"/>
+    <PackageReference Include="Serilog.AspNetCore"/>
+    <PackageReference Include="Serilog.Expressions"/>
+    <PackageReference Include="SixLabors.ImageSharp.Web"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Gaida Library\Gaida.Admin\Gaida.Admin.csproj"/>
+  </ItemGroup>
+
+</Project>

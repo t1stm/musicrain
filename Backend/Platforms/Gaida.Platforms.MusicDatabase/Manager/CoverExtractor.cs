@@ -1,18 +1,14 @@
-using System.Diagnostics.CodeAnalysis;
-using System.Security.Cryptography;
 using ATL;
 using Serilog;
 
 namespace Gaida.Platforms.MusicDatabase.Manager;
 
-/// <param name="logger">Where unreadable files are reported.</param>
-/// <param name="exportLocation">The covers directory, <c>ALBUM_COVERS</c>.</param>
-public class CoverExtractor(ILogger logger, string exportLocation)
+/// <param name="logger">Where unreadable files and refused uploads are reported.</param>
+/// <param name="snimka">The cover service, <c>SNIMKA_URL</c>; <c>null</c> keeps no cover at all.</param>
+public class CoverExtractor(ILogger logger, HttpClient? snimka)
 {
-    private static readonly Lock ExportLock = new();
-
     /// <summary>
-    ///     Writes the embedded cover of one audio file into the export directory, deduplicated by content.
+    ///     Hands the embedded cover of one audio file to Snimka, which keeps it deduplicated by content.
     /// </summary>
     /// <remarks>
     ///     One file at a time, so the scan's cover pass and the admin import path share it. The caller
@@ -43,43 +39,53 @@ public class CoverExtractor(ILogger logger, string exportLocation)
 
         // Only a JPEG or a PNG is a cover, which is every cover in the library. Anything else is a broken
         // picture frame: TagLib# handed one back empty and it became a zero-byte file, and ATL reads past the
-        // same 13-byte APIC (Оркестър Колорит - Миленово хоро.mp3) into 12 MB of the audio after it.
-        return image is not null && ImageFiletype(image).Length > 0 ? StoreCover(image) : null;
+        // same 13-byte APIC (Оркестър Колорит - Миленово хоро.mp3) into 12 MB of the audio after it. Checked
+        // here as well as in Snimka, so twelve megabytes of audio never cross the network to be refused.
+        return image is not null && IsCover(image) ? StoreCover(image) : null;
     }
 
     /// <summary>
-    ///     Writes one cover image into the export directory, named by its own content hash.
+    ///     Uploads one cover image to Snimka, which names it by its own content hash.
     /// </summary>
     /// <remarks>
     ///     Separate from <see cref="ExportCover" /> for the import path, whose artwork comes off the source's
     ///     API rather than out of the file — a Deezer FLAC usually carries no embedded picture. Content
-    ///     addressing is what makes that safe: an album imported twice writes one file.
+    ///     addressing is what makes that safe: an album imported twice is one file.
+    ///     <para>
+    ///         Synchronous, because the scan's cover pass is a <c>Parallel.ForEach</c>. Snimka down or refusing
+    ///         is a cover not kept, not a failed scan: the entry keeps no cover URL, and the next scan asks again.
+    ///     </para>
     /// </remarks>
-    /// <returns>The cover's file name (<c>&lt;hash&gt;.jpg</c>).</returns>
-    [SuppressMessage("Microsoft.Security", "CA5350:DoNotUseWeakCryptographicAlgorithms",
-        Justification = "A content address for a file name, not a security boundary, and changing it would " +
-                        "rename every stored cover.")]
-    public string StoreCover(byte[] image)
+    /// <returns>The cover's file name (<c>&lt;hash&gt;.jpg</c>), or <c>null</c> when it was not kept.</returns>
+    public string? StoreCover(byte[] image)
     {
-        var name = $"{Convert.ToHexStringLower(SHA1.HashData(image))}.{ImageFiletype(image)}";
-        var filename = $"{exportLocation}/{name}";
+        if (snimka is null) return null;
 
-        // ponytail: one lock for every cover write; they are rare and small, split it per-hash if that ever shows up.
-        lock (ExportLock)
+        try
         {
-            Directory.CreateDirectory(exportLocation);
-            if (!File.Exists(filename)) File.WriteAllBytes(filename, image);
-        }
+            using var request = new HttpRequestMessage(HttpMethod.Post, "store");
+            request.Content = new ByteArrayContent(image);
+            using var response = snimka.Send(request);
+            using var reader = new StreamReader(response.Content.ReadAsStream());
+            var body = reader.ReadToEnd();
 
-        return name;
+            if (response.IsSuccessStatusCode) return body;
+
+            logger.Warning("Snimka refused a cover ({Status}): {Body}", (int)response.StatusCode, body);
+            return null;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            logger.Warning(exception, "Could not reach Snimka to keep a cover");
+            return null;
+        }
     }
 
-    private static string ImageFiletype(ReadOnlySpan<byte> data)
+    private static bool IsCover(ReadOnlySpan<byte> data)
     {
         ReadOnlySpan<byte> pngHeader = [137, 80, 78, 71, 13, 10, 26, 10];
         ReadOnlySpan<byte> jpegHeader = [255, 216, 255];
 
-        if (data.StartsWith(pngHeader)) return "png";
-        return data.StartsWith(jpegHeader) ? "jpg" : "";
+        return data.StartsWith(pngHeader) || data.StartsWith(jpegHeader);
     }
 }

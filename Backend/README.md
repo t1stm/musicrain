@@ -16,6 +16,7 @@ The frontend-facing contract is in [API.md](API.md), the room protocol in [MULTI
 | [Dom](Services/Dom) | Accounts and playlists. Talks only to Moliv, to forget a deleted account's history. One of the two volumes that hold real user data. |
 | [Moliv](Services/Moliv) | Listening history: every play on every device, as track IDs and how they were heard. Asks Dom who a token belongs to; the other volume of real user data. |
 | [Stih](Services/Stih) | Lyrics. The stack's only LRCLIB client: it fetches the words, writes them beside the audio and indexes what it has. |
+| [Snimka](Services/Snimka) | Images. Keeps the library's covers, fetches every other track thumbnail once and keeps that too, and serves both at whatever size a row or a card asks for. |
 | [Oko](Services/Oko) | The admin panel. Reads every other service, holds no state of its own. |
 | [Gaida.Bot](Services/Gaida.Bot) | A Discord bot playing from the same library, over HTTP like any other client. Several accounts can play in one guild at once, and Oko watches it like any other service. |
 
@@ -33,7 +34,7 @@ The Discord bot is not in that: it needs a token to do anything, so it sits behi
 docker compose --profile bot up -d --build gaida-bot
 ```
 
-That is the whole stack on compose's defaults — no secrets, no credentials, every volume under `data/`. Name services to bring up part of it (`docker compose up gaida-api gaida-local`); the pods are independent of each other, and Gaida.API treats a pod that is not there as one that answered nothing.
+That is the whole stack on compose's defaults — no credentials, every volume under `data/` — with one exception: Snimka is built on ImageSharp.Web, which will not compile without a [Six Labors license key](https://sixlabors.com/pricing/), so `SIXLABORS_LICENSE_KEY` has to be in `.env` or the shell before its image builds. It reaches the build as a secret and is in no layer of the image. Name services to bring up part of it (`docker compose up gaida-api gaida-local`); the pods are independent of each other, and Gaida.API treats a pod that is not there as one that answered nothing.
 
 | Service | Host port | Bound to |
 | --- | --- | --- |
@@ -43,6 +44,7 @@ That is the whole stack on compose's defaults — no secrets, no credentials, ev
 | Dom | 5343 | `127.0.0.1` |
 | Stih | 5345 | `127.0.0.1` |
 | Moliv | 5346 | `127.0.0.1` |
+| Snimka | 5347 | `127.0.0.1` |
 | Oko | 5344 | every interface |
 
 The pods themselves publish nothing: they are reachable only from the compose network, by service name.
@@ -63,12 +65,13 @@ Every host-specific value and every secret lives in `.env` beside [compose.yaml]
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `MUSIC_LIBRARY_PATH` | `./data/music` | The music library, mounted read-write — the scanner keeps its index, `library.db`, at the root. |
-| `ALBUM_COVERS_PATH` | `./data/covers` | Where extracted album art is written, and what nginx serves as `/Album_Covers`. |
-| `PUBLIC_DOMAIN` | `http://localhost` | Public prefix substituted into every cover URL. Needs the scheme. |
 | `PUBLIC_API_BASE_URL` | `http://localhost:5340` | What the API hands out as `contentUrl`. |
 | `ADMIN_TOKEN` | *(unset)* | The shared secret Oko authenticates with. Unset, every `/Admin/*` route answers 404. |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | *(unset)* | Oko's own Basic auth. |
 | `MOLIV_PORT` | `5346` | Host port of the listening history, the one nginx's `/Audio/History` proxies to. |
+| `SNIMKA_PORT` | `5347` | Host port of the image service, the one nginx's `/Audio/Cover` proxies to. |
+| `SNIMKA_HOSTS` | YouTube, Deezer, Spotify | The hosts a remote thumbnail may be fetched from, each with its subdomains. |
+| `SIXLABORS_LICENSE_KEY` | *(unset)* | Needed to build Snimka's image at all. Read at build time only. |
 | `DEEZER_ARL` | *(unset)* | Deezer account cookie. Unset, the pod is metadata-only. |
 | `DEEZER_RESOLVE` | `true` | Tells Gaida.API to resolve Deezer hits elsewhere — what metadata-only mode needs. |
 | `DUNAV_MAX_BYTES` | 20 GiB | Disk budget for the download cache, evicted LRU. |
@@ -142,7 +145,6 @@ dotnet run --project Platforms/Gaida.Pods.YouTube -- --self-check
 ```
 .
 ├── data/
-│   ├── covers/
 │   ├── deezer-audio/
 │   ├── music/
 │   ├── youtube-audio/
@@ -172,6 +174,7 @@ dotnet run --project Platforms/Gaida.Pods.YouTube -- --self-check
 │   ├── Moliv/
 │   ├── Oko/
 │   ├── Selo/
+│   ├── Snimka/
 │   └── Stih/
 ├── Tests/
 │   ├── Gaida.Tests/
@@ -187,9 +190,9 @@ dotnet run --project Platforms/Gaida.Pods.YouTube -- --self-check
 
 [Platforms](Platforms) splits each service in two. `Gaida.Platforms.*` is library code — search providers and content getters. `Gaida.Pods.*` is the deployable that wraps one of them in HTTP, or, for Spotify and Deezer, a standalone Python app. Each of the six has its own README.
 
-[Services](Services) holds everything that is not a pod. Names are Bulgarian: *Dunav* the Danube, *Selo* a village, *Dom* a home, *Oko* an eye.
+[Services](Services) holds everything that is not a pod. Names are Bulgarian: *Dunav* the Danube, *Selo* a village, *Dom* a home, *Oko* an eye, *Snimka* a photograph.
 
-[data](data) is where the compose defaults mount their volumes — the music library, extracted album art, and the YouTube and Deezer audio caches. Gitignored, and sized in the tens of gigabytes on a real deployment. Only `covers/` is served directly by nginx, as `/Album_Covers`.
+[data](data) is where the compose defaults mount their volumes — the music library and the YouTube and Deezer audio caches. Gitignored, and sized in the tens of gigabytes on a real deployment. Album art is not among them: it lives in Snimka's own `snimka-data` volume, and nothing here is served by nginx directly.
 
 [Tests](Tests) is split by what it covers: `Gaida.Tests` for the shared library and the services, `Pods.Tests` for platform code. The .NET pods also carry a `--self-check` flag that runs their pure-logic checks with no library and no listening host.
 

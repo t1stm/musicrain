@@ -22,6 +22,8 @@ The example production base URL is `https://api.example.com`. All endpoints belo
 
 `id`, `name`, `artist`, `contentUrl`, and `duration` are always non-null. Local-library IDs always begin with `audio://`; YouTube IDs use `yt://`, and Deezer IDs `deezer://`. `album`, `thumbnailUrl`, `originalTitle` and `originalArtist` may be `null`. `contentUrl` is an absolute downloadable raw-audio URL.
 
+`thumbnailUrl` names an image rather than locating one: `cover://<sha1>.jpg` for the library's own artwork, or the `https` URL a platform gave for anything else. Either way it is drawn through [`/Audio/Cover/Get`](#artwork).
+
 `originalTitle` and `originalArtist` carry the untransliterated title and artist as the source tagged them. **`name` and `artist` are sourced from them when present**, falling back to the romanized form, so a track tagged in Cyrillic or Japanese renders in its own script by default and `name` will usually equal `originalTitle`. The romanized form is not on the wire — it is used server-side for search and matching only. Clients that want the romanized string should not expect it here.
 
 - `Search` accepts normal text (including Cyrillic), local IDs, the server's `yt://` and `deezer://` IDs, and playlist URLs (YouTube, Spotify and Deezer).
@@ -133,11 +135,14 @@ Responses are `Cache-Control: public, max-age=86400`. YouTube IDs answer `204`: 
 
 ## Artwork
 
-`GET /Audio/Cover?id={id}` returns the track's artwork as an image, for any local or YouTube ID. The API fetches the upstream thumbnail once and keeps it on disk, so repeat requests never touch the platform layer; the first request streams to the caller while it downloads rather than waiting for the whole image. An ID with no artwork returns `404 {"error":{"code":"not_found","message":"..."}}`, a missing ID `400 invalid_query`.
+`GET /Audio/Cover/Get?url={thumbnailUrl}&size={px}` returns any track's artwork as an image. Served by Snimka.
 
-Responses are `Cache-Control: public, max-age=604800`. The cache directory comes from the `THUMBNAIL_CACHE` environment variable and defaults to `gaida-thumbnails` under the system temp directory.
+- `url` is a result's `thumbnailUrl`, as it came. A `cover://` name is the library's own cover. An `https` URL is fetched from its host the first time anyone asks and kept, so repeat requests never leave the server. Only the hosts the pods' artwork lives on are fetched from (`SNIMKA_HOSTS`: YouTube, Deezer and Spotify by default); anything else is `400`. A URL from before `cover://` — `…/Album_Covers/<sha1>.jpg`, which older playlists still hold — is the same library cover.
+- `size` is optional: a square of that many pixels, cropped to fill, made once and kept. It is rounded up to a multiple of 32 between 32 and 1024, so `size=100` and `size=101` are the same 128px image. Without it, the image is sent as it is. Other query keys are ignored, so options can be added without old URLs changing meaning.
 
-This is what an embedded Discord activity uses for every thumbnail: the discovery endpoints hand out absolute ytimg and cover-host URLs, and the activity iframe can only reach hosts it has a URL mapping for.
+An image that is not there, or that its host would not give, is `404`; a URL that is not a `cover://` name or an allowed `https` URL is `400`. Responses are `Cache-Control: public, max-age=31536000, immutable`: a cover's name is the SHA-1 of its bytes, and a fetched image is kept as first fetched, so nothing under a URL ever changes.
+
+Everything is on the API's own origin, which is also why an embedded Discord activity can show artwork at all — its iframe reaches only the hosts it has a URL mapping for.
 
 ## Library tree
 

@@ -11,6 +11,7 @@
 #   /Audio/Accounts*, /Audio/Playlists* → 127.0.0.1:5343  (dom)
 #   /Audio/Lyrics*                     → 127.0.0.1:5345  (stih)
 #   /Audio/History*                    → 127.0.0.1:5346  (moliv)
+#   /Audio/Cover*                      → 127.0.0.1:5347  (snimka, GET only)
 #   everything else                    → 127.0.0.1:5340  (gaida-api)
 #
 # The admin panel is not on that list: it is published on 0.0.0.0:5344 and fronted by the host
@@ -63,11 +64,10 @@ services:
     environment:
       <<: *env
       STORAGE: /music
-      ALBUM_COVERS: /covers
-      # Public prefix substituted into MusicInfo.CoverUrl (LibraryOptions.cs). Needs the scheme:
-      # the value becomes an absolute thumbnailUrl that Cover.cs fetches with HttpClient, and a
-      # bare "example.com/" is not a URL it can resolve.
-      DOMAIN: ${PUBLIC_DOMAIN:-http://localhost}
+      # Where extracted artwork goes. Snimka keeps it and names it, and a track hands the name out as
+      # thumbnailUrl cover://<sha1>.jpg. Unset, no cover is kept, and every song without one is tried
+      # again on the next scan.
+      SNIMKA_URL: http://snimka:8080
       # Only the admin surface uses this: Oko's "To library" button on the Deezer cache posts to this
       # pod's /Admin/import-deezer, which pulls the track's metadata and bytes from there and writes
       # them into the library's Deezer/ folder. Unset, that one route answers 400 and nothing else
@@ -83,10 +83,6 @@ services:
       # write into its Deezer/ folder. The per-folder Info.json files older versions kept are
       # imported by the first scan and never written again.
       - ${MUSIC_LIBRARY_PATH:-./data/music}:/music
-      # The web root nginx serves as $PUBLIC_DOMAIN/Album_Covers — which is exactly what
-      # DOMAIN builds the public thumbnailUrl from, so covers written here are immediately
-      # fetchable. 1487 covers, 401M.
-      - ${ALBUM_COVERS_PATH:-./data/covers}:/covers
 
   gaida-youtube:
     <<: *service
@@ -189,14 +185,11 @@ services:
       Platforms__3__Resolve: ${DEEZER_RESOLVE:-true}
       Resolve__Concurrency: ${RESOLVE_CONCURRENCY:-4}
       PublicApiBaseUrl: ${PUBLIC_API_BASE_URL:-http://localhost:5340}
-      THUMBNAIL_CACHE: /thumbnails
       # Content.RandomResults — the platform name lives here rather than in code.
       Random__Shares__youtube: ${YOUTUBE_RANDOM_SHARE:-0.4}
     ports:
       # Host ports are the 534x block; the container always listens on 8080.
       - "127.0.0.1:${GAIDA_API_PORT:-5340}:8080"
-    volumes:
-      - thumbnails:/thumbnails
     # Image needs ffmpeg on PATH.
 
   # ── Fan-out cache ──────────────────────────────────────────────────────────────
@@ -333,6 +326,40 @@ services:
     ports:
       - "127.0.0.1:${STIH_PORT:-5345}:8080"
 
+  # ── Images ─────────────────────────────────────────────────────────────────────
+  # Every track image the frontend shows comes from here: /Audio/Cover/Get?url=<thumbnailUrl>&size=<px>.
+  # A cover://<sha1>.jpg is the library's own artwork, which gaida-local uploads as it extracts it; an
+  # https URL is a pod's thumbnail on YouTube's, Deezer's or Spotify's CDN, fetched the first time anyone
+  # asks and kept. size= is a square crop made by ImageSharp.Web and kept too, rounded up to a multiple
+  # of 32 so no query string can fill the disk. Every response is cached immutable.
+  #
+  # The image build needs SIXLABORS_LICENSE_KEY in the environment: ImageSharp.Web 4 refuses to compile
+  # without one. It reaches the build as a secret (bottom of this file), never as an argument or a layer.
+  #
+  # Losing snimka-data loses the artwork of every track that is no longer on disk with its tags, and the
+  # covers Deezer imports came with. The rest comes back by itself: the next scan re-extracts the
+  # library's, and remote images are fetched again.
+
+  snimka:
+    <<: *service
+    build:
+      context: .
+      dockerfile: Services/Snimka/Dockerfile
+      secrets:
+        - sixlabors_license_key
+    environment:
+      <<: *env
+      SNIMKA_DATA: /data
+      # The hosts a remote thumbnailUrl may be fetched from, each standing for its subdomains too. A pod
+      # whose artwork lives anywhere else answers 400 until its host is added here.
+      SNIMKA_HOSTS: ${SNIMKA_HOSTS:-ytimg.com,img.youtube.com,dzcdn.net,scdn.co,spotifycdn.com}
+    ports:
+      - "127.0.0.1:${SNIMKA_PORT:-5347}:8080"
+    volumes:
+      # Album_Covers/ the library's originals, the only part that is not a cache; remote/ what was
+      # fetched; cache/ the resizes of both, rebuilt on demand.
+      - snimka-data:/data
+
   # ── The admin panel ────────────────────────────────────────────────────────────
   # Reads every other service and moderates them. Holds no state of its own: no volume, nothing to
   # back up, and losing it loses nothing. It is also the only service here that talks to all of the
@@ -376,6 +403,8 @@ services:
       Targets__9__Url: http://gaida-bot:8080
       Targets__10__Name: moliv
       Targets__10__Url: http://moliv:8080
+      Targets__11__Name: snimka
+      Targets__11__Url: http://snimka:8080
     ports:
       # The one port in this file NOT bound to 127.0.0.1: published on every interface so the host
       # firewall decides who reaches it, as asked. That makes the firewall the only thing between
@@ -435,7 +464,6 @@ services:
     memswap_limit: ${BOT_MEMORY_LIMIT:-2g}
 
 volumes:
-  thumbnails:
   dom-data:
   dom-covers:
   # Listening history. Real user data, like dom-data.
@@ -445,3 +473,10 @@ volumes:
   lyrics-data:
   # The bot's per-account Discord statuses. Only created under the bot profile.
   bot-data:
+  # Album covers, fetched thumbnails and their resizes. See the snimka service.
+  snimka-data:
+
+secrets:
+  # Read from the environment compose runs in, and only for Snimka's image build.
+  sixlabors_license_key:
+    environment: SIXLABORS_LICENSE_KEY

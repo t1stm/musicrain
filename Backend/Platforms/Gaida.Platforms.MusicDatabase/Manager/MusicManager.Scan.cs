@@ -19,11 +19,8 @@ public partial class MusicManager
             Directory.CreateDirectory(storage);
         }
 
-        if (options.AlbumCovers is { } albumCovers)
-        {
-            Logger.Debug("Ensuring album covers directory exists: {AlbumCovers}", albumCovers);
-            Directory.CreateDirectory(albumCovers);
-        }
+        if (options.Snimka is null)
+            Logger.Warning("SNIMKA_URL is not set: no cover is extracted until it is");
 
         _scanning = 1;
         await Scan();
@@ -95,7 +92,7 @@ public partial class MusicManager
         });
 
         // After the parallel pass rather than inside it, so the scan is one writer and one transaction. Before
-        // the $[DOMAIN] substitution below, so the rows keep the placeholder.
+        // the cover:// mapping below, so a row is written back in the form it was read in.
         var changed = parsed.Where(folder => folder.Changed).ToList();
         if (changed.Count > 0)
         {
@@ -112,7 +109,7 @@ public partial class MusicManager
         var missing = songs.RemoveAll(song => !File.Exists(options.StorageDirectory + "/" + song.RelativeLocation));
         if (missing > 0) Logger.Warning("Left out {Count} entries whose file is gone", missing);
 
-        songs.ForEach(s => s.CoverUrl = options.Served(s.CoverUrl));
+        songs.ForEach(s => s.CoverUrl = LibraryOptions.Served(s.CoverUrl));
 
         Songs = songs;
     }
@@ -242,9 +239,7 @@ public partial class MusicManager
             if (_coverExtractor.ExportCover(options.StorageDirectory + "/" + song.RelativeLocation) is not { } cover)
                 return;
 
-            // The substituted form, as Load leaves every other entry; LibraryOptions.Stored puts the
-            // placeholder back on the way into the row.
-            song.CoverUrl = $"{options.AlbumCoverLocation}/{cover}";
+            song.CoverUrl = LibraryOptions.CoverUrl(cover);
             covered.Add(song);
         });
 

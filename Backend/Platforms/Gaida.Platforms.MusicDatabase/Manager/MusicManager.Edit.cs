@@ -126,7 +126,7 @@ public partial class MusicManager
 
             var entry = ParseFile(location);
             entry.Album ??= album?.Trim() is { Length: > 0 } named ? named : null;
-            if (CoverFor(location, cover) is { } artwork) entry.CoverUrl = $"{options.AlbumCoverLocation}/{artwork}";
+            if (CoverFor(location, cover) is { } artwork) entry.CoverUrl = LibraryOptions.CoverUrl(artwork);
 
             // Copy-on-write rather than Add: SearchById and Browse read this list from other threads and
             // from AsParallel, and growing it underneath them is the classic torn-enumeration crash.
@@ -158,9 +158,8 @@ public partial class MusicManager
     }
 
     /// <summary>
-    ///     The file's own artwork first, the source's only when it has none. The caller stores the substituted
-    ///     form, not the $[DOMAIN] placeholder: the entry goes straight into the in-memory library, and
-    ///     LibraryOptions.Stored puts the placeholder back on the way to disk.
+    ///     The file's own artwork first, the source's only when it has none. The caller records it as
+    ///     <see cref="LibraryOptions.CoverUrl" />, the form both the in-memory library and its row hold.
     /// </summary>
     /// <returns>The stored cover's file name, or <c>null</c> when there is none to keep.</returns>
     private string? CoverFor(string location, byte[]? cover)

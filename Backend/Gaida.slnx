@@ -27,5 +27,6 @@
     <Project Path="Services/Dom/Dom.csproj" />
     <Project Path="Services/Moliv/Moliv.csproj" />
     <Project Path="Services/Stih/Stih.csproj" />
+    <Project Path="Services/Snimka/Snimka.csproj" />
   </Folder>
 </Solution>

@@ -25,7 +25,7 @@ internal sealed class LibraryDatabase(LibraryOptions options)
     {
         using var db = Open();
 
-        // CoverUrl straight into CoverUrl, placeholder and all: Load substitutes it, as it did reading Info.json.
+        // CoverUrl straight into CoverUrl, an older row's placeholder and all: Load turns it into cover://.
         var songs = db.Query<MusicInfo>("""
                 SELECT RelativeLocation, Id, Album, Scan, CoverUrl, LyricsType, LyricsSource, LyricsChecked, Length
                 FROM songs
@@ -75,7 +75,7 @@ internal sealed class LibraryDatabase(LibraryOptions options)
                 entry.Id,
                 entry.Album,
                 entry.Scan,
-                CoverUrl = options.Stored(entry.CoverUrl),
+                entry.CoverUrl,
                 // by name, the way Info.json held them, so reordering an enum relabels nothing
                 LyricsType = entry.LyricsType?.ToString(),
                 LyricsSource = entry.LyricsSource?.ToString(),

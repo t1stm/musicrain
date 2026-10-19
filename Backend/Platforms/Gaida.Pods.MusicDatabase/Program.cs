@@ -31,7 +31,7 @@ builder.Services.AddSerilog();
 builder.Services.AddSingleton(Log.Logger);
 
 // An empty value is the same as an unset one, as it was when these travelled as environment variables.
-var library = new LibraryOptions(Setting("STORAGE"), Setting("ALBUM_COVERS"), Setting("DOMAIN"));
+var library = new LibraryOptions(Setting("STORAGE"), SnimkaClient());
 
 builder.Services.AddHttpClient(DeezerImport.Client, http => http.Timeout = TimeSpan.FromMinutes(5));
 
@@ -272,6 +272,20 @@ string? Setting(string key)
     return builder.Configuration[key] is { Length: > 0 } value ? value : null;
 }
 
+// One client for the life of the pod, carrying the header Snimka's /store wants when ADMIN_TOKEN is set.
+// A pod on the Docker network answers in milliseconds or it is down, and a cover not kept is asked for
+// again on the next scan.
+[SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope",
+    Justification = "Lives as long as the pod, inside LibraryOptions.")]
+HttpClient? SnimkaClient()
+{
+    if (Setting("SNIMKA_URL") is not { } url) return null;
+
+    var client = new HttpClient { BaseAddress = new Uri(url.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(10) };
+    if (Setting("ADMIN_TOKEN") is { } token) client.DefaultRequestHeaders.Add(AdminApi.TokenHeader, token);
+    return client;
+}
+
 static List<string>? Variants(HttpRequest request, string name)
 {
     return request.Query.TryGetValue(name, out var values)
@@ -417,8 +431,9 @@ static async Task ImportCheck(Action<bool, string> assert)
     var root = Path.Combine(Path.GetTempPath(), "gaida-local-import-" + Guid.NewGuid().ToString("n"));
     Directory.CreateDirectory(root);
 
-    var covers = Path.Combine(root, "covers");
-    var options = new LibraryOptions(root, covers, "https://music.example.com");
+    using var snimka = new SnimkaStub();
+    using var client = new HttpClient(snimka) { BaseAddress = new Uri("http://snimka.invalid/") };
+    var options = new LibraryOptions(root, client);
 
     try
     {
@@ -461,16 +476,16 @@ static async Task ImportCheck(Action<bool, string> assert)
         assert(slashError is null && slashed?.RelativeLocation == "Deezer/AC_DC/AC_DC - Back In Black.mp3",
             $"import: a separator in the name is cleaned out of the path ({slashed?.RelativeLocation})");
 
-        // The cover a source supplied, for a file carrying none of its own. Content-addressed, so the
-        // name is the hash and importing the same artwork twice writes one file.
+        // The cover a source supplied, for a file carrying none of its own, handed to Snimka -- which
+        // names it, so the entry records whatever name came back.
 
         var (art, artError, _) = await database.Library.ImportAsync("Daft Punk", "Aerodynamic", null, ".mp3",
             new MemoryStream([4, 5, 6]), "not really a jpeg"u8.ToArray());
         assert(artError is null && art?.CoverUrl is { Length: > 0 },
             $"import: the supplied cover became this entry's artwork ({artError})");
-        assert(art!.CoverUrl!.StartsWith("https://music.example.com/Album_Covers/", StringComparison.Ordinal),
-            $"import: the entry holds the substituted URL, not the placeholder ({art.CoverUrl})");
-        assert(Directory.GetFiles(covers).Length == 1, "import: the cover file was written once");
+        assert(art!.CoverUrl == $"cover://{SnimkaStub.Name}",
+            $"import: the entry holds the cover:// name Snimka gave it ({art.CoverUrl})");
+        assert(snimka.Uploads is [{ Length: 17 }], "import: the supplied cover was uploaded to Snimka once");
     }
     finally
     {
@@ -487,7 +502,7 @@ static async Task RescanCheck(Action<bool, string> assert)
     Directory.CreateDirectory(folder);
     await File.WriteAllBytesAsync(Path.Combine(folder, "Queen - Bohemian Rhapsody.mp3"), new byte[4096]);
 
-    var options = new LibraryOptions(root, Path.Combine(root, "covers"));
+    var options = new LibraryOptions(root);
 
     try
     {
@@ -574,7 +589,7 @@ static async Task BackfillCheck(Action<bool, string> assert)
 
 // The admin edit path, against a throwaway library imported from one Info.json. Covers the two things
 // that would go wrong quietly: an edit must not re-roll the ID that playlists and cache keys hold,
-// and the saved row must keep the $[DOMAIN] placeholder rather than this host's domain.
+// and a cover an older version stored under the $[DOMAIN] placeholder must come out as cover://.
 static async Task EditCheck(Action<bool, string> assert)
 {
     var root = Path.Combine(Path.GetTempPath(), "gaida-local-selfcheck-" + Guid.NewGuid().ToString("n"));
@@ -589,7 +604,7 @@ static async Task EditCheck(Action<bool, string> assert)
         """);
     await File.WriteAllBytesAsync(Path.Combine(folder, "Queen - You_re My Best Friend.mp3"), new byte[4096]);
 
-    var options = new LibraryOptions(root, Domain: "https://music.example.com");
+    var options = new LibraryOptions(root);
 
     try
     {
@@ -598,8 +613,7 @@ static async Task EditCheck(Action<bool, string> assert)
 
         var before = database.Library.Find("Queen", 10);
         assert(before.Count == 1, "edit: the throwaway library loaded one song");
-        assert(before[0].CoverUrl == "https://music.example.com/Album_Covers/cover.jpg",
-            "edit: $[DOMAIN] is substituted on the way in");
+        assert(before[0].CoverUrl == "cover://cover.jpg", "edit: an older $[DOMAIN] cover is read as cover://");
 
         var (edited, error, _) = await database.Library.EditAsync("quyoure-ab",
             ["You're My Best Friend", "You_re My Best Friend"], ["Queen", "Freddie Mercury"], "A Night at the Opera");
@@ -611,8 +625,8 @@ static async Task EditCheck(Action<bool, string> assert)
 
         var saved = Stored(root);
         assert(saved.Contains("You're My Best Friend"), "edit: the new name reached library.db");
-        assert(saved.Contains("$[DOMAIN]"), "edit: the cover placeholder is written back, not this host's domain");
-        assert(!saved.Contains("music.example.com"), "edit: no absolute domain was baked into the library");
+        assert(saved.Contains("cover://cover.jpg") && !saved.Contains("$[DOMAIN]"),
+            "edit: the row is written back as cover://, with no host in it");
 
         var (_, blank, _) = await database.Library.EditAsync("quyoure-ab", [" ", ""], null, null);
         assert(blank == "A song needs at least one title.", "edit: a song cannot be left with no title");
@@ -649,4 +663,27 @@ static string Stored(string root)
     }
 
     return text.ToString();
+}
+
+/// <summary>
+///     Snimka, for the self-check: keeps what it is sent and answers with one fixed name. Both halves of the
+///     handler, because the scan's cover pass uploads synchronously.
+/// </summary>
+internal sealed class SnimkaStub : HttpMessageHandler
+{
+    public const string Name = "0123456789abcdef0123456789abcdef01234567.jpg";
+
+    public List<byte[]> Uploads { get; } = [];
+
+    protected override HttpResponseMessage Send(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        lock (Uploads) Uploads.Add(request.Content!.ReadAsByteArrayAsync(cancellationToken).GetAwaiter().GetResult());
+        return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(Name) };
+    }
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        return Task.FromResult(Send(request, cancellationToken));
+    }
 }

@@ -18,13 +18,12 @@ public class OptionsBindingTests
         var options = Bind<GaidaApiOptions>(new()
         {
             ["PublicApiBaseUrl"] = "https://api.test",
-            ["THUMBNAIL_CACHE"] = "/thumbs",
             ["Random:Shares:youtube"] = "0.25",
             ["Resolve:Concurrency"] = "7"
         });
 
-        Assert.Equal(("https://api.test", "/thumbs", 0.25, 7),
-            (options.PublicApiBaseUrl, options.ThumbnailCache, options.RandomYouTubeShare, options.ResolveConcurrency));
+        Assert.Equal(("https://api.test", 0.25, 7),
+            (options.PublicApiBaseUrl, options.RandomYouTubeShare, options.ResolveConcurrency));
         Assert.Equal((0.4, 4), (Bind<GaidaApiOptions>(new()).RandomYouTubeShare, new GaidaApiOptions().ResolveConcurrency));
     }
 

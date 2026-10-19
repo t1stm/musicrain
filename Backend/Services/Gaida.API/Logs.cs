@@ -30,12 +30,6 @@ internal static partial class Logs
     [LoggerMessage(LogLevel.Information, "Downloading '{ID}' {Codec} {Bitrate}")]
     public static partial void Downloading(this ILogger logger, string id, string codec, int bitrate);
 
-    [LoggerMessage(LogLevel.Information, "Caching cover for '{ID}' from {Source}")]
-    public static partial void CachingCover(this ILogger logger, string id, string source);
-
-    [LoggerMessage(LogLevel.Warning, "Fetching cover for '{ID}' failed")]
-    public static partial void CoverFailed(this ILogger logger, Exception exception, string id);
-
     [LoggerMessage(LogLevel.Error, "Failed to resolve query {Query}")]
     public static partial void QueryFailed(this ILogger logger, Exception exception, string query);
 

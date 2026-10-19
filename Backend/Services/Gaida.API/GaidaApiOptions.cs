@@ -9,10 +9,6 @@ public sealed class GaidaApiOptions
     /// <summary>The host content URLs are built on outside Development. Unset or not absolute: the request's own.</summary>
     public string? PublicApiBaseUrl { get; set; }
 
-    /// <summary>Where fetched covers are kept. Unset or empty: a folder under the temp directory.</summary>
-    [ConfigurationKeyName("THUMBNAIL_CACHE")]
-    public string? ThumbnailCache { get; set; }
-
     /// <summary>YouTube's share of a random mix when the request does not name one.</summary>
     [ConfigurationKeyName("Random:Shares:youtube")]
     public double RandomYouTubeShare { get; set; } = 0.4;
