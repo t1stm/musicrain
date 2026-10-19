@@ -133,7 +133,7 @@ The build is plain files — `adapter-static` with an `index.html` fallback — 
    | `/`    | the musicrain host (`music.gergov.bg`, or your dev tunnel host) |
    | `/api` | `api.gergov.bg` |
 
-   The activity iframe blocks every host that isn't mapped, so the client rewrites API URLs to `/.proxy/<prefix>` when it detects it's embedded ([src/lib/discord.ts](src/lib/discord.ts)). Artwork lives on ytimg and the cover host, neither of which is mapped, so thumbnails are taken from `/Audio/Cover?id=` instead — the API fetches and caches them and serves them from its own origin.
+   The activity iframe blocks every host that isn't mapped, so the client rewrites API URLs to `/.proxy/<prefix>` when it detects it's embedded ([src/lib/discord.ts](src/lib/discord.ts)). Every image already comes from the API's own origin — [src/lib/cover.ts](src/lib/cover.ts) draws each thumbnail through `/Audio/Cover/Get`, where Snimka keeps the library's covers and a copy of every remote one — so artwork needs no mapping of its own.
 
 3. For local development, serve `npm run dev` over HTTPS — e.g. `cloudflared tunnel --url http://localhost:5173` — and point the `/` mapping at the tunnel host. Then launch the activity from a voice channel.
 

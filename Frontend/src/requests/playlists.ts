@@ -1,4 +1,4 @@
-import { audioApi, proxyThumbnails } from '$lib/discord';
+import { audioApi } from '$lib/discord';
 import { bearer } from './accounts';
 import { AudioApiError } from './songs';
 import account from '$states/account.svelte';
@@ -62,11 +62,6 @@ function json(token: string, method: string, body: object): RequestInit {
 	};
 }
 
-/** The tracks come back with the thumbnails they were saved with; inside the activity only
- *  the API's own origin is reachable, so they go through the same proxy every result does. */
-function withProxiedTracks(playlist: Playlist): Playlist {
-	return { ...playlist, tracks: proxyThumbnails(playlist.tracks) };
-}
 
 export function getPublicPlaylists(fetcher: Fetcher = fetch) {
 	return send<PlaylistSummary[]>('/Public', {}, fetcher);
@@ -86,7 +81,7 @@ export function getMyPlaylists(token: string, fetcher: Fetcher = fetch) {
 export async function getPlaylist(id: string, token: string | null, fetcher: Fetcher = fetch) {
 	const init = token ? { headers: bearer(token) } : {};
 
-	return withProxiedTracks(await send<Playlist>(`/${encodeURIComponent(id)}`, init, fetcher));
+	return send<Playlist>(`/${encodeURIComponent(id)}`, init, fetcher);
 }
 
 export type PlaylistEdit = {
@@ -99,14 +94,12 @@ export type PlaylistEdit = {
 };
 
 export async function createPlaylist(token: string, edit: PlaylistEdit) {
-	return withProxiedTracks(await send<Playlist>('', json(token, 'POST', edit)));
+	return send<Playlist>('', json(token, 'POST', edit));
 }
 
 /** A field left out is a field left alone; `tracks`, when sent, replaces the list and needs `revision`. */
 export async function patchPlaylist(token: string, id: string, edit: PlaylistEdit) {
-	return withProxiedTracks(
-		await send<Playlist>(`/${encodeURIComponent(id)}`, json(token, 'PATCH', edit)),
-	);
+	return send<Playlist>(`/${encodeURIComponent(id)}`, json(token, 'PATCH', edit));
 }
 
 /** One track onto the end. A track already in the playlist is left where it is, and `added` is false. */

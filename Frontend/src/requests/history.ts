@@ -1,4 +1,4 @@
-import { audioApi, proxyThumbnails } from '$lib/discord';
+import { audioApi } from '$lib/discord';
 import type { SearchResult } from '$states/search.svelte';
 import { AudioApiError } from './songs';
 
@@ -153,6 +153,5 @@ export async function resolveIds(ids: string[]): Promise<Map<string, SearchResul
 	);
 
 	const pairs = answers.flat();
-	const results = proxyThumbnails(pairs.map((pair) => pair.result));
-	return new Map(pairs.map((pair, index) => [pair.id, results[index]]));
+	return new Map(pairs.map((pair) => [pair.id, pair.result]));
 }

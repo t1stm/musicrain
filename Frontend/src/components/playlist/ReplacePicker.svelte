@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cover, ROW } from '$lib/cover';
 	import { untrack } from 'svelte';
 	import { ChevronLeft, Icon, MagnifyingGlass } from 'svelte-hero-icons';
 	import { convertTimeSpanStringToSeconds, getTimeString, heroArtist, sourceOf } from '$lib';
@@ -101,7 +102,7 @@
 		{@const current = result.id === track.id}
 		<button type="button" class="{item} disabled:hover:bg-transparent" disabled={current} onclick={() => pick(result)}>
 			<img
-				src={result.thumbnailUrl ?? '/empty.png'}
+				src={cover(result.thumbnailUrl, ROW) ?? '/empty.png'}
 				alt=""
 				class="size-9 shrink-0 rounded-art object-cover"
 			/>

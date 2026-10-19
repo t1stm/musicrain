@@ -1,6 +1,5 @@
 import { DiscordSDK } from '@discord/embedded-app-sdk';
 import { PUBLIC_API_URL } from '$env/static/public';
-import type { SearchResult } from '$states/search.svelte';
 
 /**
  * Discord serves an activity from `<client_id>.discordsays.com` and appends the
@@ -29,24 +28,6 @@ export const audioApi = isDiscordActivity ? '/.proxy/api/Audio' : PUBLIC_API_URL
  */
 export function audioWsUrl(path: string) {
 	return new URL(audioApi + path, location.origin).href.replace(/^http/, 'ws');
-}
-
-/**
- * Inside the activity every artwork host is blocked, so the thumbnail is taken
- * from the one origin that is mapped: the API's own `/Audio/Cover?id=`, which
- * fetches and caches it server-side. Outside the activity the original absolute
- * URL is already the fastest route, so it is left alone.
- */
-export function proxyThumbnails<T extends SearchResult>(results: T[]): T[] {
-	if (!isDiscordActivity) return results;
-	return results.map((r) =>
-		r.thumbnailUrl
-			? {
-					...r,
-					thumbnailUrl: `${audioApi}/Cover?id=${encodeURIComponent(r.id)}`
-				}
-			: r
-	);
 }
 
 export let sdk: DiscordSDK | null = null;

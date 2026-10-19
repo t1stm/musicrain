@@ -6,7 +6,6 @@ import type { SearchResult } from './search.svelte';
 
 const summary = (over: Partial<Parameters<typeof coverFor>[0]> = {}) => ({
 	coverUrl: null,
-	firstTrackId: null,
 	firstTrackThumbnailUrl: null,
 	...over,
 });
@@ -15,8 +14,8 @@ it('prefers an uploaded cover, then the first track, then the empty image', () =
 	expect(coverFor(summary({ coverUrl: '/Audio/Playlists/p_1/Cover' }))).toBe(
 		`${PUBLIC_API_URL}/Playlists/p_1/Cover`,
 	);
-	expect(coverFor(summary({ firstTrackThumbnailUrl: 'https://img/1.jpg' }))).toBe(
-		'https://img/1.jpg',
+	expect(coverFor(summary({ firstTrackThumbnailUrl: 'cover://1.jpg' }))).toBe(
+		`${PUBLIC_API_URL}/Cover/Get?url=cover%3A%2F%2F1.jpg&size=480`,
 	);
 	expect(coverFor(summary())).toBe('/empty.png');
 });
@@ -52,17 +51,6 @@ it('saves the fields a row draws and drops the ones that expire', () => {
 		duration: '00:03:41',
 		thumbnailUrl: 'https://img/1.jpg',
 	});
-});
-
-// inside the Discord activity thumbnails are rewritten to /.proxy paths, which mean
-// nothing to a browser outside it
-it('drops a proxied thumbnail rather than storing a path only Discord can read', () => {
-	expect(
-		toSnapshot({
-			...track,
-			thumbnailUrl: '/.proxy/api/Audio/Cover?id=local://1',
-		}).thumbnailUrl,
-	).toBe(null);
 });
 
 // yours are on the page already, under Yours, where the rail says which are public

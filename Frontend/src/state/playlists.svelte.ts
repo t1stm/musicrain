@@ -1,4 +1,5 @@
-import { audioApi, isDiscordActivity } from '$lib/discord';
+import { audioApi } from '$lib/discord';
+import { cover, CARD } from '$lib/cover';
 import {
 	appendTrack,
 	createPlaylist,
@@ -22,7 +23,7 @@ import type { SearchResult } from './search.svelte';
  * queue footer all read this, so the rule cannot drift between them.
  */
 export function coverFor(
-	playlist: Pick<PlaylistSummary, 'coverUrl' | 'firstTrackId' | 'firstTrackThumbnailUrl'> & {
+	playlist: Pick<PlaylistSummary, 'coverUrl' | 'firstTrackThumbnailUrl'> & {
 		updatedUtc?: string;
 	},
 ) {
@@ -35,11 +36,7 @@ export function coverFor(
 
 		return audioApi.replace(/\/Audio$/, '') + playlist.coverUrl + version;
 	}
-	// inside the activity every artwork host is blocked but the API's own cover route is not
-	if (isDiscordActivity && playlist.firstTrackId)
-		return `${audioApi}/Cover?id=${encodeURIComponent(playlist.firstTrackId)}`;
-
-	return playlist.firstTrackThumbnailUrl ?? '/empty.png';
+	return cover(playlist.firstTrackThumbnailUrl, CARD) ?? '/empty.png';
 }
 
 /**
@@ -54,9 +51,7 @@ export function toSnapshot(item: SearchResult): SearchResult {
 		artist: item.artist,
 		album: item.album,
 		duration: item.duration,
-		// inside the activity the thumbnail was rewritten to a proxy path that means
-		// nothing outside it — the id is what survives, and `coverFor` re-derives it
-		thumbnailUrl: item.thumbnailUrl?.startsWith('/') ? null : item.thumbnailUrl,
+		thumbnailUrl: item.thumbnailUrl,
 	};
 }
 

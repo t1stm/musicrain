@@ -1,5 +1,5 @@
 import type { SearchResult } from '$states/search.svelte';
-import { audioApi, proxyThumbnails } from '$lib/discord';
+import { audioApi } from '$lib/discord';
 import { streamResults } from './songs';
 
 export async function getSearch(
@@ -10,7 +10,7 @@ export async function getSearch(
 	if (!r.ok) throw new Error(`The audio service returned ${r.status}.`);
 	const data = await r.json();
 
-	return proxyThumbnails(data as SearchResult[]);
+	return data as SearchResult[];
 }
 
 /** The same search, one result at a time, for a page that fills in as they arrive. */

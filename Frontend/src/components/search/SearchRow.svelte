@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cover, ROW } from '$lib/cover';
 	import { EllipsisHorizontal, Icon, Play, Plus, QueueList } from 'svelte-hero-icons';
 	import { resolve } from '$app/paths';
 	import { convertTimeSpanStringToSeconds, getTimeString, heroArtist, pressKeys, sourceOf } from '$lib';
@@ -81,7 +82,7 @@
 		onkeydown={pressKeys(playNow)}
 	>
 		<img
-			src={result.thumbnailUrl ?? '/empty.png'}
+			src={cover(result.thumbnailUrl, ROW) ?? '/empty.png'}
 			alt=""
 			class="size-11 rounded-art object-cover"
 			onerror={(event: Event) => {

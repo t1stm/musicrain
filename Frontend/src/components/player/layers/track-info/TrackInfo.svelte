@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cover } from '$lib/cover';
 	import { resolve } from '$app/paths';
 	import { heroArtist } from '$lib';
 	import current from '$states/current.svelte';
@@ -6,7 +7,8 @@
 
 	// static/ is served at the root; '/static/empty.png' 404s.
 	const empty = '/empty.png';
-	let thumbnail = $derived(current.thumbnail?.length > 0 ? current.thumbnail : empty);
+	// the original, not a size: this one sleeve grows into the full player's, and the lock screen wants it big
+	let thumbnail = $derived(cover(current.thumbnail) || empty);
 	// the same page a search row's album tag opens
 	const albumUrl = (album: string) =>
 		`${resolve('/album')}?artist=${encodeURIComponent(heroArtist(current.artist))}&album=${encodeURIComponent(album)}`;

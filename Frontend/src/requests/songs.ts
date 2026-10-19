@@ -1,5 +1,5 @@
 import type { SearchResult } from '$states/search.svelte';
-import { audioApi, proxyThumbnails } from '$lib/discord';
+import { audioApi } from '$lib/discord';
 import { streamJson } from '$lib/streamJson';
 import quality from '$states/quality.svelte';
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -49,7 +49,7 @@ async function getJson<T>(fetcher: Fetcher, path: string): Promise<T> {
 }
 
 async function getResults(fetcher: Fetcher, path: string) {
-	return proxyThumbnails(await getJson<SearchResult[]>(fetcher, path));
+	return getJson<SearchResult[]>(fetcher, path);
 }
 
 export function getRandomSongs(fetcher: Fetcher, count = 30, youTubeShare?: number) {
@@ -80,10 +80,7 @@ export async function* streamResults(fetcher: Fetcher, path: string): AsyncGener
 		throw new AudioApiError(message, response.status);
 	}
 
-	for await (const result of streamJson<SearchResult>(response.body)) {
-		// one at a time, so the thumbnail is already rewritten by the time the row renders
-		yield proxyThumbnails([result])[0];
-	}
+	yield* streamJson<SearchResult>(response.body);
 }
 
 export function streamRandomSongs(fetcher: Fetcher, count = 30, youTubeShare?: number) {
@@ -121,9 +118,6 @@ export async function findQueryType(query: string, fetcher?: Fetcher) {
 		`/FindQueryType?query=${encodeURIComponent(query)}`
 	);
 
-	if (!isPlaylist(resolution) && resolution.kind !== 'search')
-		resolution.result = proxyThumbnails([resolution.result])[0];
-
 	return resolution;
 }
 
@@ -138,10 +132,7 @@ export type BrowseLevel = { path: string; folders: BrowseFolder[]; files: Search
  * opens, so a library of any depth costs one small request at a time.
  */
 export async function getBrowse(path: string, fetcher: Fetcher) {
-	const level = await getJson<BrowseLevel>(fetcher, `/Browse?path=${encodeURIComponent(path)}`);
-	level.files = proxyThumbnails(level.files);
-
-	return level;
+	return getJson<BrowseLevel>(fetcher, `/Browse?path=${encodeURIComponent(path)}`);
 }
 
 /**
@@ -174,10 +165,7 @@ export async function getLocalVariant(song: SearchResult, fetcher: Fetcher) {
 	if (!song.id.startsWith('yt://')) return null;
 
 	const query = `name=${encodeURIComponent(song.name)}&artist=${encodeURIComponent(song.artist)}&duration=${song.duration}`;
-	const variant = await getJson<LocalVariant | null>(fetcher, `/Local/Variant?${query}`);
-	if (variant) variant.result = proxyThumbnails([variant.result])[0];
-
-	return variant;
+	return getJson<LocalVariant | null>(fetcher, `/Local/Variant?${query}`);
 }
 
 /** Where the player streams a track from, at the quality selected right now. */

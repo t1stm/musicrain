@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cover, ROW } from '$lib/cover';
 	import { sourceOf } from '$lib';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
 	import audio from '$states/audio.svelte';
@@ -111,7 +112,7 @@
 			{#each skipped.tracks as { track, reason } (track.id)}
 				<li class="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-3 py-2">
 					<img
-						src={track.thumbnailUrl ?? '/empty.png'}
+						src={cover(track.thumbnailUrl, ROW) ?? '/empty.png'}
 						alt=""
 						class="size-11 rounded-art object-cover"
 						onerror={imageFallback}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cover, CARD, ROW } from '$lib/cover';
 	import { untrack } from 'svelte';
 	import { resolve } from '$app/paths';
 	import type { PageData } from './$types';
@@ -68,7 +69,7 @@
 		     The blur is dropped below sm: — it costs more than it gives on a phone. -->
 		<header class="relative isolate overflow-hidden">
 			<img
-				src={tracks[0]?.thumbnailUrl ?? '/empty.png'}
+				src={cover(tracks[0]?.thumbnailUrl, CARD) ?? '/empty.png'}
 				alt=""
 				class="absolute inset-0 -z-10 size-full object-cover"
 			/>
@@ -120,7 +121,7 @@
 						>
 							<span class="w-6 shrink-0 text-right font-mono text-[0.68rem] text-fog">{index + 1}</span>
 							<img
-								src={track.thumbnailUrl ?? '/empty.png'}
+								src={cover(track.thumbnailUrl, ROW) ?? '/empty.png'}
 								alt=""
 								class="size-10 shrink-0 rounded-art object-cover"
 							/>

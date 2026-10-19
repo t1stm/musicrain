@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cover, CARD, ROW } from '$lib/cover';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
@@ -127,7 +128,7 @@
 			{#if current.name}
 				<div class="flex items-center gap-4">
 					<img
-						src={current.thumbnail || '/empty.png'}
+						src={cover(current.thumbnail, CARD) || '/empty.png'}
 						alt=""
 						class="size-16 rounded-art object-cover sm:size-20"
 						onerror={imageFallback}
@@ -156,7 +157,7 @@
 						<li class="flex items-center gap-3 py-2">
 							<span class="w-5 text-right font-mono text-[0.68rem] text-fog">{offset + 1}</span>
 							<img
-								src={item.thumbnailUrl ?? '/empty.png'}
+								src={cover(item.thumbnailUrl, ROW) ?? '/empty.png'}
 								alt=""
 								class="size-9 rounded-art object-cover"
 								onerror={imageFallback}

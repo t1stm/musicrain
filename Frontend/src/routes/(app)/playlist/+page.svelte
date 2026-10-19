@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cover, ROW } from '$lib/cover';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
@@ -518,7 +519,7 @@
 								>
 									<span class="w-6 text-right font-mono text-[0.68rem] text-fog">{index + 1}</span>
 									<img
-										src={track.thumbnailUrl ?? '/empty.png'}
+										src={cover(track.thumbnailUrl, ROW) ?? '/empty.png'}
 										alt=""
 										draggable="false"
 										class="size-10 rounded-art object-cover motion-reduce:animate-none"

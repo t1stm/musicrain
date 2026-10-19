@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cover, CARD, ROW } from '$lib/cover';
 	import { QueueList, XMark } from 'svelte-hero-icons';
 	import { resolve } from '$app/paths';
 	import { convertTimeSpanStringToSeconds, getTimeString, pressKeys } from '$lib';
@@ -137,7 +138,7 @@
 				class="flex select-none items-center gap-3 [-webkit-touch-callout:none]"
 				{@attach hold(() => (menuAt = key))}
 			>
-				<img src={currentItem.thumbnailUrl ?? '/empty.png'} alt="" class="size-14 rounded-art object-cover" onerror={imageFallback} />
+				<img src={cover(currentItem.thumbnailUrl, CARD) ?? '/empty.png'} alt="" class="size-14 rounded-art object-cover" onerror={imageFallback} />
 				<div class="min-w-0 flex-1">
 					<p class="truncate text-sm font-semibold">{currentItem.name}</p>
 					<p class="truncate text-xs text-fog">
@@ -193,7 +194,7 @@
 							     words scroll the list. A mouse can take the row anywhere. -->
 							<span data-grip class="flex shrink-0 cursor-grab touch-none items-center gap-2 self-stretch active:cursor-grabbing">
 								<span class="w-4 text-right font-mono text-[0.68rem] text-fog">{offset + 1}</span>
-								<img src={item.thumbnailUrl ?? '/empty.png'} alt="" draggable="false" class="size-9 rounded-art object-cover" onerror={imageFallback} />
+								<img src={cover(item.thumbnailUrl, ROW) ?? '/empty.png'} alt="" draggable="false" class="size-9 rounded-art object-cover" onerror={imageFallback} />
 							</span>
 							<div class="min-w-0 flex-1" {@attach hold(() => (menuAt = key))}>
 								<p class="truncate text-sm">{item.name}</p>

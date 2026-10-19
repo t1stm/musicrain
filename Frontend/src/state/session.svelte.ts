@@ -1,5 +1,5 @@
 import type { SearchResult } from '$states/search.svelte';
-import { audioWsUrl, proxyThumbnails } from '$lib/discord';
+import { audioWsUrl } from '$lib/discord';
 import queue from './queue.svelte';
 import current from './current.svelte';
 import audio from './audio.svelte';
@@ -371,7 +371,7 @@ class Session {
 		} catch {
 			return;
 		}
-		queue.items = proxyThumbnails(items.map(toSearchResult));
+		queue.items = items.map(toSearchResult);
 
 		// `remove` shifts `current` implicitly and broadcasts only a queue, and the
 		// first `add` to an idle room lands the same way — so which track is

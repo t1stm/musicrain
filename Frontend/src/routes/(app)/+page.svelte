@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cover } from '$lib/cover';
 	import { goto, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
@@ -411,7 +412,7 @@
 		{#if hero}
 			<div class="grid gap-5 p-4 sm:grid-cols-[11rem_1fr] sm:items-center sm:gap-6 sm:p-6 lg:grid-cols-[15rem_1fr] lg:gap-8 lg:p-8">
 				<img
-					src={hero.thumbnailUrl ?? '/empty.png'}
+					src={cover(hero.thumbnailUrl) ?? '/empty.png'}
 					alt=""
 					class="aspect-square w-full max-w-32 rounded-row object-cover sm:max-w-44 lg:max-w-60"
 					onerror={imageFallback}

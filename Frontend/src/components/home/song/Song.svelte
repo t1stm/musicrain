@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cover, CARD } from '$lib/cover';
 	import type { SearchResult } from '$states/search.svelte';
 	import { Check, Icon, Play, Plus } from 'svelte-hero-icons';
 	const { song: given, origin }: { song: SearchResult; origin?: SearchResult['origin'] } = $props();
@@ -65,7 +66,7 @@
 		{@attach hold(() => (menuOpen = true))}
 	>
 		<img
-			src={song.thumbnailUrl ?? '/empty.png'}
+			src={cover(song.thumbnailUrl, CARD) ?? '/empty.png'}
 			alt=""
 			draggable="false"
 			class="size-full object-cover"

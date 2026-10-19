@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { cover as artwork, CARD } from '$lib/cover';
 	import { tick } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import TrackInfo from './layers/track-info/TrackInfo.svelte';
@@ -162,7 +163,8 @@
 
 	// micro paints the artwork behind everything instead of beside it. No track,
 	// no ground — a blown-up placeholder is worse than the plain dark.
-	let cover = $derived(current.thumbnail?.length > 0 ? current.thumbnail : '');
+	// a card's size is plenty for a ground that is blurred by 24px, and far less to decode than the original
+	let cover = $derived(artwork(current.thumbnail, CARD) ?? '');
 	let holdState = $derived(
 		session.status === 'holding' ? 'holding' : session.status === 'synced' ? 'playing' : 'idle'
 	);
