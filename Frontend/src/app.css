@@ -1,6 +1,5 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/forms';
-@plugin '@tailwindcss/typography';
 
 /* The plan docs quote class names; without this every `micro:fixed` written in
    prose becomes a real rule. Markdown is documentation, not markup. */
