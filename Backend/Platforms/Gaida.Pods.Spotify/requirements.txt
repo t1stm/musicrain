@@ -5,7 +5,7 @@ spotapi==1.2.8
 # spotapi imports all three at module load and declares none of them, so an install without them fails
 # on `import spotapi` rather than on first use. Nothing here talks to Mongo or Redis: they back session
 # savers this pod never constructs, since it never logs in.
-pymongo==4.18.0
+pymongo==4.18.3
 redis==7.1.0
 websockets==17.1
 
