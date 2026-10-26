@@ -56,6 +56,40 @@ public partial class MusicManager
         }
     }
 
+    /// <summary>
+    ///     Reads one song's embedded artwork again, for a file whose picture was replaced on disk. A scan
+    ///     never notices that: it only extracts a cover for a song that has none recorded.
+    /// </summary>
+    /// <remarks>
+    ///     A file with no picture, or Snimka not keeping it, is refused rather than clearing the cover: the
+    ///     one the song already has still works, and the operator can try again.
+    /// </remarks>
+    /// <returns>The updated entry, or why no new cover was kept.</returns>
+    public async Task<Change> RefreshCoverAsync(string id, CancellationToken cancellationToken = default)
+    {
+        await _editGate.WaitAsync(cancellationToken);
+
+        try
+        {
+            var entry = SearchById(id);
+            if (entry is null) return Change.NoSuchSong;
+            if (entry.RelativeLocation is null) return Change.Refused("That entry has no file on disk.");
+
+            if (_coverExtractor.ExportCover(options.StorageDirectory + "/" + entry.RelativeLocation) is not { } cover)
+                return Change.Refused("No cover was kept: the file carries none, or Snimka did not take it.");
+
+            entry.CoverUrl = LibraryOptions.CoverUrl(cover);
+            _database.Write([entry]);
+            Logger.Information("Admin re-read the cover of {ID}: {Cover}", id, cover);
+
+            return entry;
+        }
+        finally
+        {
+            _editGate.Release();
+        }
+    }
+
     /// <summary>The top-level folder every imported track lands under, relative to the storage root.</summary>
     /// <remarks>
     ///     It sits where a genre sits in the rest of the tree — <c>Eurobeat/Lou Grant/Lou Grant - ....wv</c>

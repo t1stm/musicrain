@@ -671,6 +671,26 @@
     renderLibrary();
   }
 
+  // Every selected song's cover, read again out of its file: for artwork replaced on disk, which no scan
+  // looks at twice. One request per song, like saveBatch, so the audit log shows each. The table shows no
+  // covers, so success is reported too.
+  async function refreshCovers(button) {
+    const rows = chosen();
+    button.disabled = true;
+    const failures = [];
+
+    for (const [index, song] of rows.entries()) {
+      button.textContent = `Reading ${index + 1} of ${rows.length}…`;
+      const params = new URLSearchParams({ id: song.id });
+      const response = await fetch(`/api/action/${encodeURIComponent(selected)}/refresh-cover?${params}`, { method: "POST" });
+      if (!response.ok) failures.push(`${song.titles[0] ?? song.id}: ${await failure(response)}`);
+    }
+
+    alert(`${rows.length - failures.length} of ${rows.length} cover(s) re-read.` +
+      (failures.length ? `\n\n${failures.slice(0, 10).join("\n")}` : ""));
+    renderLibrary();
+  }
+
   function editorRow(song) {
     return `<tr class="editor"><td colspan="6">
         <div class="fields">
@@ -722,7 +742,8 @@
          <button class="act" data-reload="1">Search</button>
          ${libraryRows.length ? `<button class="act" data-selectall="${all ? "" : "1"}">${
             all ? "Clear selection" : `Select all ${libraryRows.length}`}</button>` : ""}
-         ${picked.size && !batch ? `<button class="act" data-batch="1">Edit ${picked.size} selected</button>` : ""}
+         ${picked.size && !batch ? `<button class="act" data-batch="1">Edit ${picked.size} selected</button>
+           <button class="act" data-covers="1">Re-read ${picked.size} cover${picked.size === 1 ? "" : "s"}</button>` : ""}
          <span class="hint">${picked.size ? `${picked.size} of ` : ""}${libraryRows.length} row(s), 200 max</span>
        </div>` +
       (batch ? batchPanel() : "") +
@@ -1097,6 +1118,7 @@
     if (button.dataset.batch) return void openBatch();
     if (button.dataset.batchcancel) { batch = draft = null; return void renderLibrary(); }
     if (button.dataset.batchsave) return void saveBatch();
+    if (button.dataset.covers) return void refreshCovers(button);
 
     run(button);
   });

@@ -65,6 +65,10 @@ admin?.MapPost("/edit-song", async Task<IResult> (string id, HttpRequest request
     return Answer(await db.Library.EditAsync(id, titles, artists, album, ct), LibraryRow);
 });
 
+// Re-reads one song's embedded cover, for a file whose picture changed on disk — no scan looks again.
+admin?.MapPost("/refresh-cover", async Task<IResult> (string id, MusicDatabase db, CancellationToken ct) =>
+    Answer(await db.Library.RefreshCoverAsync(id, ct), LibraryRow));
+
 // Picks up files added to the library by hand since boot. 202 because it only starts the scan — the
 // snapshot's `scanning` flag and song count are where the result shows.
 admin?.MapPost("/rescan", IResult (MusicDatabase db) => db.Library.TryRescan()
@@ -407,6 +411,7 @@ static async Task RunSelfCheck()
     await BackfillCheck(Assert);
     await ImportCheck(Assert);
     await RescanCheck(Assert);
+    await CoverCheck(Assert);
 
     Console.WriteLine("selftest OK");
     return;
@@ -531,6 +536,77 @@ static async Task RescanCheck(Action<bool, string> assert)
     {
         try { Directory.Delete(root, true); } catch (IOException) { /* temp dir */ }
     }
+}
+
+// Oko's cover re-read, against a throwaway library whose songs already have a cover recorded: the case a
+// scan never looks at again. What would go wrong quietly: the ID re-rolled, the new cover kept in memory but
+// not in library.db, or a file with no picture wiping a cover that still works.
+static async Task CoverCheck(Action<bool, string> assert)
+{
+    var root = Path.Combine(Path.GetTempPath(), "gaida-local-cover-" + Guid.NewGuid().ToString("n"));
+    var folder = Path.Combine(root, "Queen");
+    Directory.CreateDirectory(folder);
+
+    await File.WriteAllTextAsync(Path.Combine(folder, "Info.json"), """
+        [{"ID":"qusomebody-ab","Titles":["Somebody to Love"],"Artists":["Queen"],"CoverUrl":"$[DOMAIN]/old.jpg",
+          "RelativeLocation":"Queen/Queen - Somebody to Love.mp3","Length":296000},
+         {"ID":"qubohemian-ab","Titles":["Bohemian Rhapsody"],"Artists":["Queen"],"CoverUrl":"$[DOMAIN]/old.jpg",
+          "RelativeLocation":"Queen/Queen - Bohemian Rhapsody.mp3","Length":354000}]
+        """);
+    byte[] image = [0xFF, 0xD8, 0xFF, .. "the new cover"u8];
+    await File.WriteAllBytesAsync(Path.Combine(folder, "Queen - Somebody to Love.mp3"), WithCover(image));
+    await File.WriteAllBytesAsync(Path.Combine(folder, "Queen - Bohemian Rhapsody.mp3"), new byte[4096]);
+
+    using var snimka = new SnimkaStub();
+    using var client = new HttpClient(snimka) { BaseAddress = new Uri("http://snimka.invalid/") };
+
+    try
+    {
+        var database = new MusicDatabase(Serilog.Core.Logger.None, new LibraryOptions(root, client));
+        await database.Library.Initialize();
+        assert(snimka.Uploads.Count == 0, "cover: the scan does not read a recorded cover again");
+
+        var (entry, error, _) = await database.Library.RefreshCoverAsync("qusomebody-ab");
+        assert(error is null && entry?.CoverUrl == $"cover://{SnimkaStub.Name}",
+            $"cover: the file's picture became the cover ({error})");
+        assert(entry!.Id == "qusomebody-ab", "cover: the ID survives -- playlists and cache keys hold it");
+        assert(snimka.Uploads is [var upload] && upload.SequenceEqual(image),
+            "cover: the embedded picture is what went to Snimka");
+        assert(Stored(root).Contains($"cover://{SnimkaStub.Name}"), "cover: the new cover reached library.db");
+
+        var (_, none, _) = await database.Library.RefreshCoverAsync("qubohemian-ab");
+        assert(none is not null && database.Library.Find("Bohemian", 10)[0].CoverUrl == "cover://old.jpg",
+            "cover: a file with no picture keeps the cover it has");
+
+        var (_, _, unknown) = await database.Library.RefreshCoverAsync("no-such-id");
+        assert(unknown, "cover: an unknown ID is a 404");
+    }
+    finally
+    {
+        try { Directory.Delete(root, true); } catch (IOException) { /* temp dir */ }
+    }
+}
+
+// An MP3 stand-in carrying one picture: an ID3v2.3 tag with a single front-cover APIC frame, then silence
+// ATL reads no audio from. The cover pass only wants the picture.
+static byte[] WithCover(byte[] image)
+{
+    byte[] body = [0, .. "image/jpeg"u8, 0, 3, 0, .. image];
+    byte[] frame =
+    [
+        .. "APIC"u8, (byte)(body.Length >> 24), (byte)(body.Length >> 16), (byte)(body.Length >> 8),
+        (byte)body.Length, 0, 0, .. body
+    ];
+
+    // The tag size is syncsafe: seven bits to a byte.
+    var size = frame.Length;
+    byte[] header =
+    [
+        .. "ID3"u8, 3, 0, 0, (byte)((size >> 21) & 0x7F), (byte)((size >> 14) & 0x7F), (byte)((size >> 7) & 0x7F),
+        (byte)(size & 0x7F)
+    ];
+
+    return [.. header, .. frame, .. new byte[4096]];
 }
 
 // The album backfill, against a throwaway library whose one entry predates the tag being read. The
