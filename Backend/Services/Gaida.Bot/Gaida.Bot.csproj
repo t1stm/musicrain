@@ -18,6 +18,8 @@
     <!-- The shared /Admin surface every service here answers, so Oko can watch this one too. It is
          not Gaida.Core: it carries the token check and the request ring and nothing else. -->
     <ProjectReference Include="..\..\Gaida Library\Gaida.Admin\Gaida.Admin.csproj"/>
+    <!-- For Romanize alone: the bot's fuzzy matching has to read Cyrillic the way the library's search does. -->
+    <ProjectReference Include="..\..\Gaida Library\Gaida.Core\Gaida.Core.csproj"/>
   </ItemGroup>
 
   <ItemGroup>

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Gaida.Core.Utils;
 
 namespace Gaida.Bot.Tools;
 
@@ -10,20 +11,24 @@ public static class LevenshteinDistance
     public static int ComputeLean(string? s, string? t) => ComputeStrict(Fold(s), Fold(t));
 
     /// <summary>
-    ///     Lowercase, drop diacritics, and reduce every run of punctuation or whitespace to a single space.
+    ///     Lowercase, romanize Cyrillic, drop diacritics, and reduce every run of punctuation or whitespace to
+    ///     a single space.
     /// </summary>
     /// <remarks>
     ///     What a user types carries neither accents nor the separator a display name is built with, and the
     ///     raw distance charged for both: "la bomba king africa" sat three edits from the Deezer track
     ///     ("La Bomba" by "King África" — two for the constructed " - ", one for the accent) but only two from
     ///     a YouTube upload whose title happened to be spelled "La Bomba - King Africa", so the copy won.
+    ///     The alphabet is the same story: "dai pari toni storaro" was eighteen edits from the library's
+    ///     "Дай Пари" by "Тони Стораро" and seven from Deezer's "По теб" by "Toni Storaro", so the wrong song
+    ///     played. Romanizing happens before the decomposition, which would otherwise turn й into и.
     /// </remarks>
     private static string? Fold(string? value)
     {
         if (string.IsNullOrEmpty(value)) return value;
 
         var folded = new StringBuilder(value.Length);
-        foreach (var c in value.ToLowerInvariant().Normalize(NormalizationForm.FormD))
+        foreach (var c in Romanize.FromCyrillic(value.ToLowerInvariant()).Normalize(NormalizationForm.FormD))
         {
             if (CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.NonSpacingMark) continue;
 

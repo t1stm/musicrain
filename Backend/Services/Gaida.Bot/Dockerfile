@@ -1,11 +1,13 @@
 # The Discord bot. Build context is the repo root (see compose.yaml), like every other service here,
-# though the only project it references is Gaida.Admin, for the /Admin surface Oko pulls: it talks to
-# Gaida.API over HTTP exactly like the frontend does, and DSharpPlus comes from nuget.
+# though the only projects it references are Gaida.Admin, for the /Admin surface Oko pulls, and
+# Gaida.Core, for Romanize: it talks to Gaida.API over HTTP exactly like the frontend does, and
+# DSharpPlus comes from nuget.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 COPY Services/Gaida.Bot/Gaida.Bot.csproj Services/Gaida.Bot/
 COPY ["Gaida Library/Gaida.Admin/Gaida.Admin.csproj", "Gaida Library/Gaida.Admin/"]
+COPY ["Gaida Library/Gaida.Core/Gaida.Core.csproj", "Gaida Library/Gaida.Core/"]
 # Every project's PackageReference to JetBrains.Annotations lives in Directory.Build.props and every
 # package version in Directory.Packages.props, so both have to be in the context before the restore.
 COPY Directory.Build.props Directory.Packages.props ./
@@ -13,6 +15,7 @@ RUN dotnet restore Services/Gaida.Bot/Gaida.Bot.csproj
 
 COPY Services/Gaida.Bot/ Services/Gaida.Bot/
 COPY ["Gaida Library/Gaida.Admin/", "Gaida Library/Gaida.Admin/"]
+COPY ["Gaida Library/Gaida.Core/", "Gaida Library/Gaida.Core/"]
 RUN dotnet publish Services/Gaida.Bot/Gaida.Bot.csproj -c Release -o /app
 
 # aspnet, because of the one thing it does serve: /Admin/snapshot, /Admin/requests and /Admin/events,

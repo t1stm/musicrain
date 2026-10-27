@@ -381,6 +381,20 @@ public class BotPlaybackTests
     }
 
     [Fact]
+    public void LatinInputFindsACyrillicTrack()
+    {
+        // Real search output for "dai pari toni storaro": unromanized, the all-Cyrillic library track lost
+        // to a Deezer one whose Latin artist made its short title the cheaper miss.
+        var results = new List<Track>
+        {
+            Track("По теб", "deezer://3844998091", artist: "Toni Storaro"),
+            Track("Дай Пари", "audio://today-pa-kk", artist: "Тони Стораро")
+        };
+
+        Assert.Equal("audio://today-pa-kk", TrackPicker.BestMatch(results, "dai pari toni storaro")!.Id);
+    }
+
+    [Fact]
     public void TheArtistCountsAsAMatchToo()
     {
         var results = new List<Track>
