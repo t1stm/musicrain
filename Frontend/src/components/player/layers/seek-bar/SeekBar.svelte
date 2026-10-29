@@ -37,6 +37,8 @@
 
 	let buffered = $derived(current.lengthSeconds > 0 ? (audio.bufferedSeconds / current.lengthSeconds) * 100 : 0);
 	let currentPercentage = $derived(current.lengthSeconds > 0 ? (audio.currentSeconds / current.lengthSeconds) * 100 : 0);
+	// clamped like the `max-w-full` it replaces: past 100 a fill would slide off its left end
+	const fillTransform = (percent: number) => `translateX(${Math.min(Math.max(percent, 0), 100) - 100}%)`;
 	// Playback needs ~3s of runway; the gauge fills toward that, so a full column
 	// is the moment the track resumes rather than an arbitrary level.
 	const runwaySeconds = 3;
@@ -122,20 +124,20 @@
 		onpointermove={slider.pointerMove}
 		onkeydown={keydown}
 	>
-		<!-- The fills are clipped to the track's own ends — rounded, or square in micro. A
-		     track just started fills a pixel or two, narrower than a fill's rounding, and that
-		     drew as a full-height sliver outside the curve of the track. The blip stays
-		     outside: it overhangs. -->
+		<!-- The fills are clipped to the track's own ends — rounded, or square in micro. Each
+		     fill is the track's full width slid left until its end sits at the position, so
+		     its rounded end keeps its shape from the first pixel instead of squashing as a
+		     narrow width would. The blip stays outside: it overhangs. -->
 		<div class="absolute inset-0 overflow-hidden rounded-[inherit]">
 			<div
-				class="absolute left-0 h-full max-w-full bg-primary-0 rounded-lg duration-75"
-				style:width={buffered + '%'}
+				class="absolute inset-0 bg-primary-0 rounded-lg duration-75"
+				style:transform={fillTransform(buffered)}
 			></div>
 			<div
-				class="absolute left-0 h-full max-w-full rounded-lg duration-150"
+				class="absolute inset-0 rounded-lg duration-150"
 				class:bg-primary-500={!isBuffering}
 				class:bg-surface-400={isBuffering}
-				style:width={currentPercentage + '%'}
+				style:transform={fillTransform(currentPercentage)}
 			></div>
 		</div>
 		<div
