@@ -8,5 +8,6 @@
 *.kate-swp
 .*.kate-swp
 
-*PLAN.md
-*FINDINGS.md
+# Plans, findings and audits stay local. Only READMEs are documentation.
+*.md
+!README.md
