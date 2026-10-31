@@ -1,0 +1,116 @@
+# AMD GPU, through ROCm. One of three starting points, with pyproject.cpu.toml and pyproject.nvidia.toml:
+# copy the one that fits the machine to pyproject.toml, which git ignores along with the uv.lock it makes.
+#
+#     cp pyproject.amd.toml pyproject.toml && uv sync
+#
+# Needs the amdgpu kernel driver and access to /dev/kfd and /dev/dri (the render and video groups). The
+# ROCm runtime itself comes from the wheels below; nothing else from ROCm has to be installed.
+[project]
+name = "lirika"
+version = "0.1.0"
+description = "Line-synced lyrics generated from the audio. See README.md."
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    # Everything up to torch's runtime is the same in all three files (test_lirika.py checks).
+    # 2.14, not 2.15: the ROCm index has no torchvision for 2.15 yet. Nothing here uses torchvision, but
+    # transformers imports it when present, and PyPI's build breaks against any torch but PyPI's own.
+    "torch==2.14.*",
+    "torchvision",
+    "torchaudio",
+    "transformers",
+    # [cpu] only brings the CPU onnxruntime its imports need; every model used here is a torch checkpoint.
+    "audio-separator[cpu]",
+    # audio-separator imports it but relied on librosa < 1.0 to install it.
+    "audioread",
+    "ctc-forced-aligner",
+    "librosa",
+    "numpy",
+    "requests",
+    "soundfile",
+    "unidecode",
+    # Beats and downbeats (CPJKU, ISMIR 2024): where the bar lines are, for breaking lines on them.
+    "beat-this",
+
+    # torch's ROCm runtime: the kernels for every AMD GPU ROCm supports, ~6.5 GB. uv honours
+    # [tool.uv.sources] only for direct dependencies, so each package is named here to come from the ROCm
+    # index rather than from PyPI's placeholder packages of the same names.
+    #
+    # For one GPU's kernels only (~320 MB), find its target with `rocminfo | grep -m1 -o 'gfx[0-9a-f]*'`,
+    # keep only that rocm-sdk-device-gfx… line here and in [tool.uv.sources], make the next line
+    # "rocm[libraries,device-gfx…]", and add under [tool.uv], since torch itself asks for device-all:
+    #     override-dependencies = ["rocm[libraries,device-gfx…]==7.14.*"]
+    "rocm[libraries,device-all]",
+    "rocm-sdk-core",
+    "rocm-sdk-libraries",
+    "rocm-sdk-device-gfx908",
+    "rocm-sdk-device-gfx90a",
+    "rocm-sdk-device-gfx942",
+    "rocm-sdk-device-gfx950",
+    "rocm-sdk-device-gfx1010",
+    "rocm-sdk-device-gfx1011",
+    "rocm-sdk-device-gfx1012",
+    "rocm-sdk-device-gfx1030",
+    "rocm-sdk-device-gfx1031",
+    "rocm-sdk-device-gfx1032",
+    "rocm-sdk-device-gfx1033",
+    "rocm-sdk-device-gfx1034",
+    "rocm-sdk-device-gfx1035",
+    "rocm-sdk-device-gfx1036",
+    "rocm-sdk-device-gfx1100",
+    "rocm-sdk-device-gfx1101",
+    "rocm-sdk-device-gfx1102",
+    "rocm-sdk-device-gfx1103",
+    "rocm-sdk-device-gfx1150",
+    "rocm-sdk-device-gfx1151",
+    "rocm-sdk-device-gfx1152",
+    "rocm-sdk-device-gfx1153",
+    "rocm-sdk-device-gfx1200",
+    "rocm-sdk-device-gfx1201",
+    "rocm-sdk-device-gfx1250",
+    "triton-rocm",
+]
+
+# Explicit, so only the packages named in [tool.uv.sources] come from it and nothing else can pull a CUDA
+# torch from PyPI instead.
+[[tool.uv.index]]
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm7.14"
+explicit = true
+
+[tool.uv]
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+
+[tool.uv.sources]
+ctc-forced-aligner = { git = "https://github.com/MahmoudAshraf97/ctc-forced-aligner" }
+torch = { index = "pytorch-rocm" }
+torchvision = { index = "pytorch-rocm" }
+torchaudio = { index = "pytorch-rocm" }
+triton-rocm = { index = "pytorch-rocm" }
+rocm = { index = "pytorch-rocm" }
+rocm-sdk-core = { index = "pytorch-rocm" }
+rocm-sdk-libraries = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx908 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx90a = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx942 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx950 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1010 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1011 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1012 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1030 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1031 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1032 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1033 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1034 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1035 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1036 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1100 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1101 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1102 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1103 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1150 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1151 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1152 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1153 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1200 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1201 = { index = "pytorch-rocm" }
+rocm-sdk-device-gfx1250 = { index = "pytorch-rocm" }

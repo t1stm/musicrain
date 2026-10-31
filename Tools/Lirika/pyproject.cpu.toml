@@ -1,0 +1,49 @@
+# No GPU: everything runs on the CPU. One of three starting points, with pyproject.amd.toml and
+# pyproject.nvidia.toml: copy the one that fits the machine to pyproject.toml, which git ignores along with
+# the uv.lock it makes.
+#
+#     cp pyproject.cpu.toml pyproject.toml && uv sync
+#
+# Everything runs on the CPU in full precision, more slowly than on a GPU.
+[project]
+name = "lirika"
+version = "0.1.0"
+description = "Line-synced lyrics generated from the audio. See README.md."
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    # Everything up to torch's runtime is the same in all three files (test_lirika.py checks).
+    # 2.14, not 2.15: the ROCm index has no torchvision for 2.15 yet. Nothing here uses torchvision, but
+    # transformers imports it when present, and PyPI's build breaks against any torch but PyPI's own.
+    "torch==2.14.*",
+    "torchvision",
+    "torchaudio",
+    "transformers",
+    # [cpu] only brings the CPU onnxruntime its imports need; every model used here is a torch checkpoint.
+    "audio-separator[cpu]",
+    # audio-separator imports it but relied on librosa < 1.0 to install it.
+    "audioread",
+    "ctc-forced-aligner",
+    "librosa",
+    "numpy",
+    "requests",
+    "soundfile",
+    "unidecode",
+    # Beats and downbeats (CPJKU, ISMIR 2024): where the bar lines are, for breaking lines on them.
+    "beat-this",
+]
+
+# PyPI's torch for Linux is the CUDA build and brings gigabytes of CUDA libraries along; this index's does not.
+# Explicit, so only the packages named in [tool.uv.sources] come from it.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv]
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+
+[tool.uv.sources]
+ctc-forced-aligner = { git = "https://github.com/MahmoudAshraf97/ctc-forced-aligner" }
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+torchaudio = { index = "pytorch-cpu" }
