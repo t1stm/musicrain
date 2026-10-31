@@ -40,6 +40,7 @@ public static class TrackPicker
     /// <summary>
     /// The closest hit by edit distance against the title and against the title and artist in
     /// either order, with the platform as the tie-break: the library, then Deezer, then YouTube.
+    /// A library hit is scored under every name the library knows it by, not only the one shown.
     /// </summary>
     /// <remarks>
     /// The artist on its own is deliberately not a candidate. Scoring it would let every track by
@@ -51,10 +52,7 @@ public static class TrackPicker
         var term = search.Trim();
 
         return results
-            .OrderBy(track => Math.Min(
-                LevenshteinDistance.ComputeLean(track.Name, term),
-                Math.Min(LevenshteinDistance.ComputeLean(track.DisplayName, term),
-                    LevenshteinDistance.ComputeLean($"{track.Artist} - {track.Name}", term))))
+            .OrderBy(track => Distance(track, term))
             .ThenBy(track => track.Id switch
             {
                 _ when track.Id.StartsWith(Track.LocalPrefix, StringComparison.Ordinal) => 0,
@@ -62,5 +60,21 @@ public static class TrackPicker
                 _ => 2
             })
             .FirstOrDefault();
+    }
+
+    /// <remarks>
+    /// The variants are what made the library answer at all: "skase skase" finds "Σκάσε" through its
+    /// alternate title "Skase, skase", which the displayed name alone sits six edits from — further
+    /// than an unrelated "Skade Skade".
+    /// </remarks>
+    private static int Distance(Track track, string term)
+    {
+        string[] titles = [track.Name, .. track.TitleVariants ?? []];
+        string[] artists = [track.Artist, .. track.ArtistVariants ?? []];
+
+        return titles.Min(title => artists.Min(artist => Math.Min(
+            LevenshteinDistance.ComputeLean(title, term),
+            Math.Min(LevenshteinDistance.ComputeLean($"{title} - {artist}", term),
+                LevenshteinDistance.ComputeLean($"{artist} - {title}", term)))));
     }
 }

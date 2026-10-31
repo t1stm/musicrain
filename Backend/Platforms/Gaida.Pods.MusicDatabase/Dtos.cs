@@ -18,7 +18,10 @@ public sealed record ResultDto(
     // Only /resolve fills these, and only stih reads them — see LYRICS_1_LIBRARY_PLAN.md.
     string? RelativeLocation = null,
     string? LyricsType = null,
-    string? LyricsSource = null);
+    string? LyricsSource = null,
+    // Every name the library finds the track by, so the bot's -p can rank it the way the search matched it.
+    IReadOnlyList<string>? TitleVariants = null,
+    IReadOnlyList<string>? ArtistVariants = null);
 
 /// <summary>One track stih's sweep has not found words for yet.</summary>
 [UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]

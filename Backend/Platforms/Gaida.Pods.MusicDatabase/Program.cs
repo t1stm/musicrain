@@ -332,7 +332,8 @@ static ResultDto? Map(PlatformResult result)
     var duration = result.Duration < TimeSpan.Zero ? TimeSpan.Zero : result.Duration;
     return new ResultDto(result.Id, result.Name, result.Artist, result.Album,
         duration.ToString("c", CultureInfo.InvariantCulture), result.ThumbnailUrl,
-        result.OriginalTitle, result.OriginalArtist);
+        result.OriginalTitle, result.OriginalArtist,
+        TitleVariants: result.TitleVariants, ArtistVariants: result.ArtistVariants);
 }
 
 // ── /classify, pulled out of the route so RunSelfCheck can exercise it without a host. ──

@@ -18,7 +18,12 @@ public sealed record SearchResultDto(
     string Duration,
     string? ThumbnailUrl,
     string? OriginalTitle,
-    string? OriginalArtist);
+    string? OriginalArtist,
+    // Every name the library finds the track by; left out for every other platform.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<string>? TitleVariants = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<string>? ArtistVariants = null);
 
 /// <summary>One answer of <c>/Audio/Resolve</c>: the ID as it was asked for, and what it plays as now.</summary>
 [UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
@@ -124,7 +129,9 @@ public static class DiscoveryResultMapper
             FormatDuration(result.Duration),
             result.ThumbnailUrl,
             result.OriginalTitle,
-            result.OriginalArtist);
+            result.OriginalArtist,
+            result.TitleVariants,
+            result.ArtistVariants);
     }
 
     /// <summary>

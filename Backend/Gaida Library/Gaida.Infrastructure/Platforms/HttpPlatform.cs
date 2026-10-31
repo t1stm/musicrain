@@ -194,6 +194,8 @@ public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist,
             ThumbnailUrl = dto.ThumbnailUrl,
             OriginalTitle = dto.OriginalTitle,
             OriginalArtist = dto.OriginalArtist,
+            TitleVariants = dto.TitleVariants,
+            ArtistVariants = dto.ArtistVariants,
             Downloaders = ContentDownloaders
         };
     }

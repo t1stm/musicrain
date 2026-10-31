@@ -395,6 +395,24 @@ public class BotPlaybackTests
     }
 
     [Fact]
+    public void ALibraryHitCountsUnderEveryNameItIsKnownBy()
+    {
+        // Real search output for "Skase Skase": the library answered through the alternate title, and the
+        // displayed "Σκάσε" alone lost to a Deezer track two edits away.
+        var results = new List<Track>
+        {
+            Track("Skade Skade", "deezer://3738182", artist: "Guy Mardel"),
+            Track("Σκάσε", "audio://stskaseg-BT", artist: "Σταύρος Λιβυκός") with
+            {
+                TitleVariants = ["Σκάσε", "Skase", "Σκάσε, σκάσε", "Skase, skase"],
+                ArtistVariants = ["Σταύρος Λιβυκός", "Stavros Livikos"]
+            }
+        };
+
+        Assert.Equal("audio://stskaseg-BT", TrackPicker.BestMatch(results, "Skase Skase")!.Id);
+    }
+
+    [Fact]
     public void TheArtistCountsAsAMatchToo()
     {
         var results = new List<Track>

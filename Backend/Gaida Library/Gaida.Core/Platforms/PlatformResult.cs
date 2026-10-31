@@ -28,6 +28,17 @@ public abstract class PlatformResult
     [JsonInclude]
     public string? OriginalArtist { get; set; }
 
+    /// <summary>
+    ///     Every title the library finds this track by — romanizations and alternate names included — so a
+    ///     client ranking hits can match what the library matched. Only the library fills it.
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlyList<string>? TitleVariants { get; set; }
+
+    /// <summary>As <see cref="TitleVariants" />, for the artist.</summary>
+    [JsonIgnore]
+    public IReadOnlyList<string>? ArtistVariants { get; set; }
+
     public ReadOnlySpan<char> GetPureId()
     {
         return PlatformId.StripPrefix(Id);

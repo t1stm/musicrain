@@ -14,6 +14,8 @@ public sealed record PodResultDto
     public string? ThumbnailUrl { get; init; }
     public string? OriginalTitle { get; init; }
     public string? OriginalArtist { get; init; }
+    public IReadOnlyList<string>? TitleVariants { get; init; }
+    public IReadOnlyList<string>? ArtistVariants { get; init; }
 }
 
 [UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]

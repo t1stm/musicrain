@@ -385,7 +385,9 @@ public class MusicInfo : IJsonOnDeserialized
             Path = storageDirectory + "/" + RelativeLocation,
             ThumbnailUrl = CoverUrl,
             OriginalTitle = Title,
-            OriginalArtist = Artist
+            OriginalArtist = Artist,
+            TitleVariants = Titles,
+            ArtistVariants = Artists
         };
     }
 

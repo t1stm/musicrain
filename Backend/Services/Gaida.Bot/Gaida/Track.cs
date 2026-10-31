@@ -17,6 +17,12 @@ public sealed record Track
     public string? OriginalTitle { get; init; }
     public string? OriginalArtist { get; init; }
 
+    /// <summary>Every name the library finds a track by — alternate titles included. <c>null</c> off the library.</summary>
+    public IReadOnlyList<string>? TitleVariants { get; init; }
+
+    /// <summary>As <see cref="TitleVariants" />, for the artist.</summary>
+    public IReadOnlyList<string>? ArtistVariants { get; init; }
+
     /// <summary>Who queued it. Local to the bot; never on the wire.</summary>
     [JsonIgnore]
     public DiscordMember? Requester { get; set; }
