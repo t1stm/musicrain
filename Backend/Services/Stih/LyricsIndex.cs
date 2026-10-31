@@ -97,6 +97,7 @@ public sealed class LyricsIndex
                    COUNT(*) FILTER (WHERE Type IS NULL) AS Misses,
                    COUNT(*) FILTER (WHERE Source = 'Lrclib') AS FromLrcLib,
                    COUNT(*) FILTER (WHERE Source = 'Deezer') AS FromDeezer,
+                   COUNT(*) FILTER (WHERE Source = 'Generated') AS Generated,
                    COUNT(*) FILTER (WHERE Type IS NOT NULL AND Source IS NULL) AS AlreadyThere,
                    COUNT(*) FILTER (WHERE Volume = 'Library') AS InLibrary,
                    COUNT(*) FILTER (WHERE Volume = 'Own') AS InOwnVolume
@@ -111,6 +112,7 @@ public sealed class LyricsIndex
             misses = counts.Misses,
             fromLrcLib = counts.FromLrcLib,
             fromDeezer = counts.FromDeezer,
+            generated = counts.Generated,
             alreadyThere = counts.AlreadyThere,
             inLibrary = counts.InLibrary,
             inOwnVolume = counts.InOwnVolume,
@@ -179,6 +181,7 @@ public sealed class LyricsIndex
         long Misses,
         long FromLrcLib,
         long FromDeezer,
+        long Generated,
         long AlreadyThere,
         long InLibrary,
         long InOwnVolume);

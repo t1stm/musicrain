@@ -96,6 +96,16 @@ public class LyricsTests : IDisposable
     }
 
     [Fact]
+    public void GeneratedLyricsRoundTripByName()
+    {
+        var entry = new MusicInfo { Id = "g", LyricsType = LyricsKind.Synchronized, LyricsSource = LyricsOrigin.Generated };
+
+        var json = JsonSerializer.Serialize(entry, MusicInfo.SerializerOptions);
+        Assert.Contains("\"LyricsSource\": \"Generated\"", json);
+        Assert.Equal(LyricsOrigin.Generated, JsonSerializer.Deserialize<MusicInfo>(json, MusicInfo.SerializerOptions)!.LyricsSource);
+    }
+
+    [Fact]
     public void AnInventedValueFailsAtLoadRatherThanReachingAListener()
     {
         Assert.Throws<JsonException>(() =>

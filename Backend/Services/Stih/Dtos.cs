@@ -44,7 +44,10 @@ public enum LyricsOrigin
 {
     Deezer,
 
-    [JsonStringEnumMemberName("LRCLIB")] Lrclib
+    [JsonStringEnumMemberName("LRCLIB")] Lrclib,
+
+    /// <summary>Tools/Lirika: the words aligned to the audio by a model, registered through <c>/register</c>.</summary>
+    Generated
 }
 
 /// <summary>Which of the two mounts a row's path is relative to, so moving either does not invalidate it.</summary>

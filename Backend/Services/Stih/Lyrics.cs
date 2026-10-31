@@ -133,7 +133,12 @@ public sealed class Lyrics(
 
         var content = string.IsNullOrWhiteSpace(body.Lrc) ? body.Text ?? string.Empty : body.Lrc;
         var kind = string.IsNullOrWhiteSpace(body.Lrc) ? LyricsKind.Unsynchronized : LyricsKind.Synchronized;
-        var source = Enum.TryParse<LyricsOrigin>(body.Source, true, out var parsed) ? parsed : LyricsOrigin.Deezer;
+        // No source is the Deezer pod's registration from before it named itself. A source nobody knows is
+        // refused rather than filed under Deezer: generated words must never pass for a platform's own.
+        var source = LyricsOrigin.Deezer;
+        if (!string.IsNullOrWhiteSpace(body.Source) &&
+            !(Enum.TryParse(body.Source, true, out source) && Enum.IsDefined(source)))
+            return $"'{body.Source}' is not a lyrics source.";
 
         // Resolving is what finds a library track's folder. A pod that cannot answer is not fatal here:
         // the words still land in stih's own volume under the ID the caller knows the track by.

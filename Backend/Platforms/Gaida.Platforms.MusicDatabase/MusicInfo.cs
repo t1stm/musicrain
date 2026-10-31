@@ -14,8 +14,11 @@ public sealed record SearchVariants(string[] Titles, string[] Artists, IReadOnly
 /// <summary>Which shape of lyrics file sits beside a track. Serialized by name — see MusicInfo.SerializerOptions.</summary>
 public enum LyricsKind { Unsynchronized, Synchronized }
 
-/// <summary>Who found the words. Enums rather than strings: a file carrying "synced" should fail at load.</summary>
-public enum LyricsOrigin { Deezer, [JsonStringEnumMemberName("LRCLIB")] Lrclib }
+/// <summary>
+///     Who found the words. Enums rather than strings: a file carrying "synced" should fail at load.
+///     <c>Generated</c> is Tools/Lirika: words aligned to the audio by a model rather than synced by a person.
+/// </summary>
+public enum LyricsOrigin { Deezer, [JsonStringEnumMemberName("LRCLIB")] Lrclib, Generated }
 
 public class MusicInfo : IJsonOnDeserialized
 {

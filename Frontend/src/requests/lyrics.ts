@@ -8,7 +8,7 @@ export type LyricLine = { at: number | null; text: string };
 export type Lyrics = {
 	type: 'Synchronized' | 'Unsynchronized';
 	/** `null` for a file that was already sitting in the library folder. */
-	source: 'Deezer' | 'LRCLIB' | null;
+	source: 'Deezer' | 'LRCLIB' | 'Generated' | null;
 	lines: LyricLine[];
 	/** The plain block, timestamps stripped. Always present, for both types. */
 	text: string;

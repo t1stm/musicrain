@@ -68,6 +68,19 @@ public class StihLyricsTests : IDisposable
         Assert.Equal((null, false), await broken.FindAsync(track));
     }
 
+    [Fact]
+    public async Task ARegistrationNamesAKnownSourceOrIsRefused()
+    {
+        var (lyrics, _) = Build(Task.CompletedTask);
+
+        Assert.NotNull(await lyrics.RegisterAsync(new RegisterDto("deezer://1", "Invented", null, "[00:01.00]w")));
+        Assert.NotNull(await lyrics.RegisterAsync(new RegisterDto("deezer://1", "7", null, "[00:01.00]w")));
+        Assert.Null(await lyrics.RegisterAsync(new RegisterDto("deezer://1", "Generated", null, "[00:01.00]w")));
+
+        var served = await lyrics.GetAsync("deezer://1");
+        Assert.Equal(("Synchronized", "Generated"), (served?.Type, served?.Source));
+    }
+
     private (Lyrics Lyrics, StubHandler LrcLib) Build(Task release)
     {
         var pods = new StubHandler(_ => Task.FromResult(StubHandler.Reply(HttpStatusCode.OK,
