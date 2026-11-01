@@ -1,11 +1,11 @@
 <script lang="ts">
-	// A build folds import.meta.env.DEV to false, so the import below -- and the whole studio with it --
-	// never reaches a release bundle.
-	const studio = import.meta.env.DEV ? import('$components/studio/Studio.svelte') : null;
+	import StaffGate from '$components/staff/StaffGate.svelte';
+	import Studio from '$components/studio/Studio.svelte';
 </script>
 
-{#if studio}
-	{#await studio then module}
-		<module.default />
-	{/await}
-{/if}
+<!-- the scroller is here so the gate's refusals sit in it as well as the studio -->
+<div class="page page-column gap-6 px-4 pt-6 pb-4 sm:px-8 sm:pb-28">
+	<StaffGate needs="studio">
+		<Studio />
+	</StaffGate>
+</div>

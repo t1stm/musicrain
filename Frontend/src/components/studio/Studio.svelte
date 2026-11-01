@@ -1,7 +1,7 @@
 <script lang="ts">
 	/*
-	 * The lyrics studio, for this machine only: the route is dev-only and the back end is Tools/Lirika's
-	 * studio.py on 127.0.0.1. Pick a library song, start from textove's words (or your last edit),
+	 * The lyrics studio, for staff with the studio permission. The back end is the lirika pod at
+	 * /Audio/Lirika (Tools/Lirika's studio.py), which asks Dom who the token belongs to. Pick a library song, start from textove's words (or your last edit),
 	 * edit them, regenerate in map mode, then fix lines by hand. Every keystroke in the LRC goes to the
 	 * real lyrics pane through lyrics.showDraft, so the full player shows exactly what a listener would.
 	 * The stems Lirika separated can be heard in the song's place, following the player's clock.
@@ -13,12 +13,12 @@
 	import queue from '$states/queue.svelte';
 	import type { SearchResult } from '$states/search.svelte';
 	import { getSearch } from '$requests/search';
+	import { staffCall } from '$requests/staff';
+	import { audioApi } from '$lib/discord';
 	import type { Lyrics, LyricLine } from '$requests/lyrics';
 	import { seekTo } from '$lib/seek';
 
-	// studio.py runs beside the dev server: a phone on the LAN reaches it through the address it loaded
-	// this page from (LIRIKA_STUDIO_LAN). 127.0.0.1 locally, since "localhost" may try IPv6 first.
-	const LIRIKA = `http://${location.hostname === 'localhost' ? '127.0.0.1' : location.hostname}:8765`;
+	const LIRIKA = `${audioApi}/Lirika`;
 
 	type Candidate = { source: string; label: string; text: string; url?: string };
 	type Flagged = { start: number; end: number; text: string; flags: string[] };
@@ -68,9 +68,34 @@
 			: 'The lead vocal and all voices arrive with the first Regenerate, which separates them.'
 	);
 
+	// ── For the sheet's decoration only: none of it writes to the text or the logic above ──────
+	// Every stamp on each line of the LRC box, in the box's own line order.
+	let lineStamps = $derived(lrc.split('\n').map((line) => [...line.matchAll(STAMP)].map(seconds)));
+	// The line of the box the playhead is in, for the gold band behind it.
+	let nowLine = $derived(now ? lineStamps.findIndex((stamps) => stamps.includes(now.at)) : -1);
+	// Lines Lirika flagged, for the ember marks in the gutter. A stamp is written to the hundredth.
+	let flaggedLines = $derived(
+		new Set(lineStamps.flatMap((stamps, index) =>
+			stamps.some((at) => flagged.some((line) => Math.abs(line.start - at) < 0.006)) ? [index] : []))
+	);
+	let backdrop = $state<HTMLDivElement | null>(null);
+	// How long the current wait has run: a minute of aligning reads as work, not as a hang.
+	let waited = $state(0);
+	$effect(() => {
+		if (!busy) return;
+		const since = Date.now();
+		waited = 0;
+		const tick = setInterval(() => (waited = Math.floor((Date.now() - since) / 1000)), 1000);
+		return () => clearInterval(tick);
+	});
+	const elapsed = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
+	// The gate has already turned away a 401 or a 403, so a failure here is the pod itself: not running,
+	// or nginx answering 502 for it.
 	onMount(async () => {
 		try {
-			server = (await fetch(`${LIRIKA}/health`)).ok ? 'up' : 'down';
+			await call('/health');
+			server = 'up';
 		} catch {
 			server = 'down';
 		}
@@ -152,9 +177,7 @@
 		loading = kind;
 		note = '';
 		try {
-			const response = await fetch(`${LIRIKA}/stem?id=${encodeURIComponent(id)}&kind=${kind}`);
-			if (!response.ok) throw new Error((await response.json()).error ?? `lirika answered ${response.status}`);
-			const blob = await response.blob();
+			const blob = await staffCall<Blob>(`${LIRIKA}/stem?id=${encodeURIComponent(id)}&kind=${kind}`, {}, 'blob');
 			if (id !== track) return; // the track changed while it downloaded
 			URL.revokeObjectURL(stemUrl);
 			stemUrl = URL.createObjectURL(blob); // a blob seeks; studio.py answers no Range requests
@@ -174,15 +197,9 @@
 		}
 	}
 
-	async function call<T>(path: string, body?: unknown): Promise<T> {
-		const response = await fetch(`${LIRIKA}${path}`, body === undefined ? undefined : {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(body)
-		});
-		const payload = await response.json();
-		if (!response.ok) throw new Error(payload.error ?? `lirika answered ${response.status}`);
-		return payload as T;
+	/** A GET, or a POST of `body` as JSON, with the bearer token; throws the pod's own message. */
+	function call<T>(path: string, body?: Record<string, unknown>): Promise<T> {
+		return staffCall<T>(`${LIRIKA}${path}`, body === undefined ? {} : { method: 'POST', body });
 	}
 
 	async function loadTexts(id: string) {
@@ -343,175 +360,364 @@
 	}
 </script>
 
-<div class="page page-column gap-6 px-4 pt-6 pb-4 sm:px-8 sm:pb-28">
-	<header>
-		<p class="eyebrow text-primary-500">Lyrics studio · this machine only</p>
-		<h1 class="mt-2 font-display text-xl font-light leading-tight tracking-tight text-chalk sm:text-3xl">
+<header class="studio-head">
+	<div class="min-w-0">
+		<p class="eyebrow">Lyrics studio</p>
+		<h1 class="mt-2 font-display text-xl leading-tight font-extralight tracking-tight text-balance text-chalk sm:text-3xl">
 			{current.name ? `${current.artist} — ${current.name}` : 'Play a library song'}
 		</h1>
-		<p class="mt-2 text-sm text-fog">
-			{#if server === 'down'}
-				The Lirika server is not running. Start it with <code>uv run studio.py</code> in <code>Tools/Lirika</code>.
-			{:else if !track && current.id}
-				Only library tracks (audio://) have a file to align.
-			{:else}
-				Open the full player to see the draft in the real lyrics pane while you edit.
-			{/if}
-		</p>
-	</header>
-
-	<form class="flex gap-2" onsubmit={(event) => { event.preventDefault(); void search(); }}>
-		<input class="studio-field min-w-0 flex-1" type="search" enterkeyhint="search" placeholder="Find a library song" bind:value={query} />
-		<button class="studio-button" type="submit">Search</button>
-	</form>
-	{#if results.length}
-		<ul class="flex flex-col gap-1">
-			{#each results as result (result.id)}
-				<li>
-					<button class="studio-row" onclick={() => { queue.playNow(result); results = []; }}>
-						{result.artist} — {result.name}
-					</button>
-				</li>
-			{/each}
-		</ul>
-	{/if}
-
-	{#if busy}<p class="text-sm text-gold" aria-live="polite">{busy}</p>{/if}
-	{#if note}<p class="text-sm text-fog" aria-live="polite">{note}</p>{/if}
-
+	</div>
 	{#if track}
-		<section class="flex flex-wrap items-center gap-x-3 gap-y-2" aria-label="Stems">
-			<span class="eyebrow {ear === 'song' ? '' : 'text-gold'}">Listen to</span>
-			<div class="studio-switch studio-ears flex max-sm:w-full" role="group" aria-label="Listen to">
-				{#each EARS as option (option.kind)}
-					<button type="button" data-kind={option.kind} aria-pressed={ear === option.kind} aria-busy={loading === option.kind}
-						disabled={option.kind !== 'song' && (!stems.includes(option.kind) || !!loading)}
-						onclick={() => hear(option.kind)}>
-						{#if loading === option.kind}<span class="rain-streak" aria-hidden="true"></span>{/if}
-						<span class="relative">{option.label}</span>
-					</button>
-				{/each}
-			</div>
-			<p class="min-w-0 text-xs text-fog sm:flex-1">{role}</p>
-		</section>
+		<!-- the playhead in the stamp's own format, so a line's stamp can be checked against it by eye -->
+		<p class="studio-clock" aria-label="Playhead">
+			<span class="eyebrow block text-right">Playhead</span>
+			<span class="font-mono text-gold">{stamp(audio.currentSeconds)}</span>
+		</p>
+	{/if}
+</header>
 
-		<div class="studio-switch flex lg:hidden" role="group" aria-label="Text to edit">
-			<button type="button" aria-pressed={pane === 'source'} onclick={() => (pane = 'source')}>Source text</button>
-			<button type="button" aria-pressed={pane === 'lrc'} onclick={() => (pane = 'lrc')}>LRC</button>
-		</div>
-
-		<div class="grid gap-6 lg:grid-cols-2">
-			<section class="flex-col gap-2 {pane === 'source' ? 'flex' : 'hidden lg:flex'}">
-				<div class="flex items-center gap-2">
-					<h2 class="font-display text-sm text-chalk max-lg:sr-only">Source text</h2>
-					<select class="studio-field min-w-0 flex-1 lg:ml-auto lg:max-w-[60%] lg:flex-none" bind:value={chosen} disabled={!candidates.length}
-						aria-label="Starting text" onchange={() => (source = candidates[chosen]?.text ?? source)}>
-						{#each candidates as candidate, index (index)}
-							<option value={index}>{candidate.label}</option>
-						{:else}
-							<option value={0}>No text found: paste one, or a textove link below</option>
-						{/each}
-					</select>
-				</div>
-				<form class="flex gap-2" onsubmit={(event) => { event.preventDefault(); void fetchLink(); }}>
-					<input class="studio-field min-w-0 flex-1" type="url" inputmode="url" placeholder="https://textove.com/…-tekst"
-						aria-label="textove page link" bind:value={link} />
-					<button class="studio-button" type="submit" disabled={!!busy || !link.trim()}>Fetch</button>
-				</form>
-				<textarea class="studio-field studio-box font-mono" bind:value={source} aria-label="Source text"
-					spellcheck="false"></textarea>
-				<p class="text-xs text-fog">
-					One sung line per line. Order and repeats do not matter to map mode; a missing line, a wrong
-					word or a stanza typed as one line do.
-				</p>
-				<button class="studio-button self-start" onclick={regenerate} disabled={!!busy || !source.trim()}>
-					Regenerate
-				</button>
-			</section>
-
-			<section class="flex-col gap-2 {pane === 'lrc' ? 'flex' : 'hidden lg:flex'}">
-				<div class="flex items-center gap-2">
-					<h2 class="font-display text-sm text-chalk max-lg:sr-only">LRC</h2>
-					<span class="hidden text-xs text-fog pointer-fine:inline lg:ml-auto">Alt+Enter: line to playhead · Alt+↑/↓: ∓0.1 s</span>
-					<button class="studio-button ml-auto lg:ml-0" onclick={save} disabled={!lrc.trim()}>Save</button>
-				</div>
-				<textarea class="studio-field studio-box font-mono" bind:value={lrc} bind:this={editor} aria-label="LRC"
-					onkeydown={keys} spellcheck="false"></textarea>
-				{#if flagged.length}
-					<h3 class="mt-2 text-xs text-fog">Flagged by Lirika</h3>
-					<ul class="flex flex-col gap-1">
-						{#each flagged as line (line.start)}
-							<li>
-								<button class="studio-row" onclick={() => seekTo(line.start)}>
-									<span class="font-mono text-fog">{stamp(line.start)}</span>
-									{line.text}
-									<span class="text-ember">· {line.flags.join(', ')}</span>
-								</button>
-							</li>
-						{/each}
-					</ul>
-				{/if}
-			</section>
-		</div>
-
-		<section class="studio-console" aria-label="Line at the playhead">
-			<button type="button" class="studio-row min-w-0 flex-1 truncate" disabled={!now}
-				title="Play from this line" onclick={() => now && seekTo(now.at)}>
-				<span class="font-mono text-fog">{now ? stamp(now.at) : '[--:--.--]'}</span>
-				{now ? now.text || '—' : 'No line at the playhead yet'}
-			</button>
-			<div class="gap-2 max-sm:w-full {pane === 'lrc' ? 'flex' : 'hidden lg:flex'}">
-				<button class="studio-button" onpointerdown={keepFocus} onclick={() => nudge(-0.1)} disabled={!lrc.trim()}
-					aria-label="Line 0.1 seconds earlier">−0.1 s</button>
-				<button class="studio-button flex-1" onpointerdown={keepFocus} onclick={atPlayhead} disabled={!lrc.trim()}>
-					Line to playhead
-				</button>
-				<button class="studio-button" onpointerdown={keepFocus} onclick={() => nudge(0.1)} disabled={!lrc.trim()}
-					aria-label="Line 0.1 seconds later">+0.1 s</button>
-			</div>
-		</section>
+<div class="-mt-3 min-h-6" aria-live="polite">
+	{#if busy}
+		<p class="studio-busy" aria-busy="true">
+			<span class="studio-busy-gauge" aria-hidden="true"><span class="rain-streak"></span></span>
+			<span class="min-w-0 flex-1">{busy}</span>
+			<span class="font-mono text-xs text-fog">{elapsed(waited)}</span>
+		</p>
+	{:else if server === 'down'}
+		<p class="text-sm text-ember">The lyrics service is not running.</p>
+	{:else if note}
+		<p class="text-sm text-fog">{note}</p>
+	{:else if !track && current.id}
+		<p class="text-sm text-fog">Only library tracks (audio://) have a file to align.</p>
+	{:else}
+		<p class="text-sm text-fog">Open the full player to see the draft in the real lyrics pane while you edit.</p>
 	{/if}
 </div>
+
+<form class="flex gap-2" onsubmit={(event) => { event.preventDefault(); void search(); }}>
+	<input class="studio-field min-w-0 flex-1" type="search" enterkeyhint="search" placeholder="Find a library song"
+		aria-label="Find a library song" bind:value={query} />
+	<button class="studio-button" type="submit">Search</button>
+</form>
+{#if results.length}
+	<ul class="studio-results">
+		{#each results as result (result.id)}
+			<li>
+				<button class="studio-row" onclick={() => { queue.playNow(result); results = []; }}>
+					<span class="text-fog">{result.artist}</span> — {result.name}
+				</button>
+			</li>
+		{/each}
+	</ul>
+{/if}
+
+{#if track}
+	<section class="flex flex-wrap items-center gap-x-3 gap-y-2" aria-label="Stems">
+		<span class="eyebrow">Listen to</span>
+		<div class="studio-switch studio-ears flex max-sm:w-full" role="group" aria-label="Listen to">
+			{#each EARS as option (option.kind)}
+				<button type="button" data-kind={option.kind} aria-pressed={ear === option.kind} aria-busy={loading === option.kind}
+					disabled={option.kind !== 'song' && (!stems.includes(option.kind) || !!loading)}
+					onclick={() => hear(option.kind)}>
+					{#if loading === option.kind}<span class="rain-streak" aria-hidden="true"></span>{/if}
+					<span class="relative">{option.label}</span>
+				</button>
+			{/each}
+		</div>
+		<p class="min-w-0 text-xs text-fog sm:flex-1">{role}</p>
+	</section>
+
+	<div class="studio-switch flex lg:hidden" role="group" aria-label="Text to edit">
+		<button type="button" aria-pressed={pane === 'source'} onclick={() => (pane = 'source')}>Source text</button>
+		<button type="button" aria-pressed={pane === 'lrc'} onclick={() => (pane = 'lrc')}>LRC</button>
+	</div>
+
+	<div class="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+		<section class="studio-sheet {pane === 'source' ? 'flex' : 'hidden lg:flex'}" aria-label="Source text">
+			<div class="flex items-center gap-2">
+				<h2 class="eyebrow max-lg:sr-only">Source text</h2>
+				<select class="studio-field min-w-0 flex-1 lg:ml-auto lg:max-w-[70%] lg:flex-none" bind:value={chosen} disabled={!candidates.length}
+					aria-label="Starting text" onchange={() => (source = candidates[chosen]?.text ?? source)}>
+					{#each candidates as candidate, index (index)}
+						<option value={index}>{candidate.label}</option>
+					{:else}
+						<option value={0}>No text found: paste one, or a textove link below</option>
+					{/each}
+				</select>
+			</div>
+			<form class="flex gap-2" onsubmit={(event) => { event.preventDefault(); void fetchLink(); }}>
+				<input class="studio-field min-w-0 flex-1" type="url" inputmode="url" placeholder="https://textove.com/…-tekst"
+					aria-label="textove page link" bind:value={link} />
+				<button class="studio-button" type="submit" disabled={!!busy || !link.trim()}>Fetch</button>
+			</form>
+			<textarea class="studio-field studio-text font-mono" bind:value={source} aria-label="Source text"
+				spellcheck="false"></textarea>
+			<p class="text-xs leading-relaxed text-fog">
+				One sung line per line. Order and repeats do not matter to map mode; a missing line, a wrong
+				word or a stanza typed as one line do.
+			</p>
+			<button class="studio-button studio-primary self-start" onclick={regenerate} disabled={!!busy || !source.trim()}>
+				Regenerate
+			</button>
+		</section>
+
+		<section class="studio-sheet {pane === 'lrc' ? 'flex' : 'hidden lg:flex'}" aria-label="LRC">
+			<div class="flex items-center gap-2">
+				<h2 class="eyebrow max-lg:sr-only">LRC</h2>
+				<span class="hidden text-xs text-fog pointer-fine:inline lg:ml-auto">
+					<kbd>Alt</kbd>+<kbd>Enter</kbd> line to playhead · <kbd>Alt</kbd>+<kbd>↑</kbd><kbd>↓</kbd> ∓0.1 s
+				</span>
+				<button class="studio-button ml-auto lg:ml-0" onclick={save} disabled={!lrc.trim()}>Save</button>
+			</div>
+			<!-- The box is a real textarea over a backdrop that wraps its text identically: the backdrop paints
+			     the gold band behind the line at the playhead and the ember marks for flagged lines, and never
+			     takes focus or touches the value. -->
+			<div class="studio-lrc">
+				<div class="studio-field studio-text studio-backdrop font-mono" bind:this={backdrop} aria-hidden="true">
+					{#each lrc.split('\n') as line, index (index)}
+						<div class="studio-line" data-now={index === nowLine || undefined} data-flagged={flaggedLines.has(index) || undefined}
+							>{line || ' '}</div>
+					{/each}
+				</div>
+				<textarea class="studio-field studio-text studio-editor font-mono" bind:value={lrc} bind:this={editor} aria-label="LRC"
+					onkeydown={keys} onscroll={() => backdrop && editor && (backdrop.scrollTop = editor.scrollTop)}
+					spellcheck="false"></textarea>
+			</div>
+			{#if flagged.length}
+				<h3 class="eyebrow mt-2 text-ember">Flagged by Lirika · {flagged.length}</h3>
+				<ul class="flex flex-col">
+					{#each flagged as line (line.start)}
+						<li>
+							<button class="studio-row studio-flag" onclick={() => seekTo(line.start)}>
+								<span class="font-mono text-fog">{stamp(line.start)}</span>
+								{line.text}
+								<span class="block text-xs text-ember">{line.flags.join(', ')}</span>
+							</button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+	</div>
+
+	<section class="studio-console" aria-label="Line at the playhead">
+		<button type="button" class="studio-now" disabled={!now} title="Play from this line" onclick={() => now && seekTo(now.at)}>
+			<span class="font-mono text-xs text-gold">{now ? stamp(now.at) : '[--:--.--]'}</span>
+			<span class="studio-now-text">{now ? now.text || '—' : 'No line at the playhead yet'}</span>
+		</button>
+		<div class="gap-1.5 max-sm:w-full {pane === 'lrc' ? 'flex' : 'hidden lg:flex'}">
+			<button class="studio-button" onpointerdown={keepFocus} onclick={() => nudge(-0.1)} disabled={!lrc.trim()}
+				aria-label="Line 0.1 seconds earlier">−0.1 s</button>
+			<button class="studio-button flex-1" onpointerdown={keepFocus} onclick={atPlayhead} disabled={!lrc.trim()}>
+				Line to playhead
+			</button>
+			<button class="studio-button" onpointerdown={keepFocus} onclick={() => nudge(0.1)} disabled={!lrc.trim()}
+				aria-label="Line 0.1 seconds later">+0.1 s</button>
+		</div>
+	</section>
+{/if}
 
 <audio bind:this={stemPlayer} src={stemUrl || undefined} preload="auto"></audio>
 
 <style>
+	/* ── the page's own vocabulary ──────────────────────────────────────────────────────────────
+	   gold is the playhead and nothing else; ember is a flag and nothing else. */
+
+	.studio-head {
+		display: flex;
+		align-items: flex-end;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+
+	.studio-clock {
+		flex-shrink: 0;
+		font-size: 1.125rem;
+		line-height: 1.2;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.studio-busy {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		font-size: 0.875rem;
+		color: var(--color-chalk);
+	}
+
+	/* the app's rain gauge, as a short vertical vial: water falling means work is under way */
+	.studio-busy-gauge {
+		position: relative;
+		width: 4px;
+		height: 1.25rem;
+		flex-shrink: 0;
+		overflow: hidden;
+		border-radius: 2px;
+		background: var(--color-haze);
+	}
+
 	.studio-field {
 		border-radius: var(--radius-row);
-		background: color-mix(in srgb, var(--color-haze) 70%, transparent);
+		border: 1px solid var(--color-haze);
+		background: var(--color-dark-0);
 		color: var(--color-chalk);
 		padding: 0.5rem 0.75rem;
-		border: 1px solid color-mix(in srgb, var(--color-fog) 25%, transparent);
 		/* under 16px, iOS zooms the page in on focus */
 		font-size: 1rem;
 	}
-	.studio-box {
+
+	.studio-field:focus {
+		border-color: var(--color-primary-0);
+		outline: none;
+	}
+
+	.studio-field:focus-visible,
+	.studio-editor:focus {
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary-0) 45%, transparent);
+	}
+
+	.studio-sheet {
+		flex-direction: column;
+		gap: 0.625rem;
+		min-width: 0;
+		border-radius: var(--radius-panel);
+		border: 1px solid var(--color-haze);
+		background: var(--color-surface-0);
+		padding: 0.875rem;
+	}
+
+	.studio-text {
 		height: 45dvh;
 		min-height: 16rem;
-		line-height: 1.6;
+		line-height: 1.7;
+		resize: vertical;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
+
+	/* ── the LRC sheet: a transparent textarea over a backdrop that wraps its text the same way ── */
+	.studio-lrc {
+		position: relative;
+	}
+
+	.studio-lrc > * {
+		/* both scroll the same way, so their wrap widths match line for line */
+		overflow-y: scroll;
+		/* room on the left for the marks, inside both boxes alike */
+		padding-left: 1.125rem;
+	}
+
+	/* laid exactly over the textarea, resized or not, so both scroll the same range */
+	.studio-backdrop {
+		position: absolute;
+		inset: 0;
+		height: auto;
+		min-height: 0;
+		pointer-events: none;
+		color: transparent;
+		resize: none;
+	}
+
+	.studio-editor {
+		position: relative;
+		display: block;
+		width: 100%;
+		background: transparent;
+		caret-color: var(--color-chalk);
+	}
+
+	.studio-line {
+		position: relative;
+		margin-inline: -1.125rem -0.75rem;
+		padding-inline: 1.125rem 0.75rem;
+		transition: background-color 160ms ease;
+	}
+
+	.studio-line[data-now] {
+		background: color-mix(in srgb, var(--color-gold) 17%, transparent);
+	}
+
+	.studio-line[data-now]::before {
+		content: '';
+		position: absolute;
+		inset-block: 0;
+		left: 0;
+		width: 3px;
+		background: var(--color-gold);
+	}
+
+	.studio-line[data-flagged]::after {
+		content: '';
+		position: absolute;
+		top: calc(0.85em - 3px);
+		left: 0.45rem;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--color-ember);
+	}
+
 	.studio-button {
 		border-radius: var(--radius-row);
-		background: var(--color-haze);
+		border: 1px solid var(--color-haze);
+		background: var(--color-surface-100);
 		color: var(--color-chalk);
 		padding: 0.4rem 0.9rem;
 		font-size: 0.875rem;
 		white-space: nowrap;
 	}
+
+	.studio-button:hover:enabled {
+		border-color: var(--color-surface-300);
+		background: var(--color-surface-200);
+	}
+
+	.studio-primary {
+		border-color: var(--color-primary-0);
+		background: var(--color-primary-600);
+		font-weight: 600;
+		color: white;
+	}
+
+	.studio-primary:hover:enabled {
+		border-color: var(--color-primary-200);
+		background: var(--color-primary-0);
+	}
+
 	.studio-button:disabled {
 		opacity: 0.5;
 	}
+
+	.studio-results {
+		display: flex;
+		flex-direction: column;
+		border-block: 1px solid var(--color-haze);
+	}
+
 	.studio-row {
 		display: block;
 		width: 100%;
 		text-align: left;
 		border-radius: var(--radius-row);
-		padding: 0.35rem 0.6rem;
+		padding: 0.4rem 0.6rem;
 		font-size: 0.875rem;
 		color: var(--color-chalk);
 	}
+
 	.studio-row:hover:enabled {
-		background: color-mix(in srgb, var(--color-haze) 70%, transparent);
+		background: var(--color-surface-100);
+	}
+
+	.studio-flag {
+		border-left: 2px solid var(--color-ember);
+		border-radius: 0 var(--radius-row) var(--radius-row) 0;
+		margin-block: 0.125rem;
+	}
+
+	kbd {
+		font-family: var(--font-mono);
+		font-size: 0.6875rem;
+		color: var(--color-chalk);
 	}
 
 	/* The app's segmented control (the artist page's source tabs), as toggles. */
@@ -522,6 +728,7 @@
 		background: var(--color-dark-0);
 		padding: 0.25rem;
 	}
+
 	.studio-switch button {
 		position: relative;
 		overflow: hidden;
@@ -534,25 +741,30 @@
 		font-weight: 600;
 		color: var(--color-fog);
 	}
+
 	.studio-switch button:hover:enabled {
 		color: var(--color-chalk);
 	}
+
 	.studio-switch button[aria-pressed='true'] {
 		background: var(--color-primary-600);
 		color: white;
 	}
+
 	.studio-switch button:disabled {
 		opacity: 0.4;
 	}
-	/* The song is the resting state. A stem in its place is gold: what plays is not what listeners hear. */
+
+	/* The song is the resting state. A stem in its place is outlined: what plays is not what listeners hear. */
 	.studio-ears button[aria-pressed='true'] {
 		background: var(--color-surface-300);
 		color: var(--color-chalk);
 	}
+
 	.studio-ears button[aria-pressed='true']:not([data-kind='song']) {
-		background: color-mix(in srgb, var(--color-gold) 16%, transparent);
-		color: var(--color-gold);
-		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-gold) 45%, transparent);
+		background: color-mix(in srgb, var(--color-primary-0) 18%, transparent);
+		color: var(--color-primary-400);
+		box-shadow: inset 0 0 0 1px var(--color-primary-0);
 	}
 
 	/* What is touched while listening, docked where the thumb is: the line being sung and the timing. */
@@ -566,14 +778,40 @@
 		gap: 0.5rem;
 		border-radius: var(--radius-panel);
 		border: 1px solid var(--color-haze);
-		background: color-mix(in srgb, var(--color-surface-0) 92%, transparent);
+		border-top-color: color-mix(in srgb, var(--color-gold) 35%, var(--color-haze));
+		background: color-mix(in srgb, var(--color-surface-0) 94%, transparent);
 		backdrop-filter: blur(12px);
 		padding: 0.625rem;
 		box-shadow: 0 -12px 24px -12px var(--color-dark-0);
 	}
 
+	.studio-now {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		align-items: baseline;
+		gap: 0.625rem;
+		border-radius: var(--radius-row);
+		padding: 0.35rem 0.5rem;
+		text-align: left;
+	}
+
+	.studio-now:hover:enabled {
+		background: var(--color-surface-100);
+	}
+
+	.studio-now-text {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 1.0625rem;
+		color: var(--color-chalk);
+	}
+
 	.studio-button:focus-visible,
 	.studio-row:focus-visible,
+	.studio-now:focus-visible,
 	.studio-switch button:focus-visible {
 		outline: 2px solid var(--color-primary-200);
 		outline-offset: 2px;
@@ -583,19 +821,41 @@
 		.studio-field {
 			font-size: 0.875rem;
 		}
+
 		.studio-switch button {
 			flex: none;
 		}
 	}
+
 	@media (min-width: 1024px) {
-		.studio-box {
-			height: 28rem;
+		.studio-text {
+			height: 30rem;
 		}
 	}
+
 	@media (pointer: coarse) {
 		.studio-button,
-		.studio-row {
+		.studio-row,
+		.studio-now {
 			min-height: 2.75rem;
+		}
+	}
+
+	/* the micro player height: the console keeps the line and the timing, and the sheets get shorter */
+	@media (max-height: 320px) {
+		.studio-text {
+			height: 10rem;
+			min-height: 10rem;
+		}
+
+		.studio-console {
+			padding: 0.375rem;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.studio-line {
+			transition: none;
 		}
 	}
 </style>
