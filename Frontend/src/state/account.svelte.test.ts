@@ -29,6 +29,9 @@ beforeEach(() => {
 	kept.clear();
 	account.token = null;
 	account.username = null;
+	account.role = null;
+	account.permissions = [];
+	account.checked = false;
 	vi.mocked(me).mockReset();
 	vi.mocked(me).mockRejectedValue(new Error('offline'));
 });
@@ -63,7 +66,7 @@ it('takes the slid expiry from Dom over the one it stored', async () => {
 	await account.signIn('kris', 'correct horse battery');
 
 	const slid = new Date(Date.now() + 30 * 86_400_000).toISOString();
-	vi.mocked(me).mockResolvedValue({ username: 'kris', createdUtc: '', expiresUtc: slid });
+	vi.mocked(me).mockResolvedValue({ id: 'q3Lx', username: 'kris', createdUtc: '', expiresUtc: slid });
 
 	account.load();
 	await settled();
@@ -117,4 +120,73 @@ it('signs out locally even when Dom cannot be reached', async () => {
 
 	expect(account.signedIn).toBe(false);
 	expect(kept.get('musicrain.token')).toBe(undefined);
+});
+
+const answer = (fields: Record<string, unknown>) => ({
+	id: 'q3Lx',
+	username: 'kris',
+	createdUtc: '',
+	expiresUtc: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+	...fields
+});
+
+it('learns the role from Dom on sign-in, and never stores it', async () => {
+	vi.mocked(me).mockResolvedValue(answer({ role: 'admin', permissions: ['caches'] }));
+	vi.mocked(login).mockResolvedValue(session(new Date(Date.now() + 86_400_000).toISOString()));
+
+	await account.signIn('kris', 'correct horse battery');
+	await settled();
+
+	expect(account.checked).toBe(true);
+	expect(account.staff).toBe(true);
+	expect(account.owner).toBe(false);
+	expect(account.can('caches')).toBe(true);
+	expect(account.can('rooms')).toBe(false);
+	expect(kept.get('musicrain.token')).not.toContain('admin');
+});
+
+it('reads an answer with no role fields as no role', async () => {
+	vi.mocked(me).mockResolvedValue(answer({}));
+	vi.mocked(login).mockResolvedValue(session(new Date(Date.now() + 86_400_000).toISOString()));
+
+	await account.signIn('kris', 'correct horse battery');
+	await settled();
+
+	expect(account.checked).toBe(true);
+	expect(account.staff).toBe(false);
+	expect(account.permissions).toEqual([]);
+});
+
+it('stays unchecked while Dom cannot be reached, so staff pages wait rather than refuse', async () => {
+	vi.mocked(login).mockResolvedValue(session(new Date(Date.now() + 86_400_000).toISOString()));
+
+	await account.signIn('kris', 'correct horse battery');
+	await settled();
+
+	expect(account.checked).toBe(false);
+});
+
+it('forgets the role on sign-out', async () => {
+	vi.mocked(me).mockResolvedValue(answer({ role: 'owner', permissions: ['accounts', 'studio'] }));
+	vi.mocked(login).mockResolvedValue(session(new Date(Date.now() + 86_400_000).toISOString()));
+	vi.mocked(logout).mockResolvedValue(null);
+	await account.signIn('kris', 'correct horse battery');
+	await settled();
+	expect(account.owner).toBe(true);
+
+	await account.signOut();
+
+	expect([account.role, account.permissions, account.checked]).toEqual([null, [], false]);
+});
+
+it('picks up a role that changed, on refresh', async () => {
+	vi.mocked(me).mockResolvedValue(answer({}));
+	vi.mocked(login).mockResolvedValue(session(new Date(Date.now() + 86_400_000).toISOString()));
+	await account.signIn('kris', 'correct horse battery');
+	await settled();
+
+	vi.mocked(me).mockResolvedValue(answer({ role: 'owner', permissions: ['accounts'] }));
+	await account.refresh();
+
+	expect(account.owner).toBe(true);
 });

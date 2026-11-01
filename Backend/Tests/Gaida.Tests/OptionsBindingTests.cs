@@ -54,12 +54,14 @@ public class OptionsBindingTests
             ["Dom:DataFile"] = "/data/dom.db",
             ["Dom:CoverDir"] = "/data/covers",
             ["Moliv:Url"] = "http://moliv.test",
-            ["ADMIN_TOKEN"] = "secret"
+            ["ADMIN_TOKEN"] = "secret",
+            ["Dom:NewAdminKey"] = "true"
         });
 
-        Assert.Equal(("/data/dom.db", "/data/covers", "http://moliv.test", "secret"),
-            (options.DataFile, options.CoverDir, options.MolivUrl, options.AdminToken));
-        Assert.Equal(("dom.db", "covers"), (new DomOptions().DataFile, new DomOptions().CoverDir));
+        Assert.Equal(("/data/dom.db", "/data/covers", "http://moliv.test", "secret", true),
+            (options.DataFile, options.CoverDir, options.MolivUrl, options.AdminToken, options.NewAdminKey));
+        Assert.Equal(("dom.db", "covers", false),
+            (new DomOptions().DataFile, new DomOptions().CoverDir, new DomOptions().NewAdminKey));
     }
 
     [Fact]

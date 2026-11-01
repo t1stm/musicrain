@@ -217,10 +217,11 @@ expiry a client reads may trail the real one by up to a day. `Logout` revokes on
 devices signed in to the same account stay signed in — and answers `204` whether or not the token was
 still live.
 
-`Me` returns `{"id":"q3Lx…","username":"Радост","createdUtc":"…","expiresUtc":"…"}`. `id` is 16 random
-bytes, base64url, and unlike the username it never changes — it is what other services, the
-[listening history](#listening-history) first, key an account by. Because the expiry slides, the
-`expiresUtc` a client kept from `Login` only understates it; `Me` is where the current one is read.
+`Me` returns `{"id":"q3Lx…","username":"Радост","createdUtc":"…","expiresUtc":"…","role":null,"permissions":[]}`.
+`id` is 16 random bytes, base64url, and unlike the username it never changes — it is what other
+services, the [listening history](#listening-history) first, key an account by. Because the expiry
+slides, the `expiresUtc` a client kept from `Login` only understates it; `Me` is where the current one
+is read. `role` and `permissions` are described under [Staff](#staff).
 
 A username is 2–32 characters with no whitespace and no control characters; any script is accepted,
 so `Радост` and `ラジオ` are ordinary usernames. Two accounts may not differ only by case, and
@@ -321,6 +322,53 @@ POST   /Audio/Accounts/Invite/Accept             Bearer {"code":"…"} 200 {"use
 | --- | --- | --- |
 | 404 | `invalid_code` | the code does not exist, ran out, or was ended |
 | 400 | `own_code` | the caller made the code |
+
+### Staff
+
+An account can carry a role: `owner` (exactly one at a time) or `admin`. Every other account has
+none. An Admin holds the permissions the Owner granted; the Owner holds every one. Being staff lets an
+account read the admin panel, and a permission decides what an Admin may change. Dom is the only judge
+of who is staff: other services forward the caller's token to `Me` and read `role` and `permissions`
+from the answer.
+
+```
+POST   /Audio/Accounts/Staff/Claim        Bearer {"key":"…"}             200 {"role":"owner","permissions":[…]}
+GET    /Audio/Accounts/Staff              Bearer (owner)                 200 {"permissions":[…],"staff":[…],"keyWaiting":false}
+PUT    /Audio/Accounts/Staff/{username}   Bearer (owner) {"permissions":[…]}  200 {"username":"ana","role":"admin","permissions":[…]}
+DELETE /Audio/Accounts/Staff/{username}   Bearer (owner)                 204
+```
+
+- `permissions` in `Me` and in every answer here is the **effective** set: all of them for the Owner,
+  the granted ones Dom still knows for an Admin, none for anybody else. A client only ever asks whether
+  the list contains a name.
+- **The administrator key** is how the first staff account appears. Dom issues one on the first boot
+  of a database at schema version 3, and again on any boot with no key waiting while
+  `DOM_NEW_ADMIN_KEY=true`. It is 64 hex characters, logged once at Warning and written to
+  `admin.key` beside `dom.db` (mode `0600`). `Claim` spends it: the caller becomes the Owner if
+  there is none, and an Admin with no permissions otherwise. The file is deleted before the role is
+  saved, so a crash never leaves a live key behind.
+- `GET /Staff` lists the staff, the Owner first, and the vocabulary as
+  `{"name":"caches","description":"Evict, forget, promote and demote cached tracks"}`, so a client
+  keeps no copy of it. `keyWaiting` says an unclaimed key is on disk.
+- `PUT` both promotes and edits: an account with no role becomes an Admin, then its grants are
+  replaced. `{"permissions":[]}` makes an Admin who can look and change nothing. `DELETE` takes the
+  account off the staff.
+- Neither touches the Owner, the caller included. Nobody can leave a stack without an Owner by
+  accident. If the Owner's account is lost, set `DOM_NEW_ADMIN_KEY=true`, restart Dom, and claim the
+  new key: with no Owner left, the claimer becomes it.
+- The operator's account actions (`rename-user`, `reset-password`, `sign-out-user`, `delete-user`)
+  refuse any account with a role, so an Admin holding `accounts` cannot take over the Owner. Remove
+  the account from the staff first.
+
+| Status | `code` | When |
+| --- | --- | --- |
+| 403 | `invalid_key` | the key is wrong, was already used, or none is waiting — one answer for all three |
+| 409 | `already_staff` | the caller of `Claim` already has a role |
+| 403 | `forbidden` | anyone but the Owner on `GET`, `PUT` or `DELETE` |
+| 400 | `unknown_permission` | `PUT` named a permission Dom does not have |
+| 404 | `no_such_account` | `PUT` named an account that does not exist |
+| 404 | `not_staff` | `DELETE` named an account with no role |
+| 409 | `owner_fixed` | `PUT` or `DELETE` named the Owner |
 
 ## Playlists
 
@@ -511,5 +559,5 @@ ever call these.** They are the admin panel's contract, not the public one:
 - they expose and edit things this API deliberately does not: every account in Dom, every room in
   Selo, the cache Dunav holds, and the names and albums in the local library.
 
-The contract, the reasoning and the shape of each service's payload are in
-[ADMIN_PLAN.md](ADMIN_PLAN.md).
+The contract lives in `Gaida Library/Gaida.Admin/AdminApi.cs`, and the shape of each service's payload
+in that service's `Admin.cs`.

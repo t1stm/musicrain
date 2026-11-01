@@ -52,6 +52,11 @@ public class DomPersistenceTests : IDisposable
         Step(() => Befriend(store, kris, gone));
         Step(() => Befriend(store, ana, gone));
 
+        Step(() => Assert.True(store.ClaimStaff(kris, File.ReadAllText(Path.Combine(_directory, "admin.key"))).Ok));
+        Step(() => Assert.True(store.GrantStaff(kris, "gone", ["rooms", "caches"]).Ok));
+        Step(() => Assert.True(store.GrantStaff(kris, "ana", ["studio"]).Ok));
+        Step(() => Assert.Null(store.DemoteStaff(kris, "ana")));
+
         Step(() => mix = store.Create(kris, "Mix", Visibility.Friends, [Track("yt://1"), Track("yt://2")]).Value!);
         Step(() => store.Update(kris, mix.Id, "Mix two", null, null, ["ana", "mila", "gone"]));
         Step(() => store.Append(ana, mix.Id, Track("yt://3")));
@@ -83,7 +88,7 @@ public class DomPersistenceTests : IDisposable
         Step(() => Assert.True(store.AdminSetPassword("ana", "a third password").ok));
         Step(() => Assert.True(store.AdminRenameUser("ana", "Anna").ok));
         Step(() => Assert.True(store.AdminDeletePlaylist(mix.Id).ok));
-        Step(() => Assert.True(store.AdminDeleteUser("MILA") is not null));
+        Step(() => Assert.True(store.AdminDeleteUser("MILA").deleted is not null));
 
         var after = State(store);
         Assert.Contains("Kristian", after);

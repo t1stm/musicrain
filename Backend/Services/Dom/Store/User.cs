@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Gaida.Admin;
 using JetBrains.Annotations;
 
 namespace Dom.Store;
@@ -45,6 +46,24 @@ public sealed class User
     ///     reason as <see cref="Playlist.Collaborators" />.
     /// </summary>
     public List<string> Friends { get; set; } = [];
+
+    /// <summary><c>null</c>, <see cref="Staff.Admin" /> or <see cref="Staff.Owner" />. Only DomStore's staff methods change it.</summary>
+    public string? Role { get; set; }
+
+    /// <summary>What the Owner granted an Admin. Kept for an Owner too, but ignored: see <see cref="Staff.Effective" />.</summary>
+    public List<string> Permissions { get; set; } = [];
+
+    /// <summary>
+    ///     <see cref="Permissions" /> as the <c>users.Permissions</c> column holds them: space-separated, <c>NULL</c>
+    ///     when empty. A property rather than a Dapper handler, because a handler for <c>List&lt;string&gt;</c> is
+    ///     process-wide and would stop Dapper expanding every <c>IN @list</c> in the test process.
+    /// </summary>
+    [JsonIgnore]
+    public string? PermissionsColumn
+    {
+        get => Permissions.Count == 0 ? null : string.Join(' ', Permissions);
+        set => Permissions = value is null ? [] : [.. value.Split(' ', StringSplitOptions.RemoveEmptyEntries)];
+    }
 
     /// <summary>Two accounts may not differ only by case. Derived; the database keys accounts by it.</summary>
     [JsonIgnore]

@@ -39,9 +39,11 @@ builder.Services.AddHttpClient(AccountCleanup.Moliv, http => http.Timeout = Time
 builder.Services.AddOptions<DomOptions>().Bind(builder.Configuration);
 builder.Services.AddSingleton<CoverFiles>();
 builder.Services.AddSingleton<AccountCleanup>();
-builder.Services.AddSingleton(services => new DomStore(
-    services.GetRequiredService<IOptions<DomOptions>>().Value.DataFile,
-    Log.Logger));
+builder.Services.AddSingleton(services =>
+{
+    var options = services.GetRequiredService<IOptions<DomOptions>>().Value;
+    return new DomStore(options.DataFile, Log.Logger, options.NewAdminKey);
+});
 
 var app = builder.Build();
 

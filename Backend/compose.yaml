@@ -253,6 +253,10 @@ services:
       # Told when an account is deleted, so its listening history goes with it. Best effort: moliv down
       # at that moment is logged and the deletion stands. Unset, nothing is told.
       Moliv__Url: http://moliv:8080
+      # true issues a new administrator key at boot whenever none is waiting in /data/admin.key. The key
+      # is logged once at Warning (docker compose logs dom | grep 'Administrator key'). Unset it once the
+      # key is claimed. false, never empty: an empty value fails the boot.
+      Dom__NewAdminKey: ${DOM_NEW_ADMIN_KEY:-false}
     ports:
       - "127.0.0.1:${DOM_PORT:-5343}:8080"
     volumes:

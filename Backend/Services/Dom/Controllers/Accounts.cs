@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Dom.Store;
+using Gaida.Admin;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Dom.Controllers;
@@ -45,6 +46,11 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
     ///     Who the caller is, and how long their token is good for. The expiry slides on use, so the
     ///     copy the client kept from its sign-in only ever understates it — this is where the client
     ///     reads the current one.
+    ///     <para>
+    ///         Also the one place a role is answered: Oko and Lirika forward the caller's token here and read
+    ///         <c>role</c> and <c>permissions</c> as <see cref="StaffMe" />. <c>permissions</c> is the effective
+    ///         set, every one of them for the Owner, so a client only ever asks whether it holds a name.
+    ///     </para>
     /// </summary>
     [HttpGet("/Audio/Accounts/Me")]
     public IActionResult Me()
@@ -58,7 +64,9 @@ public class Accounts(ILogger<Accounts> logger, DomStore store, AccountCleanup c
                 id = user.Id,
                 username = user.Username,
                 createdUtc = user.CreatedUtc,
-                expiresUtc = store.ExpiryOf(token)
+                expiresUtc = store.ExpiryOf(token),
+                role = user.Role,
+                permissions = Staff.Effective(user.Role, user.Permissions)
             });
     }
 

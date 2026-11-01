@@ -14,6 +14,10 @@ public sealed class DomOptions
     [ConfigurationKeyName("Moliv:Url")]
     public string? MolivUrl { get; set; }
 
+    /// <summary>Issue a new administrator key at boot when none is waiting. Unset it once the key is claimed.</summary>
+    [ConfigurationKeyName("Dom:NewAdminKey")]
+    public bool NewAdminKey { get; set; }
+
     [ConfigurationKeyName("ADMIN_TOKEN")]
     public string? AdminToken { get; set; }
 }

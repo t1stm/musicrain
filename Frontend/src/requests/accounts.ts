@@ -39,11 +39,27 @@ export function login(username: string, password: string) {
 	return send<Session>('/Login', credentials(username, password));
 }
 
-/** Also where the slid expiry is read: the one from `login` only ever understates it. */
+export type Role = 'owner' | 'admin';
+
+/**
+ * Who the token belongs to. `role` and `permissions` are optional, so an older Dom that sends
+ * neither reads as "no role". `permissions` is the effective set: every one of them for the owner.
+ */
+export type Me = {
+	id: string;
+	username: string;
+	createdUtc: string;
+	expiresUtc: string;
+	role?: Role | null;
+	permissions?: string[];
+};
+
+/**
+ * Also where the slid expiry is read: the one from `login` only ever understates it. And the one
+ * place the role is answered: `login` and `register` deliberately do not carry it.
+ */
 export function me(token: string) {
-	return send<{ username: string; createdUtc: string; expiresUtc: string }>('/Me', {
-		headers: bearer(token),
-	});
+	return send<Me>('/Me', { headers: bearer(token) });
 }
 
 /** Revokes this one token; the same account stays signed in everywhere else. */

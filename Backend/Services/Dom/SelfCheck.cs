@@ -22,7 +22,7 @@ internal static class SelfCheck
 
     public static Task<bool> RunAsync()
     {
-        var ok = Accounts() & Tokens() & Persistence() & Expiry() & PlaylistsCheck();
+        var ok = Accounts() & Tokens() & Persistence() & Expiry() & PlaylistsCheck() & StaffCheck();
 
         return Task.FromResult(ok);
     }
@@ -192,14 +192,45 @@ internal static class SelfCheck
         return ok;
     }
 
+    /// <summary>A new database issues one key, it works exactly once, and the first claim makes the Owner.</summary>
+    private static bool StaffCheck()
+    {
+        using var scratch = new ScratchFile();
+        var store = new DomStore(scratch.Path, Quiet);
+        var keyFile = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(scratch.Path)!, "admin.key");
+        var key = File.ReadAllText(keyFile);
+
+        var kris = store.Register("kris", "correct horse battery").Value!.User;
+        var ana = store.Register("ana", "correct horse battery").Value!.User;
+
+        var claimed = store.ClaimStaff(kris, key).Value?.Role;
+        var spent = store.ClaimStaff(ana, key).Refusal?.Code;
+        var reloaded = new DomStore(scratch.Path, Quiet);
+        var kept = reloaded.Login("kris", "correct horse battery").Value?.User.Role;
+
+        var ok = key.Length == 64 && claimed == "owner" && spent == "invalid_key" && !File.Exists(keyFile)
+                 && kept == "owner";
+
+        Report(ok, "a new database issues one administrator key, and its first claim makes the owner",
+            $"key={key.Length} claimed={claimed} again={spent} fileLeft={File.Exists(keyFile)} reloaded={kept}");
+
+        return ok;
+    }
+
     private static void Report(bool ok, string claim, string detail) =>
         Console.WriteLine(ok ? $"OK: {claim}" : $"FAIL: {claim} — {detail}");
 
-    /// <summary>A throwaway accounts database, so a self-check run never touches a real one.</summary>
+    /// <summary>
+    ///     A throwaway accounts database, so a self-check run never touches a real one. In a directory of its
+    ///     own, because the store writes its administrator key beside the database.
+    /// </summary>
     private sealed class ScratchFile : IDisposable
     {
-        public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
-            "dom-selfcheck-" + Guid.NewGuid().ToString("n") + ".db");
+        private readonly string _directory = Directory.CreateTempSubdirectory("dom-selfcheck-").FullName;
+
+        public ScratchFile() => Path = System.IO.Path.Combine(_directory, "dom.db");
+
+        public string Path { get; }
 
         /// <summary>Everything SQLite has written, the log included, as text to search.</summary>
         public string Bytes() => string.Concat(new[] { Path, Path + "-wal" }.Where(File.Exists)
@@ -220,7 +251,7 @@ internal static class SelfCheck
         {
             try
             {
-                foreach (var suffix in (string[])["", "-wal", "-shm"]) File.Delete(Path + suffix);
+                Directory.Delete(_directory, true);
             }
             catch (IOException)
             {

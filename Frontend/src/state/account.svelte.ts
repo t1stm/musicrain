@@ -7,6 +7,7 @@ import {
 	register,
 	rename,
 	signOutEverywhere,
+	type Role,
 	type Session,
 } from '$requests/accounts';
 import { AudioApiError } from '$requests/songs';
@@ -30,8 +31,31 @@ class Account {
 	busy = $state(false);
 	error = $state('');
 
+	/**
+	 * The staff role, from `/Me` and nowhere else. Never written to storage: a cached role would
+	 * show staff pages to a demoted admin until `/Me` answered. The servers would refuse them
+	 * anyway, but the app should not claim otherwise.
+	 */
+	role: Role | null = $state(null);
+	/** The effective set from `/Me`, so `can` never needs a case for the owner. */
+	permissions: string[] = $state([]);
+	/** `/Me` has answered for the current token. Until then staff pages are loading, not refused. */
+	checked = $state(false);
+
 	get signedIn() {
 		return this.token !== null;
+	}
+
+	get staff() {
+		return this.role === 'owner' || this.role === 'admin';
+	}
+
+	get owner() {
+		return this.role === 'owner';
+	}
+
+	can(permission: string) {
+		return this.permissions.includes(permission);
 	}
 
 	load() {
@@ -47,7 +71,7 @@ class Account {
 
 			this.username = session.username;
 			this.token = session.token;
-			this.renew(session);
+			this.renew(session.token);
 		} catch {
 			this.forget();
 		}
@@ -58,17 +82,30 @@ class Account {
 	 * wrote down is a floor rather than the truth — a session kept in daily use would
 	 * otherwise sign itself out thirty days after the sign-in that started it. `Me`
 	 * says where the expiry really stands now; a 401 says the token is gone for good.
+	 * It also says whether the account is staff.
 	 */
-	private async renew(session: Session) {
+	private async renew(token: string) {
 		try {
-			const { expiresUtc } = await me(session.token);
-			if (this.token === session.token)
-				storage()?.setItem(storageKey, JSON.stringify({ ...session, expiresUtc }));
+			const answer = await me(token);
+			if (this.token !== token) return;
+
+			this.role = answer.role ?? null;
+			this.permissions = answer.permissions ?? [];
+			this.checked = true;
+
+			const stored = this.stored();
+			if (stored?.token === token)
+				storage()?.setItem(storageKey, JSON.stringify({ ...stored, expiresUtc: answer.expiresUtc }));
 		} catch (error) {
 			// anything else — Dom down, no network — leaves the stored session alone,
 			// because being offline is not being signed out
 			if (error instanceof AudioApiError) this.reject(error.status);
 		}
+	}
+
+	/** Asks `/Me` again, for a role that just changed: after a key is claimed, say. */
+	async refresh() {
+		if (this.token) await this.renew(this.token);
 	}
 
 	signUp(username: string, password: string) {
@@ -105,12 +142,9 @@ class Account {
 		return this.change((token) =>
 			rename(token, username, password).then((renamed) => {
 				this.username = renamed.username;
-				try {
-					const stored = JSON.parse(storage()?.getItem(storageKey) ?? 'null') as Session | null;
-					if (stored) storage()?.setItem(storageKey, JSON.stringify({ ...stored, ...renamed }));
-				} catch {
-					// the name on screen is right; a stale stored one is corrected by the next sign-in
-				}
+				// the name on screen is right; a stale stored one is corrected by the next sign-in
+				const stored = this.stored();
+				if (stored) storage()?.setItem(storageKey, JSON.stringify({ ...stored, ...renamed }));
 			}),
 		);
 	}
@@ -160,15 +194,28 @@ class Account {
 		}
 	}
 
+	/** After a sign-in, a sign-up or a password change. A fresh sign-in has to learn its role. */
 	private keep(session: Session) {
 		this.username = session.username;
 		this.token = session.token;
 		storage()?.setItem(storageKey, JSON.stringify(session));
+		this.renew(session.token);
+	}
+
+	private stored(): Session | null {
+		try {
+			return JSON.parse(storage()?.getItem(storageKey) ?? 'null') as Session | null;
+		} catch {
+			return null;
+		}
 	}
 
 	private forget() {
 		this.username = null;
 		this.token = null;
+		this.role = null;
+		this.permissions = [];
+		this.checked = false;
 		storage()?.removeItem(storageKey);
 	}
 }

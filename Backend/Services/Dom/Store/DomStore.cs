@@ -1,7 +1,9 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Nodes;
+using Gaida.Admin;
 using ILogger = Serilog.ILogger;
 
 namespace Dom.Store;
@@ -29,6 +31,12 @@ public sealed class DomStore
 
     private readonly Dictionary<string, User> _byToken = new(StringComparer.Ordinal);
     private readonly DomDatabase _database;
+
+    /// <summary>
+    ///     Where the one live administrator key waits: <c>admin.key</c> beside <c>dom.db</c>. There while
+    ///     a key is unclaimed, gone once somebody claims it. See STAFF_PLAN.md.
+    /// </summary>
+    private readonly string _keyFile;
     private readonly Lock _gate = new();
 
     /// <summary>
@@ -46,12 +54,18 @@ public sealed class DomStore
     ///     it carries, the database is the <c>.db</c> beside it and the JSON is the legacy import.
     /// </param>
     /// <param name="log">Where the store reports what it did.</param>
-    public DomStore(string dataFile, ILogger log)
+    /// <param name="newAdminKey">
+    ///     <c>Dom:NewAdminKey</c>: issue a key at boot when none is waiting, whatever the database says. How a
+    ///     stack with no Owner left recovers.
+    /// </param>
+    public DomStore(string dataFile, ILogger log, bool newAdminKey = false)
     {
-        _database = new DomDatabase(Path.ChangeExtension(dataFile, ".db"), log);
+        var database = Path.ChangeExtension(dataFile, ".db");
+        _database = new DomDatabase(database, log);
+        _keyFile = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(database))!, "admin.key");
         _log = log;
 
-        var (users, playlists) = _database.Load(Path.ChangeExtension(dataFile, ".json"));
+        var (users, playlists, staffed) = _database.Load(Path.ChangeExtension(dataFile, ".json"));
         lock (_gate)
         {
             foreach (var user in users)
@@ -62,6 +76,13 @@ public sealed class DomStore
 
             foreach (var playlist in playlists) _playlists[playlist.Id] = playlist;
         }
+
+        // Outside the database's transaction, so a failed write fails the boot loudly, and a crash between
+        // the commit and the write leaves no key behind — which the flag recovers.
+        if (staffed || (newAdminKey && !KeyWaiting)) IssueKey();
+        if (newAdminKey)
+            _log.Warning("Dom:NewAdminKey is set, so every restart with no key waiting issues a new one. " +
+                         "Unset DOM_NEW_ADMIN_KEY once the key is claimed");
     }
 
     /// <summary>How long a token lasts from its last use — it slides, see <see cref="Resolve" />.</summary>
@@ -618,6 +639,163 @@ public sealed class DomStore
         }
     }
 
+    // ── Staff ──────────────────────────────────────────────────────────────────────────────────
+    // Who among the accounts is staff: the role, the grants, and the one live key. Every other
+    // service learns a caller's role from /Me. See STAFF_PLAN.md.
+
+    private static readonly Refusal OnlyTheOwner = new(Failure.Forbidden, "Only the owner manages staff.");
+
+    private static readonly Refusal OwnerFixed =
+        new(Failure.OwnerFixed, "The owner always has every permission and stays on the staff.");
+
+    /// <summary>
+    ///     What the operator's account actions say about a staff account. Without it an Admin with
+    ///     <c>accounts</c> could reset the Owner's password through Oko and sign in as the Owner.
+    /// </summary>
+    private const string StaffFixed = "Staff accounts are changed from Staff by the owner. Remove them from staff first.";
+
+    /// <summary>Whether an unclaimed administrator key is waiting on disk.</summary>
+    public bool KeyWaiting => File.Exists(_keyFile);
+
+    /// <summary>
+    ///     Writes a fresh key to <see cref="_keyFile" />, never world-readable even for an instant, and logs it
+    ///     once. The log line is how an operator finds it; the file is for when the log has scrolled away.
+    /// </summary>
+    private void IssueKey()
+    {
+        // 256 bits: nothing rate-limits a claim because nothing needs to
+        var key = RandomNumberGenerator.GetHexString(64, true);
+
+        // UnixCreateMode only applies to a file it creates, so a stale key goes first rather than being truncated
+        File.Delete(_keyFile);
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
+        if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        using (var file = new FileStream(_keyFile, options)) file.Write(Encoding.ASCII.GetBytes(key));
+
+        _log.Warning("Administrator key: {Key}. Also in {Path}. Sign in on musicrain, open /admin, and enter it " +
+                     "there. It works once", key, _keyFile);
+    }
+
+    /// <returns>The waiting key, or <c>null</c> when there is none.</returns>
+    private string? ReadKey()
+    {
+        try
+        {
+            return File.ReadAllText(_keyFile).Trim();
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    ///     Spends the waiting key on <paramref name="caller" />: the Owner if nobody is, an Admin with no
+    ///     permissions otherwise. A wrong key and no key at all get the same answer.
+    /// </summary>
+    public Outcome<StaffMember> ClaimStaff(User caller, string? key)
+    {
+        lock (_gate)
+        {
+            if (!LiveLocked(caller)) return SignInFirst;
+            if (caller.Role is not null) return new Refusal(Failure.AlreadyStaff, "You are already on the staff.");
+
+            var waiting = ReadKey();
+            if (waiting is null || key is null || !CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(waiting), Encoding.UTF8.GetBytes(key.Trim())))
+                return new Refusal(Failure.InvalidKey, "That key is wrong or was already used.");
+
+            // Fail closed: the key goes before the role is saved. A save that fails after this costs a
+            // restart with the flag; a delete that failed after the save would leave a live key lying around.
+            File.Delete(_keyFile);
+            caller.Role = _users.Values.Any(user => user.Role == Staff.Owner) ? Staff.Admin : Staff.Owner;
+            caller.Permissions = [];
+            SaveLocked(users: [caller]);
+
+            _log.Information("{Username} claimed the administrator key and is now {Role}", caller.Username,
+                caller.Role);
+            return Member(caller);
+        }
+    }
+
+    /// <summary>Every staff account, the Owner first, for the Owner's Staff page.</summary>
+    public Outcome<List<StaffMember>> StaffList(User caller)
+    {
+        lock (_gate)
+        {
+            if (!LiveLocked(caller)) return SignInFirst;
+            if (caller.Role != Staff.Owner) return OnlyTheOwner;
+
+            return _users.Values.Where(user => user.Role is not null)
+                .OrderBy(user => user.Role == Staff.Owner ? 0 : 1)
+                .ThenBy(user => user.Key, StringComparer.Ordinal)
+                .Select(Member)
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    ///     Makes <paramref name="username" /> an Admin if they are not on the staff yet, then replaces their
+    ///     grants. An empty list is an Admin who can look and change nothing.
+    /// </summary>
+    public Outcome<StaffMember> GrantStaff(User caller, string username, List<string>? permissions)
+    {
+        lock (_gate)
+        {
+            if (!LiveLocked(caller)) return SignInFirst;
+            if (caller.Role != Staff.Owner) return OnlyTheOwner;
+            if (permissions is null) return new Refusal(Failure.InvalidRequest, "Send the permissions as a list.");
+
+            var unknown = permissions.Where(name => name is null || !Staff.Permissions.ContainsKey(name))
+                .Select(name => name ?? "null").FirstOrDefault();
+            if (unknown is not null)
+                return new Refusal(Failure.UnknownPermission, $"There is no permission called {unknown}.");
+
+            if (!_users.TryGetValue(User.Normalize(username), out var user))
+                return new Refusal(Failure.NoSuchAccount, "No account has that username.");
+            if (user.Role == Staff.Owner) return OwnerFixed;
+
+            var promoted = user.Role is null;
+            user.Role = Staff.Admin;
+            user.Permissions = [.. Staff.Effective(Staff.Admin, permissions)];
+            SaveLocked(users: [user]);
+
+            // these never pass through Oko, so its audit log never sees them: this line is the record
+            if (promoted)
+                _log.Information("{Owner} made {Username} an admin with {Permissions}", caller.Username,
+                    user.Username, user.Permissions);
+            else
+                _log.Information("{Owner} set {Username}'s permissions to {Permissions}", caller.Username,
+                    user.Username, user.Permissions);
+
+            return Member(user);
+        }
+    }
+
+    /// <summary>Takes <paramref name="username" /> off the staff: no role and no grants.</summary>
+    /// <returns>Why it was refused, or <c>null</c> when it happened.</returns>
+    public Refusal? DemoteStaff(User caller, string username)
+    {
+        lock (_gate)
+        {
+            if (!LiveLocked(caller)) return SignInFirst;
+            if (caller.Role != Staff.Owner) return OnlyTheOwner;
+            if (!_users.TryGetValue(User.Normalize(username), out var user) || user.Role is null)
+                return new Refusal(Failure.NotStaff, "That account is not on the staff.");
+            if (user.Role == Staff.Owner) return OwnerFixed;
+
+            user.Role = null;
+            user.Permissions = [];
+            SaveLocked(users: [user]);
+
+            _log.Information("{Owner} removed {Username} from the staff", caller.Username, user.Username);
+            return null;
+        }
+    }
+
+    private static StaffMember Member(User user) =>
+        new(user.Username, user.Role!, Staff.Effective(user.Role, user.Permissions));
+
     // ── Admin ──────────────────────────────────────────────────────────────────────────────────
     // Owner-agnostic on purpose: everything above asks "does this caller own it", and an operator
     // owns nothing. Every one of these destroys or rewrites real user data that no cache refills,
@@ -629,6 +807,7 @@ public sealed class DomStore
         lock (_gate)
         {
             if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, "No such account.");
+            if (user.Role is not null) return (false, StaffFixed);
 
             var refusal = RenameLocked(user, newName);
             return (refusal is null, refusal?.Message);
@@ -646,6 +825,7 @@ public sealed class DomStore
         lock (_gate)
         {
             if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, "No such account.");
+            if (user.Role is not null) return (false, StaffFixed);
 
             Passwords.Set(user, password);
             RevokeLocked(user);
@@ -656,17 +836,19 @@ public sealed class DomStore
     }
 
     /// <summary>Revokes every token an account holds. Returns how many sessions ended.</summary>
-    public (bool ok, int revoked) AdminSignOut(string username)
+    /// <returns>Not <c>ok</c> with no error when there is no such account.</returns>
+    public (bool ok, int revoked, string? error) AdminSignOut(string username)
     {
         lock (_gate)
         {
-            if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, 0);
+            if (!_users.TryGetValue(User.Normalize(username), out var user)) return (false, 0, null);
+            if (user.Role is not null) return (false, 0, StaffFixed);
 
             var revoked = user.Tokens.Count;
             RevokeLocked(user);
 
             SaveLocked(users: [user]);
-            return (true, revoked);
+            return (true, revoked, null);
         }
     }
 
@@ -674,15 +856,16 @@ public sealed class DomStore
     ///     Deletes an account and everything it owns. Returns the cover files left behind, which are
     ///     the caller's to unlink — the store owns the accounts file and nothing else on disk.
     /// </summary>
-    /// <returns>What went, or <c>null</c> when there is no such account.</returns>
-    public DeletedAccount? AdminDeleteUser(string username)
+    /// <returns>What went, or neither when there is no such account.</returns>
+    public (DeletedAccount? deleted, string? error) AdminDeleteUser(string username)
     {
         lock (_gate)
         {
-            if (!_users.TryGetValue(User.Normalize(username), out var user)) return null;
+            if (!_users.TryGetValue(User.Normalize(username), out var user)) return (null, null);
+            if (user.Role is not null) return (null, StaffFixed);
 
             var (covers, deleted) = DeleteLocked(user);
-            return new DeletedAccount(user.Id, covers, deleted);
+            return (new DeletedAccount(user.Id, covers, deleted), null);
         }
     }
 
@@ -930,9 +1113,12 @@ public sealed class DomStore
 
             return new
             {
+                // the panel tells the Owner an unclaimed key is lying around
+                adminKeyOutstanding = KeyWaiting,
                 users = _users.Values.Select(user => new
                 {
                     username = user.Username,
+                    role = user.Role,
                     createdUtc = user.CreatedUtc,
                     activeTokens = user.Tokens.Count(token => token.ExpiresUtc > now),
                     friends = user.Friends.Count,

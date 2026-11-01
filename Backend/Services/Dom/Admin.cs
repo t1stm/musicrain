@@ -29,13 +29,17 @@ internal static class Admin
 
         admin.MapPost("/sign-out-user", (string username) =>
         {
-            var (ok, revoked) = store.AdminSignOut(username);
-            return ok ? Results.Ok(new { revoked }) : Results.NotFound();
+            var (ok, revoked, error) = store.AdminSignOut(username);
+            return ok ? Results.Ok(new { revoked })
+                : error is null ? Results.NotFound()
+                : Results.BadRequest(new { error });
         });
 
         admin.MapPost("/delete-user", async (string username) =>
         {
-            if (store.AdminDeleteUser(username) is not { } deleted) return Results.NotFound();
+            var (deleted, error) = store.AdminDeleteUser(username);
+            if (error is not null) return Results.BadRequest(new { error });
+            if (deleted is null) return Results.NotFound();
 
             await cleanup.AfterDeleteAsync(deleted.Id, deleted.Covers);
             return Results.Ok(new { deletedPlaylists = deleted.Playlists });

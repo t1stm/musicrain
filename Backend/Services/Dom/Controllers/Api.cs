@@ -38,9 +38,9 @@ internal static class Api
     {
         Failure.NotFound => new NotFoundResult(),
         Failure.Unauthorized => Error(401, refusal),
-        Failure.InvalidCredentials or Failure.Forbidden => Error(403, refusal),
-        Failure.UsernameTaken or Failure.Stale => Error(409, refusal),
-        Failure.InvalidCode => Error(404, refusal),
+        Failure.InvalidCredentials or Failure.Forbidden or Failure.InvalidKey => Error(403, refusal),
+        Failure.UsernameTaken or Failure.Stale or Failure.AlreadyStaff or Failure.OwnerFixed => Error(409, refusal),
+        Failure.InvalidCode or Failure.NotStaff or Failure.NoSuchAccount => Error(404, refusal),
         _ => Error(400, refusal)
     };
 

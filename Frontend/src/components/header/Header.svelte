@@ -1,7 +1,17 @@
 <script lang="ts">
-	import { Beaker, Cloud, FolderOpen, Icon, MagnifyingGlass, RectangleStack, User } from 'svelte-hero-icons';
+	import {
+		Beaker,
+		Cloud,
+		FolderOpen,
+		Icon,
+		MagnifyingGlass,
+		RectangleStack,
+		ShieldCheck,
+		User
+	} from 'svelte-hero-icons';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
+	import account from '$states/account.svelte';
 	import user from '$states/user.svelte';
 
 	// The queue/chat sheet is a modal on a phone, and it would sit over the settings page
@@ -11,6 +21,7 @@
 	const isAlpha = true;
 	let searchTerm = $derived(page.url.searchParams.get('term') ?? '');
 	let inSettings = $derived(page.url.pathname.startsWith('/settings'));
+	let inAdmin = $derived(page.url.pathname.startsWith('/admin'));
 </script>
 
 <header
@@ -79,6 +90,20 @@
 			</button>
 		</form>
 
+		<div class="flex shrink-0 items-center gap-2">
+		<!-- Only for staff, and only once /Me has said so: a role is never remembered on the device. -->
+		{#if account.staff}
+			<a
+				href={resolve('/admin')}
+				aria-label="Admin"
+				aria-current={inAdmin ? 'page' : undefined}
+				class="flex size-9 shrink-0 items-center justify-center rounded-row border border-haze text-fog outline-none hover:border-primary-0 hover:text-primary-500 focus-visible:ring-2 focus-visible:ring-primary-500 sm:size-10"
+				class:border-primary-0={inAdmin}
+				class:text-primary-500={inAdmin}
+			>
+				<Icon src={ShieldCheck} micro size="20" />
+			</a>
+		{/if}
 		<a
 			href={resolve('/settings')}
 			aria-label="Settings"
@@ -100,5 +125,6 @@
 				<Icon src={User} micro size="24" color="white" />
 			{/if}
 		</a>
+		</div>
 	</div>
 </header>

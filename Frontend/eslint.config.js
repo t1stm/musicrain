@@ -49,7 +49,8 @@ export default ts.config(
 	{
 		// resolve() types accept a route, not a query string, so search, artist,
 		// room, playlist and friend-code links resolve the route and append their own
-		// query. The account page follows a `next` path built that way.
+		// query. The account page follows a `next` path built that way, and StaffGate
+		// sends a signed-out visitor there with one.
 		files: [
 			'src/routes/(app)/+page.svelte',
 			'src/routes/(app)/+layout.svelte',
@@ -62,7 +63,8 @@ export default ts.config(
 			'src/components/queue/Queue.svelte',
 			'src/components/friends/AcceptGate.svelte',
 			'src/routes/(app)/settings/friends/+page.svelte',
-			'src/routes/(app)/settings/account/+page.svelte'
+			'src/routes/(app)/settings/account/+page.svelte',
+			'src/components/staff/StaffGate.svelte'
 		],
 		rules: {
 			'svelte/no-navigation-without-resolve': 'off'

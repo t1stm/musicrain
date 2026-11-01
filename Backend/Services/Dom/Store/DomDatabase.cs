@@ -31,7 +31,11 @@ internal sealed class DomDatabase(string path, ILogger log)
     ///     Every account and playlist, bringing the file up to date first — importing the <c>dom.json</c> at
     ///     <paramref name="legacy" /> if this is the first start with no database.
     /// </summary>
-    public (IEnumerable<User> Users, IEnumerable<Playlist> Playlists) Load(string legacy)
+    /// <returns>
+    ///     The accounts and playlists, and whether this boot brought the database to version 3: the first
+    ///     launch, which issues the first administrator key (see <see cref="DomStore" />).
+    /// </returns>
+    public (IEnumerable<User> Users, IEnumerable<Playlist> Playlists, bool Staffed) Load(string legacy)
     {
         using var db = Database.Open(_connectionString);
         // 1: the tables exist and dom.json is imported.
@@ -56,8 +60,25 @@ internal sealed class DomDatabase(string path, ILogger log)
             db.Execute("CREATE UNIQUE INDEX users_by_id ON users (Id)", transaction: transaction);
         });
 
+        // 3: staff. Two nullable columns on users. A database made since has them from Schema, CHECK and
+        // all; ALTER TABLE cannot add the CHECK to an older one, and the store validates every write anyway.
+        // The step running at all is the record that the first administrator key is due: PRAGMA
+        // user_version already says whether it ever ran, so no marker table is needed.
+        var staffed = Database.Upgrade(db, 3, transaction =>
+        {
+            var columns = db.Query<string>("SELECT name FROM pragma_table_info('users')", transaction: transaction)
+                .ToList();
+            if (!columns.Contains("Role")) db.Execute("ALTER TABLE users ADD COLUMN Role TEXT", transaction: transaction);
+            if (!columns.Contains("Permissions"))
+                db.Execute("ALTER TABLE users ADD COLUMN Permissions TEXT", transaction: transaction);
+        });
+
         var users = db.Query<User>(
-                "SELECT Id, Username, Salt, Hash, Iterations, CreatedUtc, Settings, SettingsUpdatedUtc FROM users")
+                """
+                SELECT Id, Username, Salt, Hash, Iterations, CreatedUtc, Settings, SettingsUpdatedUtc, Role,
+                       Permissions AS PermissionsColumn
+                FROM users
+                """)
             .ToDictionary(user => user.Key, StringComparer.Ordinal);
         foreach (var row in db.Query<TokenRow>(
                      "SELECT UserKey, Value, IssuedUtc, ExpiresUtc FROM tokens ORDER BY rowid"))
@@ -83,7 +104,7 @@ internal sealed class DomDatabase(string path, ILogger log)
         _log.Information("Loaded {Users} account(s) and {Playlists} playlist(s) from {Path}",
             users.Count, playlists.Count, db.DataSource);
 
-        return (users.Values, playlists.Values);
+        return (users.Values, playlists.Values, staffed);
     }
 
     /// <summary>
@@ -128,6 +149,8 @@ internal sealed class DomDatabase(string path, ILogger log)
     /// <summary>
     ///     Each account and playlist is deleted and inserted again rather than diffed: the delete cascades
     ///     to its tokens, friends, collaborators and tracks, so the rows always match the object exactly.
+    ///     It also means a column this does not list is wiped on the account's next save — which is what an
+    ///     image older than version 3 does to <c>Role</c> and <c>Permissions</c>.
     /// </summary>
     private static void Write(IDbConnection db, IDbTransaction transaction, IEnumerable<User> users,
         IEnumerable<Playlist> playlists, IEnumerable<string> goneUsers, IEnumerable<string> gonePlaylists)
@@ -139,8 +162,10 @@ internal sealed class DomDatabase(string path, ILogger log)
         {
             db.Execute("DELETE FROM users WHERE Key = @Key", new { user.Key }, transaction);
             db.Execute("""
-                INSERT INTO users (Key, Id, Username, Salt, Hash, Iterations, CreatedUtc, Settings, SettingsUpdatedUtc)
-                VALUES (@Key, @Id, @Username, @Salt, @Hash, @Iterations, @CreatedUtc, @Settings, @SettingsUpdatedUtc)
+                INSERT INTO users (Key, Id, Username, Salt, Hash, Iterations, CreatedUtc, Settings, SettingsUpdatedUtc,
+                                   Role, Permissions)
+                VALUES (@Key, @Id, @Username, @Salt, @Hash, @Iterations, @CreatedUtc, @Settings, @SettingsUpdatedUtc,
+                        @Role, @PermissionsColumn)
                 """, user, transaction);
             db.Execute("""
                 INSERT INTO tokens (Value, UserKey, IssuedUtc, ExpiresUtc)
@@ -208,7 +233,9 @@ internal sealed class DomDatabase(string path, ILogger log)
             Iterations INTEGER NOT NULL,
             CreatedUtc TEXT NOT NULL,
             Settings TEXT,
-            SettingsUpdatedUtc TEXT
+            SettingsUpdatedUtc TEXT,
+            Role TEXT CHECK (Role IN ('admin', 'owner')),
+            Permissions TEXT
         ) STRICT;
 
         CREATE TABLE IF NOT EXISTS tokens (

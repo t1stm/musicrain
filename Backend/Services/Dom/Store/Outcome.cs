@@ -14,7 +14,13 @@ public enum Failure
     Stale,
     NotAFriend,
     InvalidCode,
-    OwnCode
+    OwnCode,
+    AlreadyStaff,
+    InvalidKey,
+    OwnerFixed,
+    UnknownPermission,
+    NotStaff,
+    NoSuchAccount
 }
 
 /// <summary>A refusal, and the sentence the client shows for it.</summary>
@@ -33,6 +39,12 @@ public sealed record Refusal(Failure Failure, string Message)
         Failure.NotAFriend => "not_a_friend",
         Failure.InvalidCode => "invalid_code",
         Failure.OwnCode => "own_code",
+        Failure.AlreadyStaff => "already_staff",
+        Failure.InvalidKey => "invalid_key",
+        Failure.OwnerFixed => "owner_fixed",
+        Failure.UnknownPermission => "unknown_permission",
+        Failure.NotStaff => "not_staff",
+        Failure.NoSuchAccount => "no_such_account",
         _ => throw new ArgumentOutOfRangeException(nameof(Failure), Failure, null)
     };
 }
@@ -66,3 +78,6 @@ public sealed record Friendship(string Friend, bool AlreadyFriends);
 
 /// <summary>An account an operator deleted: its stable ID, the covers left behind, and how many playlists went.</summary>
 public sealed record DeletedAccount(string Id, List<string> Covers, int Playlists);
+
+/// <summary>One staff account as the Owner's Staff page lists it. <c>Permissions</c> is the effective set.</summary>
+public sealed record StaffMember(string Username, string Role, string[] Permissions);

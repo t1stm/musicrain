@@ -68,6 +68,7 @@ Every host-specific value and every secret lives in `.env` beside [compose.yaml]
 | `PUBLIC_API_BASE_URL` | `http://localhost:5340` | What the API hands out as `contentUrl`. |
 | `ADMIN_TOKEN` | *(unset)* | The shared secret Oko authenticates with. Unset, every `/Admin/*` route answers 404. |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | *(unset)* | Oko's own Basic auth. |
+| `DOM_NEW_ADMIN_KEY` | `false` | Issue a new administrator key at Dom's next boot if none is waiting. Unset it once the key is claimed: every restart while it is `true` issues another. |
 | `MOLIV_PORT` | `5346` | Host port of the listening history, the one nginx's `/Audio/History` proxies to. |
 | `SNIMKA_PORT` | `5347` | Host port of the image service, the one nginx's `/Audio/Cover` proxies to. |
 | `SNIMKA_HOSTS` | YouTube, Deezer, Spotify | The hosts a remote thumbnail may be fetched from, each with its subdomains. |
@@ -84,6 +85,17 @@ Every host-specific value and every secret lives in `.env` beside [compose.yaml]
 
 > [!NOTE]
 > A missing secret disables a surface rather than exposing it. Without `ADMIN_TOKEN` the whole admin surface is 404 and Oko renders every target as down; without `DEEZER_ARL` every Deezer route works except `/content`. Both are what a fresh checkout runs on.
+
+### The administrator key
+
+Dom issues a 64-character administrator key on the first boot of a new or upgraded `dom.db`. Sign in on musicrain and enter it at `/admin`: the first account to use it becomes the owner, who then decides who else is staff. It works once. To find it:
+
+```bash
+docker compose logs dom | grep 'Administrator key'
+docker compose exec dom cat /data/admin.key
+```
+
+The file is gone once the key is used. For another key, or to recover a stack whose owner is gone, set `DOM_NEW_ADMIN_KEY=true`, restart Dom, claim the key, and unset the flag.
 
 ### When a pod dies
 
