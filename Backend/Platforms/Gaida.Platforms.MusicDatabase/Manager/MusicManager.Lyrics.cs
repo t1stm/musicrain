@@ -74,6 +74,14 @@ public partial class MusicManager
         }
     }
 
+    /// <summary>Every song with a file, by the path its .lrc has or would have, for stih's file scan.</summary>
+    public IEnumerable<(string Id, string Path)> LyricsOwners()
+    {
+        foreach (var song in Songs)
+            if (song is { Id: { } id } && song.LyricsPathFor(LyricsKind.Synchronized) is { } path)
+                yield return (id, path);
+    }
+
     /// <summary>Tracks with no lyrics beside them, oldest-checked first, for stih's sweep.</summary>
     /// <param name="take">How many tracks to return at most.</param>
     /// <param name="retryBefore">A miss recorded before this day is offered again; LRCLIB grows.</param>

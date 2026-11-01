@@ -92,9 +92,8 @@ show in the player straight away. stih must be running on this machine, as part 
 compose stack. Lirika reads stih's port and `ADMIN_TOKEN` from `Backend/.env`. Only songs in the music
 library (`library.db`) can be registered.
 
-Without `--register`, Lirika writes the `.lrc` itself. If stih has already looked for that song and
-found nothing, the player may not show the file for up to 30 days (`LYRICS_RETRY_DAYS`), so use
-`--register` for songs people have already played.
+Without `--register`, Lirika writes the `.lrc` itself, and stih picks it up within a minute: it checks
+the library's `.lrc` files for changes and records the ones carrying Lirika's tag as generated.
 
 ## Lyrics studio
 

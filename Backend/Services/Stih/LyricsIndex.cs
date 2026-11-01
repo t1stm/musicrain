@@ -20,8 +20,8 @@ namespace Stih;
 /// </remarks>
 public sealed class LyricsIndex
 {
-    /// <summary><c>PRAGMA user_version</c> once the table exists and <c>Lyrics.json</c> is imported.</summary>
-    private const int SchemaVersion = 1;
+    /// <summary><c>PRAGMA user_version</c> once the table exists, <c>Lyrics.json</c> is imported and rows carry a <c>Modified</c>.</summary>
+    private const int SchemaVersion = 2;
 
     private const string Columns = "Id, Type, Source, Volume, Path, Checked";
 
@@ -44,8 +44,16 @@ public sealed class LyricsIndex
         _connectionString = Database.At(_path);
 
         using var db = Database.Open(_connectionString);
-        Database.Upgrade(db, SchemaVersion,
+        Database.Upgrade(db, 1,
             transaction => Create(db, transaction, Path.Combine(dataDirectory, "Lyrics.json")));
+        // Empty on every existing row, so the first scan after the upgrade reads the whole library once. A
+        // table made by this version already has it: Create names it so the import can go through Upsert.
+        Database.Upgrade(db, SchemaVersion, transaction =>
+        {
+            if (!db.Query<string>("SELECT name FROM pragma_table_info('lyrics')", transaction: transaction)
+                    .Contains("Modified"))
+                db.Execute("ALTER TABLE lyrics ADD COLUMN Modified INTEGER", transaction: transaction);
+        });
     }
 
     public int Count
@@ -73,10 +81,29 @@ public sealed class LyricsIndex
     }
 
     /// <summary>Records one answer. Rows are only ever written after a real answer — never after a timeout.</summary>
-    public void Record(LyricsRow row)
+    /// <param name="row">The answer.</param>
+    /// <param name="modified">
+    ///     The file's mtime in ticks, when the scan read it. Anything else records <c>null</c>, which the next
+    ///     scan reads as "not seen yet" and records again.
+    /// </param>
+    public void Record(LyricsRow row, long? modified = null)
     {
         using var db = Database.Open(_connectionString);
-        Upsert(db, [row]);
+        Upsert(db, [row], modified);
+    }
+
+    /// <summary>The mtime the scan last recorded for each library <c>.lrc</c>, by its path inside the library.</summary>
+    public Dictionary<string, long> Seen()
+    {
+        using var db = Database.Open(_connectionString);
+        var seen = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var (path, modified) in db.Query<(string, long)>("""
+                     SELECT Path, Modified FROM lyrics
+                     WHERE Volume = 'Library' AND Type = 'Synchronized' AND Modified IS NOT NULL
+                     """))
+            seen[path] = modified;
+
+        return seen;
     }
 
     /// <summary>Forgets one track, for a row whose file has gone.</summary>
@@ -124,9 +151,13 @@ public sealed class LyricsIndex
     ///     Enums go in by name, so the table reads in the sqlite3 shell the way the JSON did, and so
     ///     reordering an enum cannot silently relabel every row.
     /// </summary>
-    private static void Upsert(IDbConnection db, IEnumerable<LyricsRow> rows, IDbTransaction? transaction = null)
+    private static void Upsert(IDbConnection db, IEnumerable<LyricsRow> rows, long? modified = null,
+        IDbTransaction? transaction = null)
     {
-        db.Execute($"INSERT OR REPLACE INTO lyrics ({Columns}) VALUES (@Id, @Type, @Source, @Volume, @Path, @Checked)",
+        db.Execute($"""
+            INSERT OR REPLACE INTO lyrics ({Columns}, Modified)
+            VALUES (@Id, @Type, @Source, @Volume, @Path, @Checked, @Modified)
+            """,
             rows.Select(row => new
             {
                 row.Id,
@@ -134,7 +165,8 @@ public sealed class LyricsIndex
                 Source = row.Source?.ToString(),
                 Volume = row.Volume?.ToString(),
                 row.Path,
-                row.Checked
+                row.Checked,
+                Modified = modified
             }), transaction);
     }
 
@@ -151,7 +183,8 @@ public sealed class LyricsIndex
                 Source TEXT,
                 Volume TEXT,
                 Path TEXT,
-                Checked TEXT NOT NULL
+                Checked TEXT NOT NULL,
+                Modified INTEGER
             ) STRICT
             """, transaction: transaction);
 
@@ -170,7 +203,7 @@ public sealed class LyricsIndex
             return;
         }
 
-        Upsert(db, rows.Where(row => !string.IsNullOrWhiteSpace(row.Id)), transaction);
+        Upsert(db, rows.Where(row => !string.IsNullOrWhiteSpace(row.Id)), transaction: transaction);
         _logger.Information("Imported {Count} lyrics rows from {Path}", rows.Count, legacy);
     }
 

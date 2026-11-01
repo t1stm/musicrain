@@ -104,6 +104,10 @@ public sealed record MissingLyricsDto(
     string? Duration,
     string? RelativeLocation);
 
+/// <summary>One row of gaida-local's <c>/lyrics/owners</c>: the song an <c>.lrc</c> at this library path belongs to.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
+public sealed record LyricsOwnerDto(string Id, string Path);
+
 /// <summary>
 ///     What a track is, however it was learned — from a pod's <c>/resolve</c> or from a sweep page.
 /// </summary>

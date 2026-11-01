@@ -45,6 +45,7 @@ A library track's words go **into the library** because that is what makes them 
 - **The library's own matching rules, reused rather than reinvented.** [Matching.cs](Matching.cs) normalizes both sides with the same `TitleNormalizer` and `LevenshteinDistance` the library's matcher uses, weights title against artist 0.65/0.35, and requires the same 0.80. What it does not have is the library's weak band: a wrong song you can skip, but wrong words scrolling in time with the music is the one failure a listener cannot ignore.
 - **A ±1 second length gate.** The rule that throws out the live version sharing a title. LRCLIB reports whole seconds, so it is a gate on rounding rather than on performance length.
 - **A path fence around the one dangerous write.** Writing into someone's music library is the only thing here that could do real damage, so the relative path a pod hands back is rejected unless the resolved absolute path is still inside `MUSIC_LIBRARY`, and the extension is one of the two. A pod that starts answering with `../../etc/passwd` gets a log line and nothing else.
+- **A scan that only reads what changed.** [Scan.cs](Scan.cs) walks the library for `.lrc` files once a minute and records again every one whose mtime differs from the one on its row, so a file Lirika or a person put there shows up without waiting out a remembered miss. A file carrying Lirika's `[re:musicrain/Lirika]` tag is recorded as `Generated`; an edit of the file a row already names keeps its source. gaida-local's `/lyrics/owners` turns a path into an ID, fetched only on a run that found something. Rows written any other way carry no mtime, so the first run after an upgrade reads the whole library once.
 - **A sweep with no resume marker.** `gaida-local`'s index and `Lyrics.db` are the progress. A pod restarted mid-sweep asks `gaida-local` for a page of tracks with no lyrics beside them and gets the ones it had not reached — there is no cursor to corrupt, and the work list costs one request per two hundred tracks.
 
 ## Project structure
@@ -59,6 +60,7 @@ A library track's words go **into the library** because that is what makes them 
 ├── LrcParser.cs     — LRC text → lines. Pure
 ├── Tracks.cs        — ID → what the track is, by asking the owning pod
 ├── Sweep.cs         — the backfill
+├── Scan.cs          — .lrc files changed in the library, by mtime
 ├── Dtos.cs          — the wire shapes, in and out
 ├── Admin.cs, SelfCheck.cs
 ```

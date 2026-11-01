@@ -147,6 +147,11 @@ app.MapPost("/lyrics/stamp", async Task<IResult> (string? id, string? type, stri
             entry.LyricsSource?.ToString(), entry.LyricsChecked?.ToString("O", CultureInfo.InvariantCulture)));
 });
 
+// stih's file scan finds an .lrc by its path and needs the ID it belongs to. Every song in one answer,
+// because the scan only asks on a run that found a changed file.
+app.MapGet("/lyrics/owners", IResult (MusicDatabase db) => Results.Ok(db.Library.LyricsOwners()
+    .Select(owner => new LyricsOwnerDto(MusicResult.Prefix + owner.Id, owner.Path))));
+
 // The routes hand back the sequence itself: ASP.NET serialises an IAsyncEnumerable element by element and
 // flushes as it goes. Everything here is already in memory, so what it buys is the client rendering while
 // a 200-track roll or a prolific artist is still being written, rather than after the last byte.

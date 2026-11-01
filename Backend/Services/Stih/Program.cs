@@ -40,6 +40,7 @@ builder.Services.AddSingleton<Lyrics>();
 
 builder.Services.AddSingleton<Sweep>();
 builder.Services.AddHostedService(services => services.GetRequiredService<Sweep>());
+builder.Services.AddHostedService<Scan>();
 
 var app = builder.Build();
 

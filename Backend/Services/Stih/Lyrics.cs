@@ -156,7 +156,7 @@ public sealed class Lyrics(
     public async Task RecordMissAsync(Track track, CancellationToken ct = default)
     {
         index.Record(new LyricsRow(track.Id, null, null, null, null, DateTimeOffset.UtcNow));
-        await StampAsync(track, null, null, ct);
+        await StampAsync(track.Id, null, null, ct);
     }
 
     /// <summary>Writes one track's words where they belong and records the row. The sweep shares this.</summary>
@@ -185,7 +185,7 @@ public sealed class Lyrics(
             _logger.Debug("Leaving the existing lyrics file for {ID} alone", track.Id);
 
         index.Record(new LyricsRow(track.Id, kind, source, volume, relative, DateTimeOffset.UtcNow));
-        await StampAsync(track, kind, source, ct);
+        await StampAsync(track.Id, kind, source, ct);
     }
 
     /// <summary>
@@ -195,12 +195,12 @@ public sealed class Lyrics(
     ///     A failed stamp is logged and otherwise ignored: the file is on disk, and gaida-local's next
     ///     scan reconciles the entry from it anyway. Only <c>audio://</c> tracks are in that index at all.
     /// </remarks>
-    private async Task StampAsync(Track track, LyricsKind? kind, LyricsOrigin? source, CancellationToken ct)
+    public async Task StampAsync(string id, LyricsKind? kind, LyricsOrigin? source, CancellationToken ct)
     {
-        if (!track.Id.StartsWith(Tracks.LocalPrefix, StringComparison.OrdinalIgnoreCase)) return;
-        if (tracks.OwnerOf(track.Id) is not { } url) return;
+        if (!id.StartsWith(Tracks.LocalPrefix, StringComparison.OrdinalIgnoreCase)) return;
+        if (tracks.OwnerOf(id) is not { } url) return;
 
-        var query = $"?id={Uri.EscapeDataString(track.Id)}";
+        var query = $"?id={Uri.EscapeDataString(id)}";
         if (kind is not null) query += $"&type={kind}";
         if (source is not null) query += $"&source={source}";
 
@@ -209,11 +209,11 @@ public sealed class Lyrics(
             var http = factory.CreateClient("pods");
             using var response = await http.PostAsync($"{url}/lyrics/stamp{query}", null, ct);
             if (!response.IsSuccessStatusCode)
-                _logger.Debug("gaida-local refused the stamp for {ID}: {Status}", track.Id, response.StatusCode);
+                _logger.Debug("gaida-local refused the stamp for {ID}: {Status}", id, response.StatusCode);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
-            _logger.Warning(e, "Stamping {ID} on gaida-local failed", track.Id);
+            _logger.Warning(e, "Stamping {ID} on gaida-local failed", id);
         }
     }
 

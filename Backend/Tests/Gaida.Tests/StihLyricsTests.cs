@@ -81,6 +81,39 @@ public class StihLyricsTests : IDisposable
         Assert.Equal(("Synchronized", "Generated"), (served?.Type, served?.Source));
     }
 
+    [Fact]
+    public async Task TheScanRecordsAChangedFileOverAMissAndOnlyOnce()
+    {
+        const string id = "audio://sonne";
+        var pods = new StubHandler(request => Task.FromResult(StubHandler.Reply(HttpStatusCode.OK,
+            request.RequestUri!.AbsolutePath == "/lyrics/owners"
+                ? """[{"id":"audio://sonne","path":"Rock/Sonne.lrc"}]"""
+                : "{}")));
+        var options = Microsoft.Extensions.Options.Options.Create(new StihOptions
+        {
+            LocalUrl = "http://local.test",
+            MusicLibrary = Path.Combine(_directory, "music"),
+            LyricsData = Path.Combine(_directory, "data")
+        });
+        var index = new LyricsIndex(options.Value.LyricsData, Quiet);
+        var lyrics = new Lyrics(index, new LrcLib(new StubFactory(pods), options, Quiet),
+            new Tracks(new StubFactory(pods), options, Quiet), new StubFactory(pods), options, Quiet);
+        var scan = new Scan(lyrics, index, new StubFactory(pods), options, Quiet);
+
+        index.Record(new LyricsRow(id, null, null, null, null, DateTimeOffset.UtcNow));
+        var file = Path.Combine(options.Value.MusicLibrary, "Rock", "Sonne.lrc");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        await File.WriteAllTextAsync(file, "[re:musicrain/Lirika]\n[00:01.00]w");
+        await File.WriteAllTextAsync(Path.Combine(options.Value.MusicLibrary, "Rock", "Orphan.lrc"), "[00:01.00]w");
+
+        Assert.Equal(1, await scan.RunAsync());
+        Assert.Equal(("Synchronized", "Generated"), ((await lyrics.GetAsync(id))?.Type, (await lyrics.GetAsync(id))?.Source));
+        Assert.Equal(0, await scan.RunAsync());
+
+        File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(1));
+        Assert.Equal(1, await scan.RunAsync());
+    }
+
     private (Lyrics Lyrics, StubHandler LrcLib) Build(Task release)
     {
         var pods = new StubHandler(_ => Task.FromResult(StubHandler.Reply(HttpStatusCode.OK,

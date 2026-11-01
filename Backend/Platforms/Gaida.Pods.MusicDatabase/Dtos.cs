@@ -33,6 +33,10 @@ public sealed record MissingLyricsDto(
     string Duration,
     string? RelativeLocation);
 
+/// <summary>The song an .lrc at this library path belongs to, for stih's file scan.</summary>
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
+public sealed record LyricsOwnerDto(string Id, string Path);
+
 /// <summary>What one track's lyrics state became, after a stamp.</summary>
 [UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record LyricsRowDto(string Id, string? Type, string? Source, string? Checked);

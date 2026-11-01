@@ -44,6 +44,7 @@ Two routes serve `stih`, plus one field on an existing one:
 | Route | What it answers |
 | --- | --- |
 | `GET /lyrics/missing?take=200&retryDays=30` | Tracks with no lyrics beside them, oldest-checked first. The names are the untransliterated tags — LRCLIB holds tracks under the names they were released with. |
+| `GET /lyrics/owners` | Every song with a file, as `{id, path}` where `path` is where its `.lrc` sits or would sit. `stih`'s file scan maps the files it finds back to IDs with it. |
 | `POST /lyrics/stamp?id=&type=&source=` | Records what `stih` wrote, or, with `type` omitted, that it found nothing. It writes no lyrics file. |
 | `GET /resolve?id=` | Also returns `relativeLocation`, `lyricsType` and `lyricsSource`, so `stih` learns where to write in the same call that tells it the track's name and length. |
 
