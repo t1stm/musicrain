@@ -115,11 +115,26 @@ cd Frontend && npm run dev             # then open http://localhost:5173/studio
    - `Alt+Enter` sets the line under the cursor to the playhead.
    - `Alt+↑` and `Alt+↓` move it by 0.1 s.
    - Flagged lines are listed under the box. Click one to jump to it.
+   - **Listen to** plays a stem in the song's place, in step with the player: the lead vocal, which
+     decides where Whisper transcribes, or all voices, which the words are timed on. A song has stems
+     once Regenerate has separated it.
+   - The bar at the bottom shows the line at the playhead. Click it to play from that line. On a
+     narrow screen the source text and the LRC take turns, and the bar holds the timing buttons.
 4. **Save** writes `~/.cache/lirika/edited/<song>.lrc`, with the text beside it as `<song>.txt`. If
    you changed the lines since Lirika wrote them, it sets `[#:edited:yes]`.
 
 The studio exists in development builds only. A production build of the frontend leaves it
 out. `studio.py` listens on 127.0.0.1 only and answers only pages served from `localhost`.
+
+To use the studio from a phone, name your home network in `LIRIKA_STUDIO_LAN`:
+
+```bash
+LIRIKA_STUDIO_LAN=10.5.3.0/24 uv run studio.py
+```
+
+`studio.py` then listens on every interface, but answers only this machine and addresses on that
+network. Anyone else gets 403. On the phone, open the dev server's LAN address, such as
+`http://10.5.3.24:5173/studio`. The firewall must let ports 5173 and 8765 in from that network.
 
 The studio unloads the models after 5 minutes without a Regenerate, which frees the GPU memory. The
 next Regenerate takes 15–25 s longer while they load. Set `LIRIKA_STUDIO_IDLE` to a number of seconds to

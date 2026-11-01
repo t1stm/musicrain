@@ -222,13 +222,18 @@ class Models:
         return self._aligners[self.aligner_name]
 
 
+def stem_file(song: Path, model: str = SEPARATOR) -> Path:
+    """Where a model's vocal stem of `song` is cached, whether or not it has been separated yet."""
+    return CACHE / fingerprint(song) / f"{'lead' if model == SEPARATOR else 'vocals'}.{model}.flac"
+
+
 def stem(song: Path, models: Models, model: str = SEPARATOR, keep: bool = False) -> Path:
     """A model's vocal stem: separated once per file content and model, and cached from then on."""
-    directory = CACHE / fingerprint(song)
-    voice = directory / f"{'lead' if model == SEPARATOR else 'vocals'}.{model}.flac"
+    voice = stem_file(song, model)
     if voice.exists():
         return voice
 
+    directory = voice.parent
     directory.mkdir(parents=True, exist_ok=True)
     mix = directory / "mix.wav"
     if not mix.exists():
