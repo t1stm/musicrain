@@ -2,18 +2,23 @@ using System.Net.Http.Headers;
 using System.Net.ServerSentEvents;
 using System.Text.Json;
 using System.Threading.Channels;
+using Gaida.Admin;
 using JetBrains.Annotations;
 using Microsoft.Extensions.Options;
 using ILogger = Serilog.ILogger;
 
 namespace Oko;
 
-/// <summary>One service Oko watches. Name is what the panel shows; Url is where it lives.</summary>
+/// <summary>
+///     One service Oko watches. Name is what the panel shows; Url is where it lives; Permission is what an
+///     admin needs to act on it, one of <see cref="Staff.Permissions" />. Without one, only the owner may.
+/// </summary>
 [UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record Target
 {
     public required string Name { get; set; }
     public required string Url { get; set; }
+    public string? Permission { get; set; }
 }
 
 /// <summary>
@@ -29,9 +34,6 @@ public sealed class Fleet(IHttpClientFactory factory, IOptions<OkoOptions> optio
 {
     /// <summary>How long a target has to answer a snapshot before it is rendered as down.</summary>
     private static readonly TimeSpan SnapshotTimeout = TimeSpan.FromSeconds(5);
-
-    /// <summary><c>AdminApi.TokenHeader</c>. Oko does not reference Gaida.Admin, so it keeps its own copy.</summary>
-    private const string TokenHeader = "X-Admin-Token";
 
     private readonly string _token = options.Value.AdminToken ?? "";
 
@@ -52,13 +54,13 @@ public sealed class Fleet(IHttpClientFactory factory, IOptions<OkoOptions> optio
                 timeout.CancelAfter(SnapshotTimeout);
 
                 var snapshot = await GetJsonAsync(target, "/Admin/snapshot", timeout.Token);
-                return new ServiceStatus(target.Name, target.Url, true, snapshot, null);
+                return new ServiceStatus(target.Name, target.Url, target.Permission, true, snapshot, null);
             }
             catch (Exception exception) when (exception is not OperationCanceledException ||
                                               !cancellationToken.IsCancellationRequested)
             {
                 log.Debug(exception, "Snapshot failed for {Target}", target.Name);
-                return new ServiceStatus(target.Name, target.Url, false, null, Describe(exception));
+                return new ServiceStatus(target.Name, target.Url, target.Permission, false, null, Describe(exception));
             }
         }));
 
@@ -196,7 +198,7 @@ public sealed class Fleet(IHttpClientFactory factory, IOptions<OkoOptions> optio
         }
     }
 
-    private Target? Find(string name)
+    public Target? Find(string name)
     {
         return Targets.FirstOrDefault(candidate =>
             string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase));
@@ -215,7 +217,7 @@ public sealed class Fleet(IHttpClientFactory factory, IOptions<OkoOptions> optio
     private HttpRequestMessage Request(Target target, string path)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, target.Url.TrimEnd('/') + path);
-        request.Headers.Add(TokenHeader, _token);
+        request.Headers.Add(AdminApi.TokenHeader, _token);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return request;
     }
@@ -252,7 +254,8 @@ public sealed record FleetSnapshot(DateTimeOffset At, ServiceStatus[] Services);
 ///     renders nothing.
 /// </remarks>
 [UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
-public sealed record ServiceStatus(string Name, string Url, bool Up, JsonElement? Snapshot, string? Error);
+public sealed record ServiceStatus(string Name, string Url, string? Permission, bool Up, JsonElement? Snapshot,
+    string? Error);
 
 /// <summary>One line of the merged feed: which service it came from, and what it said.</summary>
 [UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]

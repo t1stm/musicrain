@@ -204,6 +204,45 @@ def test_the_machine_files_differ_only_in_torchs_runtime():
     assert len({common(path) for path in files}) == 1, [path.name for path in files]
 
 
+def test_gate():
+    """studio.who() against a stand-in Dom: only staff with `studio` get through, and no header never asks Dom."""
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    import studio
+
+    answers = {"listener": {"role": None, "permissions": []}, "admin": {"role": "admin", "permissions": ["caches"]},
+               "studio": {"role": "admin", "permissions": ["studio"]}}
+    asked = []
+
+    class Dom(BaseHTTPRequestHandler):
+        def do_GET(self):
+            asked.append(self.path)
+            me = answers.get(self.headers.get("Authorization", "").removeprefix("Bearer "))
+            self.send_response(200 if me else 401)
+            self.end_headers()
+            if me:
+                self.wfile.write(json.dumps({"id": "1", "username": "u", **me}).encode())
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Dom)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    studio.DOM = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        status = lambda token: (studio.who({"Authorization": f"Bearer {token}"}) or (200,))[0]
+        assert [status(token) for token in ("expired", "listener", "admin", "studio")] == [401, 403, 403, 200]
+        assert asked == ["/Audio/Accounts/Me"] * 4
+        assert studio.who({})[0] == 401 and studio.who({"Authorization": "Basic a3JpczpwYXNz"})[0] == 401
+        assert len(asked) == 4, "a request with no bearer token must not reach Dom"
+    finally:
+        server.shutdown()
+    studio.DOM = "http://127.0.0.1:9"  # nothing listens on discard
+    assert studio.who({"Authorization": "Bearer studio"})[0] == 503
+
+
 if __name__ == "__main__":
     tests = [value for name, value in sorted(globals().items()) if name.startswith("test_")]
     for test in tests:

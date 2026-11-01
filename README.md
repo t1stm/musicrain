@@ -76,6 +76,8 @@ Host-specific values and secrets live in `Backend/.env`, which compose reads on 
 │   │   └── state/
 │   ├── static/
 │   └── tools/
+├── Tools/
+│   └── Lirika/
 └── Backend/
     ├── data/
     │   ├── deezer-audio/
@@ -114,7 +116,9 @@ Host-specific values and secrets live in `Backend/.env`, which compose reads on 
 
 [Backend/Platforms](Backend/Platforms) holds the pods. A `Gaida.Platforms.*` project is library code — search providers and content getters against one service. A `Gaida.Pods.*` project is the container that wraps one of them in HTTP, or, for Spotify and Deezer, a standalone Python app. Each has its own README.
 
-[Backend/Services](Backend/Services) holds everything that is not a pod, named in Bulgarian: **Gaida.API** is the public front door and the transcoder, **Dunav** the fan-out download cache, **Selo** the room server, **Dom** accounts and playlists, **Moliv** the listening history, **Stih** the lyrics, **Snimka** every track image, **Oko** the admin panel, and **Gaida.Bot** a Discord bot on the same library.
+[Backend/Services](Backend/Services) holds everything that is not a pod, named in Bulgarian: **Gaida.API** is the public front door and the transcoder, **Dunav** the fan-out download cache, **Selo** the room server, **Dom** accounts and playlists, **Moliv** the listening history, **Stih** the lyrics, **Snimka** every track image, **Oko** the staff gateway behind musicrain's `/admin`, and **Gaida.Bot** a Discord bot on the same library.
+
+[Tools](Tools) holds what runs beside the stack rather than in it. **Lirika** makes line-synced lyrics from the audio: a command line on the host, and the back end of musicrain's `/studio`, which runs as the `lirika` pod.
 
 [Backend/data](Backend/data) is where the compose defaults mount their volumes — the music library and the YouTube and Deezer audio caches. All of it is gitignored, and none of it is served by nginx directly. Album art lives in Snimka's own volume and reaches the browser through `/Audio/Cover/Get`.
 

@@ -17,7 +17,8 @@ The frontend-facing contract is in [API.md](API.md), the room protocol in [MULTI
 | [Moliv](Services/Moliv) | Listening history: every play on every device, as track IDs and how they were heard. Asks Dom who a token belongs to; the other volume of real user data. |
 | [Stih](Services/Stih) | Lyrics. The stack's only LRCLIB client: it fetches the words, writes them beside the audio and indexes what it has. |
 | [Snimka](Services/Snimka) | Images. Keeps the library's covers, fetches every other track thumbnail once and keeps that too, and serves both at whatever size a row or a card asks for. |
-| [Oko](Services/Oko) | The admin panel. Reads every other service, holds no state of its own. |
+| [Oko](Services/Oko) | The staff gateway: every service's admin surface, behind musicrain staff accounts at `/Audio/Admin`. Holds no state of its own. Its old Basic-auth page stays on its port until musicrain's `/admin` replaces it. |
+| [Lirika](../Tools/Lirika) | The lyrics studio's back end, for staff with the `studio` permission. Python and torch on the host's GPU; the models load on the first Regenerate and unload when idle. |
 | [Gaida.Bot](Services/Gaida.Bot) | A Discord bot playing from the same library, over HTTP like any other client. Several accounts can play in one guild at once, and Oko watches it like any other service. |
 
 ## Getting started
@@ -34,6 +35,17 @@ The Discord bot is not in that: it needs a token to do anything, so it sits behi
 docker compose --profile bot up -d --build gaida-bot
 ```
 
+The lyrics studio's back end, `lirika`, sits behind the `lirika` profile. `.env.example` turns it on
+(`COMPOSE_PROFILES=lirika`, or `lirika,bot` for both), so a stack set up from it starts the studio with
+everything else. Its image is several GB. To start the core alone, whatever `.env` says:
+
+```bash
+docker compose --profile minimal up -d
+```
+
+`minimal` names no service: any `--profile` replaces `COMPOSE_PROFILES`, so it leaves out every optional
+service.
+
 That is the whole stack on compose's defaults — no credentials, every volume under `data/` — with one exception: Snimka is built on ImageSharp.Web, which will not compile without a [Six Labors license key](https://sixlabors.com/pricing/), so `SIXLABORS_LICENSE_KEY` has to be in `.env` or the shell before its image builds. It reaches the build as a secret and is in no layer of the image. Name services to bring up part of it (`docker compose up gaida-api gaida-local`); the pods are independent of each other, and Gaida.API treats a pod that is not there as one that answered nothing.
 
 | Service | Host port | Bound to |
@@ -45,6 +57,7 @@ That is the whole stack on compose's defaults — no credentials, every volume u
 | Stih | 5345 | `127.0.0.1` |
 | Moliv | 5346 | `127.0.0.1` |
 | Snimka | 5347 | `127.0.0.1` |
+| Lirika | 5348 | `127.0.0.1` |
 | Oko | 5344 | every interface |
 
 The pods themselves publish nothing: they are reachable only from the compose network, by service name.
@@ -67,7 +80,7 @@ Every host-specific value and every secret lives in `.env` beside [compose.yaml]
 | `MUSIC_LIBRARY_PATH` | `./data/music` | The music library, mounted read-write — the scanner keeps its index, `library.db`, at the root. |
 | `PUBLIC_API_BASE_URL` | `http://localhost:5340` | What the API hands out as `contentUrl`. |
 | `ADMIN_TOKEN` | *(unset)* | The shared secret Oko authenticates with. Unset, every `/Admin/*` route answers 404. |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | *(unset)* | Oko's own Basic auth. |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | *(unset)* | Oko's old page's Basic auth. Staff use musicrain's `/admin` instead. |
 | `DOM_NEW_ADMIN_KEY` | `false` | Issue a new administrator key at Dom's next boot if none is waiting. Unset it once the key is claimed: every restart while it is `true` issues another. |
 | `MOLIV_PORT` | `5346` | Host port of the listening history, the one nginx's `/Audio/History` proxies to. |
 | `SNIMKA_PORT` | `5347` | Host port of the image service, the one nginx's `/Audio/Cover` proxies to. |
@@ -82,6 +95,13 @@ Every host-specific value and every secret lives in `.env` beside [compose.yaml]
 | `SERVICE_MEMORY_LIMIT` | `2g` | Memory ceiling every pod runs under, swap included. |
 | `BOT_MEMORY_LIMIT` | `2g` | The bot's own ceiling — the one pod that has run away. |
 | `DUNAV_MEMORY_LIMIT` | `1g` | Dunav's, tighter because its cache is on disk rather than on the heap. |
+| `COMPOSE_PROFILES` | *(unset)*; `lirika` in `.env.example` | Which optional services start: `lirika`, `bot`, or both. |
+| `LIRIKA_PYPROJECT` | `pyproject.cpu.toml` | Which of `Tools/Lirika`'s dependency sets the image is built from: cpu, amd, nvidia, or the host's own `pyproject.toml`. |
+| `LIRIKA_CACHE_PATH` | `./data/lirika-cache` | Models (~6 GB), stems and the studio's saved edits. Back up `lirika/edited/`. |
+| `LIRIKA_IDLE_SECONDS` | `300` | How long after the last Regenerate the models unload, VRAM and RAM with them. |
+| `LIRIKA_MEMORY_LIMIT` | `16g` | Lirika's own ceiling: torch and three models are far past the stack's 2g. |
+| `LIRIKA_PORT` | `5348` | Host port of the studio's back end, the one nginx's `/Audio/Lirika` proxies to. |
+| `RENDER_GID` / `VIDEO_GID` | `989` / `986` | The host's render and video groups, for ROCm in `compose.lirika-amd.yaml`. |
 
 > [!NOTE]
 > A missing secret disables a surface rather than exposing it. Without `ADMIN_TOKEN` the whole admin surface is 404 and Oko renders every target as down; without `DEEZER_ARL` every Deezer route works except `/content`. Both are what a fresh checkout runs on.

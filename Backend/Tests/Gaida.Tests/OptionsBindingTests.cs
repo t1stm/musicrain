@@ -87,12 +87,16 @@ public class OptionsBindingTests
             ["ADMIN_USERNAME"] = "kris",
             ["ADMIN_PASSWORD"] = "hunter2",
             ["ADMIN_TOKEN"] = "secret",
+            ["Dom:Url"] = "http://dom.test",
             ["Targets:0:Name"] = "dunav",
-            ["Targets:0:Url"] = "http://dunav.test"
+            ["Targets:0:Url"] = "http://dunav.test",
+            ["Targets:0:Permission"] = "caches"
         });
 
         Assert.Equal(("kris", "hunter2", "secret"), (options.Username, options.Password, options.AdminToken));
-        Assert.Equal("http://dunav.test", Assert.Single(options.Targets).Url);
+        Assert.Equal("http://dom.test", options.DomUrl);
+        var target = Assert.Single(options.Targets);
+        Assert.Equal(("http://dunav.test", "caches"), (target.Url, target.Permission));
         Assert.Empty(Bind<OkoOptions>(new()).Targets);
     }
 

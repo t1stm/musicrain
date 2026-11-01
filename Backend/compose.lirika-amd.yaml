@@ -1,0 +1,12 @@
+# ROCm inside the lirika container. Add it to the stack with COMPOSE_FILE=compose.yaml:compose.lirika-amd.yaml
+# in .env. It is separate because /dev/kfd does not exist on a machine without an AMD GPU, and compose
+# refuses to start a service whose device is missing.
+services:
+  lirika:
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    # The host's render and video groups, by number: the container has no names for them. `getent group render video`.
+    group_add:
+      - "${RENDER_GID:-989}"
+      - "${VIDEO_GID:-986}"

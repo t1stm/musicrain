@@ -24,7 +24,8 @@ import requests
 from unidecode import unidecode
 
 WEB_CACHE = Path.home() / ".cache/lirika/web"
-BACKEND_ENV = Path(__file__).resolve().parents[2] / "Backend" / ".env"
+# .parent rather than .parents[2]: in the pod this file is /app/sources.py, and the parent of / is /.
+BACKEND_ENV = Path(__file__).resolve().parent.parent.parent / "Backend" / ".env"
 DEFAULT_AGENT = "musicrain/1.0 (+https://github.com/t1stm/musicrain)"
 
 

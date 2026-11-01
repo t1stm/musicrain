@@ -560,4 +560,62 @@ ever call these.** They are the admin panel's contract, not the public one:
   Selo, the cache Dunav holds, and the names and albums in the local library.
 
 The contract lives in `Gaida Library/Gaida.Admin/AdminApi.cs`, and the shape of each service's payload
-in that service's `Admin.cs`.
+in that service's `Admin.cs`. The only caller is Oko, which holds `ADMIN_TOKEN` and answers staff below.
+
+## `/Audio/Admin` — the staff gateway
+
+Oko fans out to every service's `/Admin/*` on behalf of a musicrain staff account. It is what musicrain's
+`/admin` calls, with the caller's own bearer token. Not a listener-facing API.
+
+```
+GET  /Audio/Admin/targets                 Bearer (staff)   200 [{"name":"dunav","permission":"caches"},…]
+GET  /Audio/Admin/snapshot                Bearer (staff)   200 {"at":…,"services":[{"name","url","permission","up","snapshot","error"}]}
+GET  /Audio/Admin/requests/{target}       Bearer (staff)   200 the target's request ring
+GET  /Audio/Admin/read/{target}/{action}  Bearer (staff)   the target's GET /Admin/{action}, query passed through
+POST /Audio/Admin/action/{target}/{action} Bearer (staff)  the target's POST /Admin/{action}, query passed through, audited
+GET  /Audio/Admin/audit                   Bearer (staff)   200 every action since Oko started, newest first, capped at 1000
+GET  /Audio/Admin/events                  Bearer (staff)   text/event-stream, one `activity` event per request any target serves
+```
+
+- **The door.** Every request's `Authorization` header goes to Dom's `Me`, uncached, so a demoted Admin
+  is refused on their next request. An `events` stream already open is checked once, when it opens.
+- **Reading** is open to every staff account. **Acting** on a target needs that target's `permission`
+  (`Staff.Can`): the Owner may do anything, an Admin only what was granted, and a target with no
+  permission is the Owner's alone. A refused action is audited like any other.
+- CORS is open to any origin: the credential is an explicit header, never a cookie.
+
+| Status | `code` | When |
+| --- | --- | --- |
+| 401 | `unauthorized` | no bearer token, or one Dom refuses |
+| 403 | `not_staff` | the account has no role |
+| 403 | `missing_permission` | an action on a target the caller may not act on |
+| 503 | `unavailable` | Dom is unreachable, slow or answered nonsense |
+
+## `/Audio/Lirika` — the lyrics studio
+
+The back end of musicrain's `/studio`: Tools/Lirika's `studio.py`, run as the `lirika` pod. For staff
+with the `studio` permission. Not a listener-facing API.
+
+```
+GET  /Audio/Lirika/health                    200 {"ok":true}
+GET  /Audio/Lirika/text?id=audio://…         200 {"song","candidates":[{"source","label","text","url?"}],"saved":"…"|null}
+GET  /Audio/Lirika/link?url=https://textove.com/…   200 one candidate, from a page found by hand
+GET  /Audio/Lirika/stems?id=audio://…        200 {"stems":["lead","vocals"]} — the ones already separated
+GET  /Audio/Lirika/stem?id=audio://…&kind=lead      200 audio/flac, the whole file
+POST /Audio/Lirika/generate {"id","text","by?"}     200 {"mode","lrc","songFlags","log","lines":[…]}
+POST /Audio/Lirika/save {"id","lrc","text"}         200 where the edit was saved
+```
+
+- Every request but a CORS preflight carries `Authorization: Bearer <Dom token>`, and the pod asks Dom's
+  `Me` each time, so a revoked token or a lost permission is refused on the next request.
+- Every track is resolved through `library.db`, so no request can name a file outside the library.
+- `generate` holds the request while the models load (15–25 s) and a song is separated and aligned.
+  The models unload `LIRIKA_IDLE_SECONDS` after the last one.
+
+| Status | `code` | When |
+| --- | --- | --- |
+| 401 | `unauthorized` | no bearer token, or one Dom refuses |
+| 403 | `forbidden` | the account lacks `studio` |
+| 503 | `unavailable` | Dom is unreachable or answered nonsense |
+| 404 | `not_found` | not a library track, no such stem yet, or no such route |
+| 400 | `invalid_request` | a body that is not JSON, or a text map mode cannot read |

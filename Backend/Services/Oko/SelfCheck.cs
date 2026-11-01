@@ -8,14 +8,83 @@ using Serilog.Core;
 namespace Oko;
 
 /// <summary>
-///     The two pieces of Oko that are worth proving runnable: the door, and the fan-in's behaviour when
-///     a service is down. Run with <c>dotnet run --project Oko -- --self-check</c>.
+///     The pieces of Oko that are worth proving runnable: both doors, and the fan-in's behaviour when a
+///     service is down. Run with <c>dotnet run --project Oko -- --self-check</c>.
 /// </summary>
 internal static class SelfCheck
 {
     public static async Task<bool> RunAsync()
     {
-        return Door() & await FanInAsync() & Audit();
+        return Door() & await StaffDoorAsync() & await FanInAsync() & Audit();
+    }
+
+    /// <summary>
+    ///     The bearer door against a stub Dom: who gets in, who is refused with what, and what an admin may
+    ///     then act on. The permission cases run on the <see cref="Caller" /> the door hands the handlers,
+    ///     with the targets' permissions as compose sets them.
+    /// </summary>
+    private static async Task<bool> StaffDoorAsync()
+    {
+        var door = new Door(new StubFactory(DomAnswer, TimeSpan.FromMilliseconds(200)),
+            Options.Create(new OkoOptions { DomUrl = "http://dom.invalid" }));
+
+        async Task<int> Status(string authorization) =>
+            (await door.WhoAsync(authorization, CancellationToken.None)).Refusal?.Status ?? 200;
+        async Task<Caller> Who(string token) =>
+            (await door.WhoAsync($"Bearer {token}", CancellationToken.None)).Who!;
+
+        var admin = await Who("caches");
+        var owner = await Who("owner");
+
+        var checks = new List<(string Case, bool Passed)>
+        {
+            ("no header is 401", await Status("") == 401),
+            ("a Basic header is 401", await Status("Basic a3JpczpodW50ZXIy") == 401),
+            ("a token Dom refuses is 401", await Status("Bearer expired") == 401),
+            ("an account with no role is 403", await Status("Bearer listener") == 403),
+            ("Dom timing out is 503", await Status("Bearer slow") == 503),
+            ("Dom answering junk is 503", await Status("Bearer junk") == 503),
+            ("an admin passes the door, so may read", await Status("Bearer caches") == 200),
+            ("an admin with caches may act on dunav", admin.Can("caches")),
+            ("an admin with caches may not act on dom", !admin.Can("accounts")),
+            ("an admin may not act on a target with no permission", !admin.Can(null)),
+            ("the owner may act on dom", owner.Can("accounts")),
+            ("the owner may act on a target with no permission", owner.Can(null)),
+            ("the audit names the account", admin.Name == "ana")
+        };
+
+        var failed = checks.Where(check => !check.Passed).Select(check => check.Case).ToList();
+        Console.WriteLine(failed.Count == 0
+            ? $"OK: the staff door answers correctly in all {checks.Count} cases"
+            : $"FAIL: staff door wrong for {string.Join(", ", failed)}");
+        return failed.Count == 0;
+
+        // Dom's /Me, by token.
+        static async Task<HttpResponseMessage> DomAnswer(HttpRequestMessage request, CancellationToken ct)
+        {
+            static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            };
+
+            switch (request.Headers.Authorization?.Parameter)
+            {
+                case "slow":
+                    await Task.Delay(Timeout.Infinite, ct);
+                    return new HttpResponseMessage(HttpStatusCode.OK);
+                case "junk":
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<html>") };
+                case "listener":
+                    return Json("""{"id":"1","username":"lu","role":null,"permissions":[]}""");
+                case "caches":
+                    return Json("""{"id":"2","username":"ana","role":"admin","permissions":["caches"]}""");
+                case "owner":
+                    return Json($$"""{"id":"3","username":"kris","role":"owner","permissions":{{
+                        JsonSerializer.Serialize(Gaida.Admin.Staff.Permissions.Keys)}}}""");
+                default:
+                    return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            }
+        }
     }
 
     /// <summary>
@@ -115,7 +184,7 @@ internal static class SelfCheck
         var options = new OkoOptions();
         configuration.Bind(options);
 
-        var fleet = new Fleet(new StubFactory(), Options.Create(options), Logger.None);
+        var fleet = new Fleet(new StubFactory(FanInAnswer), Options.Create(options), Logger.None);
         // Web defaults, because that is what Results.Json applies on the wire — a check that reads
         // PascalCase would pass while the panel got camelCase and rendered nothing.
         var json = JsonSerializer.SerializeToElement(await fleet.SnapshotAsync(CancellationToken.None),
@@ -142,28 +211,35 @@ internal static class SelfCheck
     }
 
     /// <summary>Answers for the three hosts <see cref="FanInAsync" /> configures, one per outcome.</summary>
-    private sealed class StubFactory : IHttpClientFactory
+    private static Task<HttpResponseMessage> FanInAnswer(HttpRequestMessage request, CancellationToken ct)
     {
-        public HttpClient CreateClient(string name) => new(new Handler());
+        var host = request.RequestUri!.Host;
 
-        private sealed class Handler : HttpMessageHandler
+        if (host.StartsWith("down", StringComparison.Ordinal))
+            throw new HttpRequestException("connection refused");
+
+        if (host.StartsWith("no-token", StringComparison.Ordinal))
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+
+        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"count":7}""", Encoding.UTF8, "application/json")
+        });
+    }
+
+    /// <summary>Every client it hands out answers with <paramref name="answer" />, within <paramref name="timeout" />.</summary>
+    private sealed class StubFactory(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> answer,
+        TimeSpan? timeout = null) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) =>
+            new(new Handler(answer)) { Timeout = timeout ?? TimeSpan.FromSeconds(100) };
+
+        private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> answer)
+            : HttpMessageHandler
         {
             protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
-                CancellationToken cancellationToken)
-            {
-                var host = request.RequestUri!.Host;
-
-                if (host.StartsWith("down", StringComparison.Ordinal))
-                    throw new HttpRequestException("connection refused");
-
-                if (host.StartsWith("no-token", StringComparison.Ordinal))
-                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
-
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent("""{"count":7}""", Encoding.UTF8, "application/json")
-                });
-            }
+                CancellationToken cancellationToken) => answer(request, cancellationToken);
         }
     }
 }

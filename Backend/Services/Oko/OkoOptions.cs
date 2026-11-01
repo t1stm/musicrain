@@ -14,5 +14,9 @@ public sealed class OkoOptions
     [ConfigurationKeyName("ADMIN_TOKEN")]
     public string? AdminToken { get; set; }
 
+    /// <summary>Dom, which says who a staff bearer token belongs to. Oko refuses to start without it.</summary>
+    [ConfigurationKeyName("Dom:Url")]
+    public string? DomUrl { get; set; }
+
     public Target[] Targets { get; set; } = [];
 }

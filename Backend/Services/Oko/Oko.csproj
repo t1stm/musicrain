@@ -6,7 +6,11 @@
     <PackageReference Include="Serilog.Expressions"/>
   </ItemGroup>
 
-  <!-- No project reference to any service. Oko speaks to them over HTTP like any other client, and
-       knowing their types would make it a build-time dependency of the whole stack. -->
+  <!-- No project reference to any service: Oko speaks to them over HTTP like any other client, and knowing
+       their types would make it a build-time dependency of the whole stack. Gaida.Admin is the exception,
+       because it is the contract for who may act. A second copy of it in Oko is the drift it exists to prevent. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Gaida Library\Gaida.Admin\Gaida.Admin.csproj"/>
+  </ItemGroup>
 
 </Project>

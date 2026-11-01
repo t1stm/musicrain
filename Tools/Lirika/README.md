@@ -97,13 +97,11 @@ the library's `.lrc` files for changes and records the ones carrying Lirika's ta
 
 ## Lyrics studio
 
-The studio is a local page for correcting lyrics by hand, for Bulgarian library songs. It uses the
-frontend's own player and lyrics pane as the preview.
-
-```bash
-cd Tools/Lirika && uv run studio.py      # the back end, on 127.0.0.1:8765
-cd Frontend && npm run dev             # then open http://localhost:5173/studio
-```
+The studio is musicrain's `/studio` page, for correcting lyrics by hand on Bulgarian library songs. It
+is for staff with the `studio` permission, and it uses the app's own player and lyrics pane as the
+preview. Its back end is `studio.py`, which runs as the `lirika` pod (`Backend/compose.yaml`) behind
+nginx at `/Audio/Lirika`. Every request carries the signed-in account's token, and `studio.py` asks Dom
+whether that account may use the studio, every time.
 
 1. Search for a library song in the studio and play it. The studio works on whichever library song is
    playing.
@@ -122,18 +120,13 @@ cd Frontend && npm run dev             # then open http://localhost:5173/studio
 4. **Save** writes `~/.cache/lirika/edited/<song>.lrc`, with the text beside it as `<song>.txt`. If
    you changed the lines since Lirika wrote them, it sets `[#:edited:yes]`.
 
-The studio exists in development builds only. A production build of the frontend leaves it
-out. `studio.py` listens on 127.0.0.1 only and answers only pages served from `localhost`.
-
-To use the studio from a phone, name your home network in `LIRIKA_STUDIO_LAN`:
+To work on `studio.py` itself, run it on the host. It asks the Dom on this machine's published port,
+or the one `DOM_URL` names, and the frontend's dev server reaches it when `PUBLIC_API_URL` points at a
+proxy that sends `/Audio/Lirika` to `127.0.0.1:8765`:
 
 ```bash
-LIRIKA_STUDIO_LAN=10.5.3.0/24 uv run studio.py
+cd Tools/Lirika && uv run studio.py      # 127.0.0.1:8765; LIRIKA_STUDIO_HOST and LIRIKA_STUDIO_PORT move it
 ```
-
-`studio.py` then listens on every interface, but answers only this machine and addresses on that
-network. Anyone else gets 403. On the phone, open the dev server's LAN address, such as
-`http://10.5.3.24:5173/studio`. The firewall must let ports 5173 and 8765 in from that network.
 
 The studio unloads the models after 5 minutes without a Regenerate, which frees the GPU memory. The
 next Regenerate takes 15–25 s longer while they load. Set `LIRIKA_STUDIO_IDLE` to a number of seconds to
@@ -157,6 +150,8 @@ The models download on first use:
 | `~/.cache/lirika/<sha1>/` | Stems, per audio file, so a second run skips separation |
 | `~/.cache/lirika/web/` | Fetched web pages |
 | `~/.cache/lirika/edited/` | The studio's saved edits |
+
+In the pod, all of these live under `LIRIKA_CACHE_PATH`, mounted at `/home/lirika/.cache`.
 
 ## Troubleshooting
 

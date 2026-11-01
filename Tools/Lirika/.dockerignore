@@ -1,0 +1,9 @@
+# The lock is per machine and git-ignored; the image resolves its own from the pyproject it is given.
+*.log
+results/
+corpus.csv
+__pycache__/
+.venv/
+uv.lock
+Dockerfile
+.dockerignore

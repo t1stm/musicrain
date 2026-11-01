@@ -12,10 +12,12 @@
 #   /Audio/Lyrics*                     → 127.0.0.1:5345  (stih)
 #   /Audio/History*                    → 127.0.0.1:5346  (moliv)
 #   /Audio/Cover*                      → 127.0.0.1:5347  (snimka, GET only)
+#   /Audio/Admin*                      → 127.0.0.1:5344  (oko, the staff gateway)
+#   /Audio/Lirika*                     → 127.0.0.1:5348  (lirika, the lyrics studio)
 #   everything else                    → 127.0.0.1:5340  (gaida-api)
 #
-# The admin panel is not on that list: it is published on 0.0.0.0:5344 and fronted by the host
-# firewall rather than by nginx. See the oko service at the bottom of this file and ADMIN_PLAN.md.
+# Oko is also published on 0.0.0.0:5344 for its old Basic-auth page, which the host firewall fronts until
+# musicrain's /admin replaces it. See the oko service below.
 
 name: gaida
 
@@ -330,6 +332,48 @@ services:
     ports:
       - "127.0.0.1:${STIH_PORT:-5345}:8080"
 
+  # ── Lyrics studio ──────────────────────────────────────────────────────────────
+  # Lirika's studio back end: textove's words for a library song, map mode on an edited text, the stems. Every
+  # request needs a staff token with the studio permission (Dom's /Me decides). The models load on the first
+  # Regenerate and unload LIRIKA_IDLE_SECONDS after the last, VRAM and RAM with them.
+  #
+  # Behind the lirika profile, which .env.example selects (COMPOSE_PROFILES=lirika), so a stack set up from it
+  # starts the studio with everything else. Compose has no default profile of its own, so a checkout with no
+  # .env at all starts without it. The stack without it, whatever .env says:
+  #   docker compose --profile minimal up -d
+  # `minimal` names no service on purpose: any --profile replaces COMPOSE_PROFILES, so this one leaves out every
+  # optional service (lirika and gaida-bot) and starts the core. It does not stop a lirika that is already
+  # running: `docker compose stop lirika`. For an AMD GPU, add compose.lirika-amd.yaml to COMPOSE_FILE.
+  lirika:
+    <<: *service
+    profiles: ["lirika"]
+    build:
+      context: ../Tools/Lirika
+      args:
+        PYPROJECT: ${LIRIKA_PYPROJECT:-pyproject.cpu.toml}
+    # Not the stack's *env: no ASP.NET here, and no reason to hold ADMIN_TOKEN.
+    environment:
+      MUSIC_LIBRARY: /music
+      DOM_URL: http://dom:8080
+      LIRIKA_STUDIO_IDLE: ${LIRIKA_IDLE_SECONDS:-300}
+    # Reads library.db and the audio, and runs as the library's owner like gaida-local and stih: library.db is in
+    # WAL mode, and a read-only mount cannot open it once its -shm is gone. The studio itself writes only under
+    # /home/lirika/.cache; `docker compose exec lirika .venv/bin/python lirika.py …` writes .lrc files beside the audio.
+    user: "${LIBRARY_UID:-1000}:${LIBRARY_GID:-1000}"
+    volumes:
+      - ${MUSIC_LIBRARY_PATH:-./data/music}:/music
+      # Models (~6 GB, downloaded on first use), stems, the studio's saved edits and textove's pages. Losing it
+      # costs downloads and separations, and the edits in lirika/edited/ — those are real work, back them up.
+      - ${LIRIKA_CACHE_PATH:-./data/lirika-cache}:/home/lirika/.cache
+    ports:
+      - "127.0.0.1:${LIRIKA_PORT:-5348}:8765"
+    # Its own ceiling: torch and three models are far past the stack's 2g. The worker that holds them exits when
+    # idle, so this is a peak, not a resident size.
+    mem_limit: ${LIRIKA_MEMORY_LIMIT:-16g}
+    memswap_limit: ${LIRIKA_MEMORY_LIMIT:-16g}
+    depends_on:
+      - dom
+
   # ── Images ─────────────────────────────────────────────────────────────────────
   # Every track image the frontend shows comes from here: /Audio/Cover/Get?url=<thumbnailUrl>&size=<px>.
   # A cover://<sha1>.jpg is the library's own artwork, which gaida-local uploads as it extracts it; an
@@ -381,30 +425,43 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
 
+      # Who staff tokens are checked against: every /Audio/Admin request asks Dom's /Me.
+      Dom__Url: http://dom:8080
+
       # Everything Oko watches. Names are what the panel shows; gaida-local's must stay as it is,
-      # since the library editor keys off the name the pod reports for itself.
+      # since the library editor keys off the name the pod reports for itself. Permission is what an
+      # admin needs to act on that target; Staff.cs lists them. A target without one is the owner's
+      # alone — today that is only targets with no actions.
       Targets__0__Name: dunav
       Targets__0__Url: http://dunav:8080
+      Targets__0__Permission: caches
       Targets__1__Name: selo
       Targets__1__Url: http://selo:8080
+      Targets__1__Permission: rooms
       Targets__2__Name: dom
       Targets__2__Url: http://dom:8080
+      Targets__2__Permission: accounts
       Targets__3__Name: gaida-api
       Targets__3__Url: http://gaida-api:8080
       Targets__4__Name: gaida-local
       Targets__4__Url: http://gaida-local:8080
+      Targets__4__Permission: library
       Targets__5__Name: gaida-youtube
       Targets__5__Url: http://gaida-youtube:8080
+      Targets__5__Permission: caches
       Targets__6__Name: gaida-spotify
       Targets__6__Url: http://gaida-spotify:8080
+      Targets__6__Permission: caches
       Targets__7__Name: gaida-deezer
       Targets__7__Url: http://gaida-deezer:8080
+      Targets__7__Permission: caches
       Targets__8__Name: stih
       Targets__8__Url: http://stih:8080
       # Only up under the bot profile. Without it this row renders as down, which is the honest
       # answer — Oko pulls, so a target that is not running is a target that does not answer.
       Targets__9__Name: gaida-bot
       Targets__9__Url: http://gaida-bot:8080
+      Targets__9__Permission: bot
       Targets__10__Name: moliv
       Targets__10__Url: http://moliv:8080
       Targets__11__Name: snimka

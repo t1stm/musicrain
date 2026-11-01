@@ -1,19 +1,17 @@
 """The lyrics studio's back end: textove's words for a library song, map mode on an edited text, and saving.
 
-    uv run studio.py          # then open /studio in the frontend's dev server (npm run dev)
-    LIRIKA_STUDIO_LAN=10.5.3.0/24 uv run studio.py      # also for a phone on that network
+    docker compose up -d lirika      # the pod, behind nginx at /Audio/Lirika (Backend/compose.yaml)
+    uv run studio.py                 # on the host, for working on this file; asks the Dom at DOM_URL
 
-Local by default: it binds 127.0.0.1 and answers only browser pages served from localhost. With
-LIRIKA_STUDIO_LAN it binds every interface and also answers machines, and pages served from addresses, on
-that network; anyone else gets 403. It resolves every track through library.db, so no request can name
-a file outside the music library. The page is the
-frontend's /studio route, which exists in dev builds only; it plays the song through the real player and
-shows the draft in the real lyrics pane.
+Every request needs a Dom bearer token belonging to staff with the `studio` permission; Dom's /Me decides,
+per request, so a revoked token or a lost permission is refused on the next one. Anyone else gets 401 or
+403. It resolves every track through library.db, so no request can name a file outside the music library.
+The page is musicrain's /studio, which plays the song through the real player and shows the draft in the
+real lyrics pane.
 """
 
 from __future__ import annotations
 
-import ipaddress
 import json
 import multiprocessing
 import os
@@ -27,13 +25,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+import requests
+
 import sources
 import lirika
 
-PORT = 8765
+HOST = os.environ.get("LIRIKA_STUDIO_HOST", "127.0.0.1")
+PORT = int(os.environ.get("LIRIKA_STUDIO_PORT", 8765))
 EDITED = lirika.CACHE / "edited"
-LIBRARY = Path(sources.backend_env()["MUSIC_LIBRARY_PATH"]).resolve()
-LAN = ipaddress.ip_network(os.environ["LIRIKA_STUDIO_LAN"]) if os.environ.get("LIRIKA_STUDIO_LAN") else None
+# Inside the container there is no Backend/.env: compose hands over MUSIC_LIBRARY and DOM_URL instead.
+LIBRARY = Path(os.environ.get("MUSIC_LIBRARY") or sources.backend_env().get("MUSIC_LIBRARY_PATH", "/nonexistent")).resolve()
+DOM = os.environ.get("DOM_URL") or f"http://127.0.0.1:{sources.backend_env().get('DOM_PORT', '5343')}"
 
 # The models live in a worker process that exits after IDLE seconds without a request. ROCm's runtime spins
 # one CPU core (rocr::core::Runtime::AsyncEventsLoop) for as long as a process has the GPU open, idle or
@@ -46,15 +48,24 @@ _last = 0.0
 _models = None  # the worker's own
 
 
-def allowed(host: str | None) -> bool:
-    """This machine, or an address on LIRIKA_STUDIO_LAN."""
-    if host == "localhost":
-        return True
+def who(headers) -> tuple[HTTPStatus, str, str] | None:
+    """None when the caller is staff with `studio`; otherwise the status, code and message to refuse with.
+    Asks Dom every time, as Oko does: a revoked token or a lost permission is refused on the next request."""
+    authorization = headers.get("Authorization", "")
+    if not authorization.lower().startswith("bearer "):
+        return HTTPStatus.UNAUTHORIZED, "unauthorized", "Sign in first."
     try:
-        address = ipaddress.ip_address(host or "")
-    except ValueError:
-        return False
-    return address.is_loopback or (LAN is not None and address in LAN)
+        answer = requests.get(f"{DOM}/Audio/Accounts/Me", headers={"Authorization": authorization}, timeout=5)
+        if answer.status_code == HTTPStatus.UNAUTHORIZED:
+            return HTTPStatus.UNAUTHORIZED, "unauthorized", "Sign in again."
+        if not answer.ok:
+            raise requests.RequestException(f"Dom answered {answer.status_code}")
+        permissions = answer.json().get("permissions") or []
+    except (requests.RequestException, ValueError, AttributeError):
+        return HTTPStatus.SERVICE_UNAVAILABLE, "unavailable", "Accounts cannot be checked right now."
+    if "studio" not in permissions:
+        return HTTPStatus.FORBIDDEN, "forbidden", "The studio needs the studio permission."
+    return None
 
 
 def song_of(track_id: str) -> Path:
@@ -173,60 +184,67 @@ class Handler(BaseHTTPRequestHandler):
     def parse_request(self) -> bool:  # before any route: a refused client gets no further
         if not super().parse_request():
             return False
-        if not allowed(self.client_address[0]):
-            self.send_error(HTTPStatus.FORBIDDEN, "Only this machine and LIRIKA_STUDIO_LAN may use the studio.")
+        if self.command == "OPTIONS":  # a CORS preflight carries no credentials
+            return True
+        if refusal := who(self.headers):
+            status, code, message = refusal
+            self._send(status, {"error": {"code": code, "message": message}})
             return False
         return True
 
-    def do_OPTIONS(self) -> None:  # the CORS preflight a JSON POST sends first
+    def do_OPTIONS(self) -> None:  # the CORS preflight every request sends first: they all carry Authorization
         self._send(HTTPStatus.NO_CONTENT, None)
 
     def do_GET(self) -> None:
         url = urlsplit(self.path)
+        path = url.path.removeprefix("/Audio/Lirika")  # behind nginx; the host run has no prefix
         query = {key: values[0] for key, values in parse_qs(url.query).items()}
-        if url.path == "/health":
+        if path == "/health":
             self._answer(lambda: {"ok": True})
-        elif url.path == "/text":
+        elif path == "/text":
             self._answer(lambda: texts(query.get("id", "")))
-        elif url.path == "/link":
+        elif path == "/link":
             self._answer(lambda: from_link(query.get("url", "")))
-        elif url.path == "/stems":
+        elif path == "/stems":
             self._answer(lambda: stems(query.get("id", "")))
-        elif url.path == "/stem":
+        elif path == "/stem":
             # ponytail: the whole file in one answer, no Range. The page plays it from a blob, which seeks.
             self._answer(lambda: stem_of(query.get("id", ""), query.get("kind", "")).read_bytes(), "audio/flac")
         else:
-            self._send(HTTPStatus.NOT_FOUND, {"error": "No such route."})
+            self._refuse(HTTPStatus.NOT_FOUND, "not_found", "No such route.")
 
     def do_POST(self) -> None:
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         except json.JSONDecodeError:
-            return self._send(HTTPStatus.BAD_REQUEST, {"error": "The body is not JSON."})
-        path = urlsplit(self.path).path
+            return self._refuse(HTTPStatus.BAD_REQUEST, "invalid_request", "The body is not JSON.")
+        path = urlsplit(self.path).path.removeprefix("/Audio/Lirika")
         if path == "/generate":
             self._answer(lambda: generate(body.get("id", ""), body.get("text", ""), body.get("by") or None))
         elif path == "/save":
             self._answer(lambda: save(body.get("id", ""), body.get("lrc", ""), body.get("text", "")))
         else:
-            self._send(HTTPStatus.NOT_FOUND, {"error": "No such route."})
+            self._refuse(HTTPStatus.NOT_FOUND, "not_found", "No such route.")
 
     def _answer(self, work, content_type: str = "application/json; charset=utf-8") -> None:
         try:
             self._send(HTTPStatus.OK, work(), content_type)
         except LookupError as error:
-            self._send(HTTPStatus.NOT_FOUND, {"error": str(error)})
+            self._refuse(HTTPStatus.NOT_FOUND, "not_found", str(error))
         except ValueError as error:  # normalize() refusing an unresolvable repeat in the text
-            self._send(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            self._refuse(HTTPStatus.BAD_REQUEST, "invalid_request", str(error))
+
+    def _refuse(self, status: HTTPStatus, code: str, message: str) -> None:
+        """The stack's error envelope."""
+        self._send(status, {"error": {"code": code, "message": message}})
 
     def _send(self, status: HTTPStatus, payload, content_type: str = "application/json; charset=utf-8") -> None:
         self.send_response(status)
-        origin = self.headers.get("Origin", "")
-        if urlsplit(origin).scheme == "http" and allowed(urlsplit(origin).hostname):
-            self.send_header("Access-Control-Allow-Origin", origin)
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
-            self.send_header("Access-Control-Allow-Private-Network", "true")
+        # Any origin, for Dom's reason: the credential is an explicit Authorization header, never a cookie.
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+        self.send_header("Access-Control-Max-Age", "7200")
         if isinstance(payload, bytes):
             body = payload
         else:
@@ -242,8 +260,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    host = "0.0.0.0" if LAN else "127.0.0.1"
-    print(f"lirika studio on http://{host}:{PORT}{f' for this machine and {LAN}' if LAN else ''}; "
-          "open /studio in the frontend's dev server", flush=True)
+    print(f"lirika studio on http://{HOST}:{PORT} for staff with the studio permission (asking {DOM}); "
+          f"library {LIBRARY}", flush=True)
     threading.Thread(target=_reap, daemon=True).start()
-    ThreadingHTTPServer((host, PORT), Handler).serve_forever()
+    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
