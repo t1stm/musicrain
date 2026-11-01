@@ -117,7 +117,7 @@ The build is plain files — `adapter-static` with an `index.html` fallback — 
 
 [src/lib](src/lib) is the logic with no UI attached: the two clocks, the back stack, the JSON stream scanner, slider interaction handling, the active-lyric search, the shared seek, source-badge lookup and the Discord URL rewriting. Most of it has a `.test.ts` beside it.
 
-[src/routes/(app)](src/routes/%28app%29) is a [SvelteKit group](https://svelte.dev/docs/kit/advanced-routing#Advanced-layouts-group) — every page shares the app shell layout without adding a path segment.
+[src/routes/(app)](src/routes/%28app%29) is a [SvelteKit group](https://svelte.dev/docs/kit/advanced-routing#Advanced-layouts-group) — every page shares the app shell layout without adding a path segment. Two of its sections are for staff accounts only, behind `StaffGate`: `/admin`, the admin panel, which reads and acts on every service through Oko at `/Audio/Admin`, and `/studio`, the lyrics studio, backed by the lirika pod at `/Audio/Lirika`. The servers enforce both; the gate only hides what they would refuse.
 
 [static](static) is served at the site root: the SVG mark and its PNG fallback, the 192px and 512px PWA icons, and the web app manifest.
 

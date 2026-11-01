@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { ChevronLeft, Icon, Key } from 'svelte-hero-icons';
-	import { resolve } from '$app/paths';
+	import { Icon, Key } from 'svelte-hero-icons';
 	import { closeOnBack } from '$lib/backWatcher.svelte';
 	import Skeleton from '$components/Skeleton.svelte';
 	import { demote, grant, listStaff, type StaffList, type StaffMember } from '$requests/staff';
@@ -126,14 +125,6 @@
 </script>
 
 <svelte:head><title>Staff · Admin · musicrain</title></svelte:head>
-
-<a
-	href={resolve('/admin')}
-	class="-ml-1 mb-3 inline-flex min-h-11 items-center gap-1 rounded-row pr-2 text-sm text-fog outline-none hover:text-chalk focus-visible:ring-2 focus-visible:ring-primary-500"
->
-	<Icon src={ChevronLeft} micro class="size-4" />
-	Admin
-</a>
 
 <h1 class="font-display text-lg leading-tight font-light tracking-tight text-chalk sm:text-2xl">
 	Staff

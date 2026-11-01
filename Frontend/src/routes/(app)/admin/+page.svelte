@@ -1,51 +1,54 @@
 <script lang="ts">
-	import { ChevronRight, Icon } from 'svelte-hero-icons';
 	import { resolve } from '$app/paths';
+	import { headline } from '$components/admin/views';
 	import account from '$states/account.svelte';
+	import fleet from '$states/fleet.svelte';
+
+	const serviceHref = (name: string) => `${resolve('/admin/service')}?name=${encodeURIComponent(name)}`;
 </script>
 
 <svelte:head><title>Admin · musicrain</title></svelte:head>
 
-<h1 class="font-display text-lg leading-tight font-light tracking-tight text-chalk sm:text-2xl">
-	Admin
-</h1>
-<p class="mt-2 text-sm text-fog">
-	Signed in as <b class="font-semibold text-chalk">{account.username}</b>, {account.owner
-		? 'the owner'
-		: 'an admin'}.
-</p>
+<!-- wide screens only: on a phone the list beside this is the page, and says the same per row -->
+<section>
+	<h2 class="font-display text-lg leading-tight font-light tracking-tight text-chalk sm:text-2xl">Overview</h2>
+	<p class="mt-2 text-sm text-fog">
+		Signed in as <b class="font-semibold text-chalk">{account.username}</b>,
+		{#if account.owner}
+			the owner: you can change everything.
+		{:else if account.permissions.length}
+			an admin. You can change what
+			{#each account.permissions as permission, i (permission)}{i ? ', ' : ''}<b
+					class="font-mono text-xs font-normal text-chalk">{permission}</b
+				>{/each} covers, and look at everything else.
+		{:else}
+			an admin who can look. Ask the owner for what you need to change.
+		{/if}
+	</p>
 
-<section class="mt-7 max-w-md">
-	<h2 class="eyebrow flex items-center gap-3">
-		What you can change
-		<span class="h-px flex-1 bg-haze"></span>
-	</h2>
-	{#if account.owner}
-		<p class="mt-3 text-sm text-chalk">Everything, and who else is on the staff.</p>
-	{:else if account.permissions.length}
-		<ul class="mt-3 flex flex-wrap gap-1.5">
-			{#each account.permissions as permission (permission)}
-				<li
-					class="rounded-art border border-primary-0 bg-primary-600 px-2 py-1 font-mono text-xs text-white"
+	{#if fleet.error}<p class="mt-4 text-sm text-ember" role="alert">{fleet.error}</p>{/if}
+
+	<ul class="mt-6 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+		{#each fleet.latest?.services ?? [] as service (service.name)}
+			<li>
+				<a
+					href={serviceHref(service.name)}
+					class="flex h-full flex-col gap-1 rounded-panel border border-haze bg-surface-0 p-3.5 outline-none hover:border-surface-300 focus-visible:ring-2 focus-visible:ring-primary-500"
 				>
-					{permission}
-				</li>
-			{/each}
-		</ul>
-	{:else}
-		<p class="mt-3 text-sm text-fog">Nothing yet. Ask the owner for what you need.</p>
-	{/if}
+					<span class="flex items-center gap-2 text-[0.9375rem] text-chalk">
+						<span class="size-1.5 rounded-full {service.up ? 'bg-primary-0' : 'bg-ember'}"></span>
+						{service.name}
+						<span class="ml-auto font-mono text-xs {service.permission && account.can(service.permission) ? 'text-primary-500' : 'text-fog'}"
+							>{service.permission ?? ''}</span
+						>
+					</span>
+					{#if service.up}
+						<span class="font-mono text-xs text-fog">{headline(service.name, service.snapshot) || 'up'}</span>
+					{:else}
+						<span class="text-xs text-ember">Not answering — {service.error}</span>
+					{/if}
+				</a>
+			</li>
+		{/each}
+	</ul>
 </section>
-
-{#if account.owner}
-	<a
-		href={resolve('/admin/staff')}
-		class="mt-7 flex min-h-15 max-w-md items-center gap-3 border-y border-haze px-1 outline-none hover:bg-surface-100 focus-visible:ring-2 focus-visible:ring-primary-500"
-	>
-		<span class="min-w-0 flex-1">
-			<span class="block text-[0.9375rem] leading-snug text-chalk">Staff</span>
-			<span class="block text-[0.8125rem] leading-snug text-fog">Choose who can change what</span>
-		</span>
-		<Icon src={ChevronRight} micro class="size-4 shrink-0 text-fog" />
-	</a>
-{/if}

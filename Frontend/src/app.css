@@ -1509,3 +1509,105 @@ body {
 		transition: none;
 	}
 }
+
+/* ── The admin panel (/admin) ──────────────────────────────────────────────────
+   Oko's tables, in the app's tokens. A table scrolls sideways inside its own box, so the
+   page never does on a phone. */
+.admin-scroll {
+	overflow-x: auto;
+	border: 1px solid var(--color-haze);
+	border-radius: var(--radius-panel);
+	background: var(--color-surface-0);
+}
+
+.admin-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.8125rem;
+}
+
+.admin-table th {
+	padding: 0.5rem 0.75rem;
+	text-align: left;
+	font-family: var(--font-mono);
+	font-size: 0.68rem;
+	font-weight: 400;
+	letter-spacing: 0.13em;
+	text-transform: uppercase;
+	color: var(--color-fog);
+	white-space: nowrap;
+}
+
+.admin-table td {
+	padding: 0.5rem 0.75rem;
+	border-top: 1px solid var(--color-haze);
+	color: var(--color-chalk);
+	white-space: nowrap;
+	vertical-align: top;
+}
+
+.admin-table td.wrap {
+	min-width: 9rem;
+	max-width: 26rem;
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+.admin-table td.mono {
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+}
+
+.admin-empty {
+	padding: 1rem;
+	font-size: 0.875rem;
+	color: var(--color-fog);
+}
+
+/* Every small button in the panel: actions, paging, search. Danger shows on hover, as Oko's did. */
+.admin-button {
+	min-height: 1.75rem;
+	margin: 0 0.25rem 0.125rem 0;
+	padding: 0 0.625rem;
+	border: 1px solid var(--color-haze);
+	border-radius: var(--radius-art);
+	font-size: 0.75rem;
+	color: var(--color-fog);
+	white-space: nowrap;
+}
+
+.admin-button:hover:not(:disabled) {
+	border-color: var(--color-fog);
+	color: var(--color-chalk);
+}
+
+.admin-button[data-danger]:hover:not(:disabled) {
+	border-color: var(--color-ember);
+	color: var(--color-ember);
+}
+
+.admin-button:disabled {
+	opacity: 0.4;
+}
+
+.admin-button[aria-busy='true'] {
+	cursor: progress;
+}
+
+.admin-button:focus-visible {
+	outline: 2px solid var(--color-primary-500);
+	outline-offset: 1px;
+}
+
+.admin-field {
+	min-height: 2.25rem;
+	border: 1px solid var(--color-haze);
+	border-radius: var(--radius-row);
+	background: var(--color-dark-0);
+	font-size: 0.875rem;
+	color: var(--color-chalk);
+}
+
+.admin-field:focus {
+	border-color: var(--color-primary-0);
+}

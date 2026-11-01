@@ -16,7 +16,7 @@ const isPlain = (body: unknown): body is Record<string, unknown> =>
 export async function staffCall<T>(
 	url: string,
 	init: StaffInit = {},
-	as: 'json' | 'blob' = 'json'
+	as: 'json' | 'blob' | 'body' = 'json'
 ): Promise<T> {
 	const token = account.token;
 	if (!token) throw new AudioApiError('Sign in first.', 401);
@@ -43,6 +43,8 @@ export async function staffCall<T>(
 	}
 
 	if (response.status === 204) return null as T;
+	// 'body' hands over the stream itself, for a response that never ends: an SSE feed
+	if (as === 'body') return response.body as T;
 	return (as === 'blob' ? response.blob() : response.json()) as Promise<T>;
 }
 

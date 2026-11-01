@@ -64,7 +64,10 @@ export default ts.config(
 			'src/components/friends/AcceptGate.svelte',
 			'src/routes/(app)/settings/friends/+page.svelte',
 			'src/routes/(app)/settings/account/+page.svelte',
-			'src/components/staff/StaffGate.svelte'
+			'src/components/staff/StaffGate.svelte',
+			// the admin panel's service pages are /admin/service?name=…
+			'src/components/admin/Shell.svelte',
+			'src/routes/(app)/admin/+page.svelte'
 		],
 		rules: {
 			'svelte/no-navigation-without-resolve': 'off'
