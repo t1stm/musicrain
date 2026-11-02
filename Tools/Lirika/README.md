@@ -117,8 +117,10 @@ whether that account may use the studio, every time.
      once Regenerate has separated it.
    - The bar at the bottom shows the line at the playhead. Click it to play from that line. On a
      narrow screen the source text and the LRC take turns, and the bar holds the timing buttons.
-4. **Save** writes `~/.cache/lirika/edited/<song>.lrc`, with the text beside it as `<song>.txt`. If
-   you changed the lines since Lirika wrote them, it sets `[#:edited:yes]`.
+4. **Save** writes the `.lrc` beside the audio, replacing any that is there, and stih shows it within a
+   minute. It also keeps the edit in `~/.cache/lirika/edited/<song>.lrc`, with the text as `<song>.txt`,
+   which the studio offers next time as your last saved edit. If you changed the lines since Lirika wrote
+   them, it sets `[#:edited:yes]`.
 
 To work on `studio.py` itself, run it on the host. It asks the Dom on this machine's published port,
 or the one `DOM_URL` names, and the frontend's dev server reaches it when `PUBLIC_API_URL` points at a

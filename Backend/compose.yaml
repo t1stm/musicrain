@@ -361,8 +361,8 @@ services:
       DOM_URL: http://dom:8080
       LIRIKA_STUDIO_IDLE: ${LIRIKA_IDLE_SECONDS:-300}
     # Reads library.db and the audio, and runs as the library's owner like gaida-local and stih: library.db is in
-    # WAL mode, and a read-only mount cannot open it once its -shm is gone. The studio itself writes only under
-    # /home/lirika/.cache; `docker compose exec lirika .venv/bin/python lirika.py …` writes .lrc files beside the audio.
+    # WAL mode, and a read-only mount cannot open it once its -shm is gone. The studio writes its cache under
+    # /home/lirika/.cache, and a Save writes the .lrc beside the audio, as `docker compose exec lirika .venv/bin/python lirika.py …` does.
     user: "${LIBRARY_UID:-1000}:${LIBRARY_GID:-1000}"
     volumes:
       - ${MUSIC_LIBRARY_PATH:-./data/music}:/music

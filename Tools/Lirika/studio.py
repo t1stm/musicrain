@@ -173,11 +173,14 @@ def _reap() -> None:
 
 
 def save(track_id: str, lrc: str, text: str) -> dict:
+    """Keeps the edit in the cache, for the next session's "Your last saved edit", and writes the .lrc beside the
+    audio, replacing whatever was there. stih's scan records it within a minute, as Generated."""
     song = song_of(track_id)
     EDITED.mkdir(parents=True, exist_ok=True)
     (EDITED / f"{song.stem}.lrc").write_text(lrc, encoding="utf-8")
     (EDITED / f"{song.stem}.txt").write_text(text, encoding="utf-8")
-    return {"lrc": str(EDITED / f"{song.stem}.lrc"), "text": str(EDITED / f"{song.stem}.txt")}
+    song.with_suffix(".lrc").write_text(lrc, encoding="utf-8")
+    return {"lrc": str(song.with_suffix(".lrc")), "text": str(EDITED / f"{song.stem}.txt")}
 
 
 class Handler(BaseHTTPRequestHandler):

@@ -606,7 +606,7 @@ GET  /Audio/Lirika/link?url=https://textove.com/…   200 one candidate, from a 
 GET  /Audio/Lirika/stems?id=audio://…        200 {"stems":["lead","vocals"]} — the ones already separated
 GET  /Audio/Lirika/stem?id=audio://…&kind=lead      200 audio/flac, the whole file
 POST /Audio/Lirika/generate {"id","text","by?"}     200 {"mode","lrc","songFlags","log","lines":[…]}
-POST /Audio/Lirika/save {"id","lrc","text"}         200 where the edit was saved
+POST /Audio/Lirika/save {"id","lrc","text"}         200 {"lrc","text"}: the .lrc beside the audio, the text in the cache
 ```
 
 - Every request but a CORS preflight carries `Authorization: Bearer <Dom token>`, and the pod asks Dom's
