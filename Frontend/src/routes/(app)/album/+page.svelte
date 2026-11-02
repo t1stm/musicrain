@@ -1,12 +1,13 @@
 <script lang="ts">
-	import { cover, CARD, ROW } from '$lib/cover';
+	import { cover, CARD } from '$lib/cover';
 	import { untrack } from 'svelte';
 	import { resolve } from '$app/paths';
 	import type { PageData } from './$types';
 	import type { SearchResult } from '$states/search.svelte';
 	import ArtistLink from '$components/ArtistLink.svelte';
 	import RowSkeleton from '$components/RowSkeleton.svelte';
-	import { convertTimeSpanStringToSeconds, getTimeString, pressKeys } from '$lib';
+	import SearchRow from '$components/search/SearchRow.svelte';
+	import { convertTimeSpanStringToSeconds, getTimeString } from '$lib';
 	import queue from '$states/queue.svelte';
 
 	const { data }: { data: PageData } = $props();
@@ -109,30 +110,7 @@
 			{#if tracks.length > 0}
 				<div class="flex flex-col" aria-busy={loading}>
 					{#each tracks as track, index (track.id + index)}
-						<!-- one press plays, as a search row does: a finger has no double-click -->
-						<div
-							role="button"
-							tabindex="0"
-							class="group flex cursor-pointer items-center gap-3 rounded-row px-2 py-2 hover:bg-surface-100 active:bg-surface-200 focus-visible:bg-surface-100 focus-visible:outline-none"
-							onclick={(event) => {
-								if (!(event.target as HTMLElement).closest('a')) queue.playNow(track);
-							}}
-							onkeydown={pressKeys(() => queue.playNow(track))}
-						>
-							<span class="w-6 shrink-0 text-right font-mono text-[0.68rem] text-fog">{index + 1}</span>
-							<img
-								src={cover(track.thumbnailUrl, ROW) ?? '/empty.png'}
-								alt=""
-								class="size-10 shrink-0 rounded-art object-cover"
-							/>
-							<div class="min-w-0 flex-1">
-								<p class="truncate text-sm">{track.name}</p>
-								<p class="truncate text-xs text-fog"><ArtistLink artist={track.artist} /></p>
-							</div>
-							<span class="shrink-0 font-mono text-[0.68rem] text-fog">
-								{getTimeString(convertTimeSpanStringToSeconds(track.duration))}
-							</span>
-						</div>
+						<SearchRow result={track} number={index + 1} />
 					{/each}
 				</div>
 			{:else if loading}
@@ -141,7 +119,7 @@
 				     rest rather than leaving it looking answered and empty. -->
 				<div aria-busy="true">
 					{#each [0, 1, 2, 3] as row (row)}
-						<RowSkeleton />
+						<RowSkeleton numbered />
 					{/each}
 				</div>
 				<p class="sr-only" aria-live="polite">Loading this album.</p>

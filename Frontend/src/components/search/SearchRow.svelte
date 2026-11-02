@@ -11,7 +11,12 @@
 	import TrackMenu from '$components/TrackMenu.svelte';
 
 
-	const { result: given, origin }: { result: SearchResult; origin?: SearchResult['origin'] } = $props();
+	// `number`, when given, leads the row: a track's place on its album.
+	const {
+		result: given,
+		origin,
+		number
+	}: { result: SearchResult; origin?: SearchResult['origin']; number?: number } = $props();
 	// what the row queues carries the list it was picked from, for the listening history
 	let result = $derived(origin ? { ...given, origin } : given);
 	let duration = $derived(getTimeString(convertTimeSpanStringToSeconds(result.duration)));
@@ -75,12 +80,17 @@
 >
 	<div
 		data-preview
-		class="group grid cursor-pointer grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-3 rounded-row px-2 py-2 transition-colors not-has-open:hover:bg-surface-100 not-has-open:active:bg-surface-200 focus-visible:bg-surface-100 focus-visible:outline-none sm:grid-cols-[2.75rem_minmax(0,1fr)_auto_auto] sm:gap-3.5 sm:px-2.5"
+		class="group grid cursor-pointer {number === undefined
+			? 'grid-cols-[2.75rem_minmax(0,1fr)_auto] sm:grid-cols-[2.75rem_minmax(0,1fr)_auto_auto]'
+			: 'grid-cols-[1.5rem_2.75rem_minmax(0,1fr)_auto] sm:grid-cols-[1.5rem_2.75rem_minmax(0,1fr)_auto_auto]'} items-center gap-3 rounded-row px-2 py-2 transition-colors not-has-open:hover:bg-surface-100 not-has-open:active:bg-surface-200 focus-visible:bg-surface-100 focus-visible:outline-none sm:gap-3.5 sm:px-2.5"
 		role="button"
 		tabindex="0"
 		onclick={playUnlessLink}
 		onkeydown={pressKeys(playNow)}
 	>
+		{#if number !== undefined}
+			<span class="text-right font-mono text-[0.68rem] text-fog">{number}</span>
+		{/if}
 		<img
 			src={cover(result.thumbnailUrl, ROW) ?? '/empty.png'}
 			alt=""
