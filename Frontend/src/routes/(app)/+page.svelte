@@ -25,6 +25,8 @@
 	import { closeOnBack, pushPageState } from '$lib/backWatcher.svelte';
 	import { at, record, type Roll } from '$lib/rollHistory';
 	import { SliderInteractions } from '$lib/sliderInteractions.svelte.js';
+	import { sourceOf } from '$lib/source';
+	import rollSources, { firstLibraryPercent, rollShares } from '$states/rollSources.svelte';
 	import Song from '$components/home/song/Song.svelte';
 	import SongSkeleton from '$components/home/song/SongSkeleton.svelte';
 	import Skeleton from '$components/Skeleton.svelte';
@@ -45,14 +47,26 @@
 	let recentlyPlayed = $state<SearchResult[]>([]);
 	let rolling = $state(false);
 	let rollingPicks = $state(false);
-	// The roll's odds, not a level: both sources are always drawn from, so the bar
-	// is always full and the handle is the seam between the two. The API defaults
-	// to 40 when the param is absent. 5% detents keep the readout tidy.
-	// The handle's position is the library share — it is the left territory, so
-	// the pointer and the seam move together and ArrowRight means "more library".
-	const odds = new SliderInteractions(5, 60);
+	// The roll's odds, not a level: the library and the online side are both drawn
+	// from, so the bar is always full and the handle is the seam between the two.
+	// 5% detents keep the readout tidy. The handle's position is the library share —
+	// it is the left territory, so the pointer and the seam move together and
+	// ArrowRight means "more library".
+	const odds = new SliderInteractions(5, firstLibraryPercent);
 	let libraryPercent = $derived(Math.round(odds.percentage / 5) * 5);
-	let youTubePercent = $derived(100 - libraryPercent);
+	// The page landed on a YouTube-only roll; from the first press of Roll again on,
+	// the online share is split between YouTube and Deezer.
+	let split = $state(false);
+	let shares = $derived(rollShares(libraryPercent, rollSources, split));
+	const pills = [
+		{ key: 'youTube', name: 'YouTube', text: 'text-ember', bg: 'bg-ember', border: 'border-ember/45' },
+		{ key: 'deezer', name: 'Deezer', text: 'text-deezer', bg: 'bg-deezer', border: 'border-deezer/45' }
+	] as const;
+	// The online side of the bar: each service this roll could have come from, by its share.
+	let online = $derived(pills.filter((side) => shares[side.key] > 0));
+	let heroSource = $derived(sourceOf(hero?.id).name);
+	// The service the roll on screen came from, when it is one the online side shows.
+	let lit = $derived(online.find((side) => side.name === heroSource));
 	let pastedQuery = $state('');
 	let resolving = $state(false);
 	let pasteMessage = $state('');
@@ -271,8 +285,9 @@
 	async function rollAgain() {
 		if (rolling) return;
 		rolling = true;
+		split = true;
 		try {
-			const nextHero = (await getRandomSongs(fetch, 1, youTubePercent / 100))[0] ?? null;
+			const nextHero = (await getRandomSongs(fetch, 1, shares.youTube / 100, shares.deezer / 100))[0] ?? null;
 			// A roll of its own: a new hero over fresh slots, the same picks below it, and a
 			// history entry, so back puts the roll this one displaced back on screen. A fill
 			// still running from the last roll writes into that roll's own array.
@@ -295,12 +310,13 @@
 	async function rollPicks() {
 		if (rollingPicks) return;
 		rollingPicks = true;
+		split = true;
 		// The same roll's hero over a new set of picks, and its own entry: back brings the
 		// set this one threw away back.
 		const roll: Roll = { hero, artistSongs, picks: Array(30).fill(null), variant };
 		pushRoll(roll);
 		try {
-			await fill(roll.picks, streamRandomSongs(fetch, 30, youTubePercent / 100));
+			await fill(roll.picks, streamRandomSongs(fetch, 30, shares.youTube / 100, shares.deezer / 100));
 		} catch {
 			// fill's own end has already trimmed the row to what arrived
 		} finally {
@@ -465,7 +481,7 @@
 									type="button"
 									class="min-h-11 rounded-row border border-haze px-3 py-2 text-sm font-semibold text-chalk hover:bg-surface-200"
 									onclick={() => choose(false)}
-									>{verb} the {variant.match === 'variant' && rendition ? rendition : 'YouTube'} one</button
+									>{verb} the {variant.match === 'variant' && rendition ? rendition : heroSource} one</button
 								>
 							</div>
 						</div>
@@ -499,35 +515,47 @@
 					{/if}
 					<p class="sr-only" aria-live="polite">{pending && variant ? `${eyebrow}. ${variantLine}` : ''}</p>
 					<!-- The odds and the outcome in one object: the seam is where you set the
-					     split, the lit dot is the side this roll actually came from. -->
+					     split, the lit dot is the side this roll actually came from, and the
+					     online side floods with the colour of the service that sent it. -->
 					<div class="mt-5 max-w-xs sm:max-w-sm">
 						<div
-							class="mb-2 flex items-center justify-between font-mono text-[0.62rem] uppercase tracking-[0.13em]"
+							class="mb-2 flex items-center justify-between gap-3 font-mono text-[0.62rem] uppercase tracking-[0.13em]"
 						>
 							<span class="flex items-center gap-1.5 {heroInLibrary ? 'text-gold' : 'text-fog'}">
 								<span
 									class="size-1.5 rounded-full bg-gold transition-opacity duration-300"
 									class:opacity-0={!heroInLibrary}
 								></span>
-								Library {libraryPercent}%
+								Library {shares.library}%
 							</span>
-							<span class="flex items-center gap-1.5 {heroInLibrary ? 'text-fog' : 'text-ember'}">
-								{youTubePercent}% YouTube
-								<span
-									class="size-1.5 rounded-full bg-ember transition-opacity duration-300"
-									class:opacity-0={heroInLibrary}
-								></span>
-							</span>
+							{#if online.length > 0}
+								<span class="flex items-center gap-1.5 text-fog">
+									{100 - shares.library}%
+									{#each online as side, index (side.key)}
+										{#if index > 0}<span aria-hidden="true">+</span>{/if}
+										<span class="transition-colors duration-300 {lit === side ? side.text : ''}">{side.name}</span>
+									{/each}
+									<span
+										class="size-1.5 rounded-full transition-opacity duration-300 {(lit ?? online[0]).bg}"
+										class:opacity-0={!lit}
+									></span>
+								</span>
+							{/if}
 						</div>
 						<div
-							class="group relative flex h-7 cursor-pointer touch-none items-center rounded-row outline-surface-300 focus-visible:outline-4"
+							class="group relative flex h-7 touch-none items-center rounded-row outline-surface-300 focus-visible:outline-4 {online.length
+								? 'cursor-pointer'
+								: 'pointer-events-none'}"
 							role="slider"
-							tabindex="0"
+							tabindex={online.length ? 0 : -1}
 							aria-label="Share of each roll drawn from the library, in percent"
+							aria-disabled={online.length === 0}
 							aria-valuemin="0"
 							aria-valuemax="100"
-							aria-valuenow={libraryPercent}
-							aria-valuetext="{libraryPercent}% library, {youTubePercent}% YouTube"
+							aria-valuenow={shares.library}
+							aria-valuetext="{shares.library}% library{online.length
+								? `, ${100 - shares.library}% ${online.map((side) => side.name).join(' and ')}`
+								: ''}"
 							onfocusin={odds.enter}
 							onfocusout={odds.leave}
 							onpointerenter={odds.enter}
@@ -541,16 +569,51 @@
 							<div
 								class="flex h-2 w-full overflow-hidden rounded-row transition-[height] duration-150 group-hover:h-3 group-focus-visible:h-3"
 							>
-								<div class="bg-gold transition-[width] duration-100" style:width={libraryPercent + '%'}></div>
-								<div class="flex-1 bg-ember"></div>
+								<div class="bg-gold transition-[width] duration-100" style:width={shares.library + '%'}></div>
+								<!-- Each service by its share until a roll comes from one of them; then that one
+								     takes the whole online side. Grow, not width, so the hand-over is a sweep. -->
+								<div class="flex flex-1">
+									{#each online as side (side.key)}
+										<div
+											class="basis-0 transition-[flex-grow] duration-300 ease-out motion-reduce:transition-none {side.bg}"
+											style:flex-grow={lit ? (lit === side ? 1 : 0) : shares[side.key]}
+										></div>
+									{/each}
+								</div>
 							</div>
 							<!-- ringed in the page ground so the seam stays legible against either side -->
-							<div
-								class="pointer-events-none absolute top-1/2 h-4 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-chalk shadow-[0_0_0_2px_var(--color-dark-0)] transition-[left,height] duration-100 group-hover:h-5 group-focus-visible:h-5"
-								style:left={libraryPercent + '%'}
-							></div>
+							{#if online.length > 0}
+								<div
+									class="pointer-events-none absolute top-1/2 h-4 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-chalk shadow-[0_0_0_2px_var(--color-dark-0)] transition-[left,height] duration-100 group-hover:h-5 group-focus-visible:h-5"
+									style:left={shares.library + '%'}
+								></div>
+							{/if}
 						</div>
-						<p class="sr-only">This roll came from {heroInLibrary ? 'the library' : 'YouTube'}.</p>
+						<!-- What the online side may draw from. Thumb-sized and splitting the line on a
+						     phone, compact beside the readout's width on a desktop; remembered per device. -->
+						<div class="mt-3 flex items-center gap-2" role="group" aria-label="Services mixed into the roll">
+							<span class="eyebrow mr-1 shrink-0 text-fog">Mix in</span>
+							{#each pills as pill (pill.key)}
+								<button
+									type="button"
+									aria-pressed={rollSources[pill.key]}
+									class="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border px-3 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-200 max-sm:grow sm:min-h-8 {rollSources[
+										pill.key
+									]
+										? `${pill.border} text-chalk`
+										: 'border-haze text-fog hover:text-chalk'}"
+									onclick={() => rollSources.toggle(pill.key)}
+								>
+									<span
+										class="size-2 rounded-full border transition-colors {rollSources[pill.key]
+											? `${pill.bg} border-transparent`
+											: 'border-current'}"
+									></span>
+									{pill.name}
+								</button>
+							{/each}
+						</div>
+						<p class="sr-only">This roll came from {heroInLibrary ? 'the library' : heroSource}.</p>
 					</div>
 				</div>
 			</div>

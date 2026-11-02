@@ -52,9 +52,16 @@ async function getResults(fetcher: Fetcher, path: string) {
 	return getJson<SearchResult[]>(fetcher, path);
 }
 
-export function getRandomSongs(fetcher: Fetcher, count = 30, youTubeShare?: number) {
-	const share = youTubeShare === undefined ? '' : `&youTubeShare=${youTubeShare}`;
-	return getResults(fetcher, `/RandomResults?count=${count}${share}`);
+/** Shares are fractions. One left out is the API's default for it — which for Deezer is usually none. */
+function randomPath(count: number, youTubeShare?: number, deezerShare?: number) {
+	const params = new URLSearchParams({ count: String(count) });
+	if (youTubeShare !== undefined) params.set('youTubeShare', String(youTubeShare));
+	if (deezerShare !== undefined) params.set('deezerShare', String(deezerShare));
+	return `/RandomResults?${params}`;
+}
+
+export function getRandomSongs(fetcher: Fetcher, count = 30, youTubeShare?: number, deezerShare?: number) {
+	return getResults(fetcher, randomPath(count, youTubeShare, deezerShare));
 }
 
 export function getArtistLocal(term: string, fetcher: Fetcher) {
@@ -83,9 +90,8 @@ export async function* streamResults(fetcher: Fetcher, path: string): AsyncGener
 	yield* streamJson<SearchResult>(response.body);
 }
 
-export function streamRandomSongs(fetcher: Fetcher, count = 30, youTubeShare?: number) {
-	const share = youTubeShare === undefined ? '' : `&youTubeShare=${youTubeShare}`;
-	return streamResults(fetcher, `/RandomResults?count=${count}${share}`);
+export function streamRandomSongs(fetcher: Fetcher, count = 30, youTubeShare?: number, deezerShare?: number) {
+	return streamResults(fetcher, randomPath(count, youTubeShare, deezerShare));
 }
 
 export function streamArtistLocal(term: string, fetcher: Fetcher) {

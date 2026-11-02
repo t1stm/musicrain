@@ -1,6 +1,7 @@
 import type { PageLoad } from './$types';
 import { getRandomSongs, streamArtistLocal, streamRandomSongs } from '$requests/songs';
 import { heroArtist } from '$lib/artists';
+import rollSources, { firstLibraryPercent, rollShares } from '$states/rollSources.svelte';
 
 /**
  * Awaits nothing, so the route renders on the first frame and every section fills
@@ -12,13 +13,16 @@ import { heroArtist } from '$lib/artists';
  * are caught by the page instead, where the section they belong to can be emptied.
  */
 export const load: PageLoad = ({ fetch }) => {
-	const hero = getRandomSongs(fetch, 1)
+	// The first roll of a visit never draws from Deezer unless YouTube is switched off; the page's own
+	// rolls split the online share between the two — see rollShares.
+	const first = rollShares(firstLibraryPercent, rollSources, false);
+	const hero = getRandomSongs(fetch, 1, first.youTube / 100, first.deezer / 100)
 		.then((songs) => songs[0] ?? null)
 		.catch(() => null);
 
 	return {
 		hero,
-		picks: streamRandomSongs(fetch),
+		picks: streamRandomSongs(fetch, 30, first.youTube / 100, first.deezer / 100),
 		librarySongs: streamRandomSongs(fetch, 200),
 		// needs the hero's name, so it is the one thing that still chains — but it no
 		// longer holds up anything else
