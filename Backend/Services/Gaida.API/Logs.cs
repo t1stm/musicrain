@@ -18,8 +18,9 @@ internal static partial class Logs
     [LoggerMessage(LogLevel.Warning, "Resolving {Id} failed")]
     public static partial void ResolvingFailed(this ILogger logger, Exception exception, string id);
 
-    [LoggerMessage(LogLevel.Information, "Returning {Count} random results with a {Share} YouTube share")]
-    public static partial void ReturningRandom(this ILogger logger, int count, double share);
+    [LoggerMessage(LogLevel.Information,
+        "Returning {Count} random results with a {Share} YouTube share and a {DeezerShare} Deezer share")]
+    public static partial void ReturningRandom(this ILogger logger, int count, double share, double deezerShare);
 
     [LoggerMessage(LogLevel.Information, "Downloading Raw '{ID}'")]
     public static partial void DownloadingRaw(this ILogger logger, string id);

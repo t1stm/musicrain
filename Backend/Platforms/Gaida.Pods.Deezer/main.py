@@ -132,6 +132,23 @@ async def search(q: str | None = None) -> Response:
     return JSONResponse(await _mapped((found or {}).get("data") or []))
 
 
+@app.get("/match")
+async def match(name: str | None = None, artist: str | None = None, seconds: int = 0) -> Response:
+    """
+    The track a name means, out of what this pod already listed or downloaded -- never a Deezer call.
+
+    Gaida.API asks this before ``/search`` when it resolves a Spotify result, so a track found once is
+    found again for free, and a downloaded one plays off the disk. 404 is "not known yet", and the
+    caller goes on to ``/search``. No artist is no match: a bare title is not a perfect one.
+    """
+    wanted, credit = (name or "").strip(), (artist or "").strip()
+    if not wanted or not credit:
+        return Response(status_code=404)
+
+    found = await asyncio.to_thread(songs.match, wanted, credit, seconds)
+    return JSONResponse(found) if found else Response(status_code=404)
+
+
 @app.get("/playlist")
 async def playlist(url: str | None = None) -> Response:
     playlist_id = classify.playlist_id(url or "")
@@ -242,11 +259,10 @@ async def content(id: str | None = None, format: str | None = None) -> Response:
     )
 
 
-# Deezer has nothing to offer at random that Gaida.API asks it for -- /random belongs to the pods that
-# own a catalogue. HttpPlatform reads the 404 as "route not supported" and moves on.
 @app.get("/random")
-def unsupported() -> Response:
-    return Response(status_code=404)
+async def random_results(count: int = 10) -> Response:
+    """Tracks at random out of what searches here already listed, so a random pick costs no Deezer call."""
+    return JSONResponse(await asyncio.to_thread(songs.random, count))
 
 
 # ── the admin surface ───────────────────────────────────────────────────────────────────────────

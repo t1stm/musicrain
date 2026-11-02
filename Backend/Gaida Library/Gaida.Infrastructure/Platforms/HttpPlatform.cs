@@ -102,6 +102,19 @@ public sealed class HttpPlatform : Platform, ISupportsSearch, ISupportsPlaylist,
     }
 
     /// <summary>
+    ///     Deezer-pod-only: the track a name means, out of what the pod already listed or downloaded — no call
+    ///     to Deezer. Null when the pod knows no such track yet.
+    /// </summary>
+    public async Task<PlatformResult?> MatchAsync(string name, string? artist, TimeSpan duration,
+        CancellationToken cancellationToken = default)
+    {
+        var query = $"/match?name={Uri.EscapeDataString(name)}&artist={Uri.EscapeDataString(artist ?? "")}" +
+                    $"&seconds={(int)duration.TotalSeconds}";
+        var dto = await GetAsync<PodResultDto>(query, cancellationToken);
+        return dto is null ? null : ToResult(dto);
+    }
+
+    /// <summary>
     ///     The pod's raw <c>/content?id=</c> response — headers and a pull stream — for a direct copy into the
     ///     response body or ffmpeg's stdin. The caller disposes it. <c>null</c> on 404 or any other failure; this
     ///     is deliberately not routed through <see cref="HttpGetter" />'s <see cref="StreamSpreader" />, since a

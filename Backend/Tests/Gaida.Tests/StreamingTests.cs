@@ -40,6 +40,13 @@ public class StreamingTests
         // Neither source can cover it: short is short, not a hang.
         var tooShort = await Collect(Numbered("yt", 1).RandomMerge(4, Numbered("local", 2), 10));
         Assert.Equal(3, tooShort.Count);
+
+        // Merged twice, as RandomResults does with Deezer: every source still gets exactly its share.
+        var threeWay = await Collect(Numbered("yt", 3).RandomMerge(3, Numbered("dz", 2), 5)
+            .RandomMerge(5, Numbered("local", 10), 10));
+        Assert.Equal((3, 2, 5), (threeWay.Count(item => item.StartsWith("yt", StringComparison.Ordinal)),
+            threeWay.Count(item => item.StartsWith("dz", StringComparison.Ordinal)),
+            threeWay.Count(item => item.StartsWith("local", StringComparison.Ordinal))));
     }
 
     /// <summary>

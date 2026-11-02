@@ -90,6 +90,7 @@ Every host-specific value and every secret lives in `.env` beside [compose.yaml]
 | `DEEZER_RESOLVE` | `true` | Tells Gaida.API to resolve Deezer hits elsewhere — what metadata-only mode needs. |
 | `DUNAV_MAX_BYTES` | 20 GiB | Disk budget for the download cache, evicted LRU. |
 | `YOUTUBE_RANDOM_SHARE` | `0.4` | Share of `RandomResults` drawn from YouTube, the library backfilling the rest. |
+| `DEEZER_RANDOM_SHARE` | `0` | Share of `RandomResults` drawn from Deezer's search cache, capped at what YouTube leaves. Ignored while `DEEZER_RESOLVE` is true. |
 | `BOT_CONFIG_FILE` | `./Services/Gaida.Bot/.env.json` | The Discord bot's accounts, mounted read-only — the same file `dotnet run` reads. |
 | `BOT_CONFIGURATION` | *(unset)* | Those accounts as a JSON array instead, overriding the file. With neither, `gaida-bot` says so and exits. |
 | `SERVICE_MEMORY_LIMIT` | `2g` | Memory ceiling every pod runs under, swap included. |

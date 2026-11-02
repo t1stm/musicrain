@@ -89,8 +89,15 @@ public sealed class PlayableResolver(
         // whatever was uploaded under that name. Skipped when Deezer is metadata-only in this deployment
         // (no ARL, so Platforms__N__Resolve is on) — resolving one name into another resolves nothing.
         if (!managerService.NeedsResolving(Prefix.Deezer) && managerService.Pod(Prefix.Deezer) is { } deezer)
+        {
+            // What the pod already knows first: a track it listed or downloaded before is found without
+            // asking Deezer again, and a downloaded one then plays off the pod's disk.
+            if (await deezer.MatchAsync(name, artist, result.Duration, cancellationToken) is { } known)
+                return known;
+
             await foreach (var hit in deezer.SearchKeywords(term, cancellationToken))
                 return hit;
+        }
 
         if (managerService.Pod(Prefix.YouTube) is { } youTube)
             await foreach (var hit in youTube.SearchKeywords(term, cancellationToken))

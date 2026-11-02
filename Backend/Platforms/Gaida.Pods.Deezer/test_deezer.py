@@ -479,6 +479,38 @@ def test_search_results_fold_cyrillic_and_match_the_full_id():
         assert songs.browse(None, 0, 500, None)["take"] == cache.PAGE_MAX
 
 
+def test_a_spotify_name_matches_what_the_cache_already_knows():
+    with tempfile.TemporaryDirectory() as directory:
+        songs = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
+        songs.remember([to_dto(_track(id=1)), to_dto(_track(id=2, title="Harder, Better, Faster, Stronger (Live)"))])
+        title = "harder, better, faster, stronger"
+
+        # Spotify credits everyone and counts milliseconds; a search row has the lead and whole seconds.
+        assert songs.match(title, "Daft Punk, Someone Else", 223)["id"] == "deezer://1"
+        assert songs.match(title, "Daft Punk", 0)["id"] == "deezer://1"
+        assert songs.match(title, "Daft Punk", 260) is None
+        assert songs.match(title, "Daft Punks", 224) is None
+        assert songs.match("Harder Better Faster Stronger", "Daft Punk", 224) is None
+
+        # The same recording listed twice: the downloaded one plays off the disk.
+        songs.store("3", b"x" * 10, stream.MP3, _dto())
+        assert songs.match(title, "Daft Punk", 224)["id"] == "deezer://3"
+        assert asyncio.run(main.match("Nothing Like It", "Daft Punk")).status_code == 404
+
+
+def test_random_picks_come_from_the_remembered_results():
+    with tempfile.TemporaryDirectory() as directory:
+        songs = cache.Cache(directory, cache.MAX_BYTES_DEFAULT)
+        assert songs.random(5) == []
+
+        songs.remember([to_dto(_track(id=n)) for n in range(1, 11)])
+        picks = songs.random(4)
+        assert len(picks) == 4 and len({pick["id"] for pick in picks}) == 4
+        assert picks[0] == songs.result(picks[0]["id"].removeprefix("deezer://"))
+        assert len(songs.random(50)) == 10
+        assert songs.random(-1) == []
+
+
 def test_a_downloaded_track_is_evicted_before_it_is_forgotten():
     """Forgotten while downloaded, a track would drop out of Oko's table with its audio still on disk."""
     main.songs.remember([to_dto(_track(id=7))])

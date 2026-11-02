@@ -189,6 +189,7 @@ services:
       PublicApiBaseUrl: ${PUBLIC_API_BASE_URL:-http://localhost:5340}
       # Content.RandomResults — the platform name lives here rather than in code.
       Random__Shares__youtube: ${YOUTUBE_RANDOM_SHARE:-0.4}
+      Random__Shares__deezer: ${DEEZER_RANDOM_SHARE:-0}
     ports:
       # Host ports are the 534x block; the container always listens on 8080.
       - "127.0.0.1:${GAIDA_API_PORT:-5340}:8080"

@@ -93,11 +93,18 @@ _TRACK_COLUMNS = f"{', '.join(_RESULT_COLUMNS)}, format, bytes, at"
 PAGE_MAX = 200
 """The most rows one page of :func:`page` carries."""
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 """
 ``PRAGMA user_version`` once every table exists, the sidecars are imported and every download is
 remembered. 0 is a new file, 1 one written before the ``results`` table, 2 one whose downloads were not
-remembered.
+remembered, 3 one without the index :meth:`Cache.match` looks names up by. An older image reads a 4 as
+a 3: the index is all that changed, and it uses no function of ours.
+"""
+
+MATCH_SECONDS = 3
+"""
+How far apart two lengths can be and still be one recording. Spotify counts milliseconds and Deezer whole
+seconds, so the same master is a second or two out; another edit of it is ten or more.
 """
 
 
@@ -164,11 +171,43 @@ class Cache:
             row = self._db.execute(f"SELECT {', '.join(_RESULT_COLUMNS)} FROM results WHERE id = ?",
                                    (track_id,)).fetchone()
 
-        if row is None:
-            return None
+        return None if row is None else _result(track_id, row)
 
-        return {"id": "deezer://" + track_id, **dict(zip(_RESULT_COLUMNS, row)),
-                "originalTitle": None, "originalArtist": None}
+    def random(self, count: int) -> list[dict[str, Any]]:
+        """
+        Up to ``count`` known tracks at random, in pod-result shape -- the YouTube pod's random picks, out of
+        what searches here already listed.
+
+        ponytail: ``ORDER BY random()`` reads the whole table for every call. Fine at tens of thousands of
+        rows; picking random rowids is the upgrade if it ever is not.
+        """
+        with self._lock:
+            rows = self._db.execute(f"SELECT id, {', '.join(_RESULT_COLUMNS)} FROM results "
+                                    "ORDER BY random() LIMIT ?", (max(0, count),)).fetchall()
+
+        return [_result(row[0], row[1:]) for row in rows]
+
+    def match(self, name: str, artist: str, seconds: int) -> dict[str, Any] | None:
+        """
+        The known track a name means, in pod-result shape, or ``None`` when no row is that track.
+
+        The same title, ASCII case aside; the same lead artist, since a search row carries the lead alone
+        and Spotify credits everyone; and, when ``seconds`` is given, a length within :data:`MATCH_SECONDS`.
+        Of several -- the single and the album both list the recording -- a downloaded one first, so it
+        plays off this disk, then the closest length.
+        """
+        columns = ", ".join(f"results.{column}" for column in _RESULT_COLUMNS)
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT id, {columns}, entries.id IS NOT NULL FROM results LEFT JOIN entries USING (id) "
+                "WHERE results.name = ? COLLATE NOCASE", (name,)).fetchall()
+
+        def off(row: tuple) -> int:
+            return abs(_seconds(row[4]) - seconds) if seconds > 0 else 0
+
+        near = [row for row in rows if _same_lead(row[2], artist) and off(row) <= MATCH_SECONDS]
+        best = min(near, key=lambda row: (not row[-1], off(row)), default=None)
+        return None if best is None else _result(best[0], best[1:-1])
 
     # ── writing ─────────────────────────────────────────────────────────────────────────────────
 
@@ -317,6 +356,7 @@ class Cache:
                         id TEXT PRIMARY KEY, name TEXT NOT NULL, artist TEXT NOT NULL, album TEXT,
                         duration TEXT NOT NULL, thumbnailUrl TEXT)""")
                     self._db.execute(_BACKFILL)
+                    self._db.execute("CREATE INDEX IF NOT EXISTS results_name ON results (name COLLATE NOCASE)")
                     self._db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
             rows = [Entry(*row) for row in self._db.execute(f"SELECT {', '.join(_COLUMNS)} FROM entries")]
@@ -442,6 +482,24 @@ def page(db: sqlite3.Connection, table: str, prefix: str, columns: str, query: s
 
 def _fold(text: str | None) -> str | None:
     return text.casefold() if text else text
+
+
+def _result(track_id: str, values: tuple) -> dict[str, Any]:
+    """One ``results`` row's :data:`_RESULT_COLUMNS`, in pod-result shape."""
+    return {"id": "deezer://" + track_id, **dict(zip(_RESULT_COLUMNS, values)),
+            "originalTitle": None, "originalArtist": None}
+
+
+def _same_lead(theirs: str, wanted: str) -> bool:
+    """One credit is the other, or starts it: ``Daft Punk`` and ``Daft Punk, Pharrell Williams`` agree."""
+    theirs, wanted = theirs.casefold(), wanted.casefold()
+    return theirs == wanted or theirs.startswith(wanted + ", ") or wanted.startswith(theirs + ", ")
+
+
+def _seconds(clock: str) -> int:
+    """:func:`mapper.duration` backwards. ponytail: drops the day count, which no song has."""
+    hours, minutes, seconds = clock.rsplit(":", 2)
+    return int(hours.rpartition(".")[2]) * 3600 + int(minutes) * 60 + int(seconds)
 
 
 def _remove(path: Path) -> None:

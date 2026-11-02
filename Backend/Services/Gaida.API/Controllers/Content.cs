@@ -116,7 +116,8 @@ public class Content(ILogger<Content> logger, IOptionsSnapshot<GaidaApiOptions> 
     [ProducesResponseType<IReadOnlyList<SearchResultDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorBody>(StatusCodes.Status400BadRequest)]
     public IActionResult RandomResults(
-        [FromServices] ManagerService managerService, int count = 10, double? youTubeShare = null)
+        [FromServices] ManagerService managerService, int count = 10, double? youTubeShare = null,
+        double? deezerShare = null)
     {
         if (count is < 1 or > 200)
             return BadRequest(new ApiErrorBody(new ApiError("invalid_count", "count must be between 1 and 200.")));
@@ -125,8 +126,12 @@ public class Content(ILogger<Content> logger, IOptionsSnapshot<GaidaApiOptions> 
         if (share is < 0 or > 1 or double.NaN)
             return BadRequest(new ApiErrorBody(new ApiError("invalid_share", "youTubeShare must be between 0 and 1.")));
 
-        logger.ReturningRandom(count, share);
-        return Ok(this.Mapped(managerService.RandomResults(count, share, HttpContext.RequestAborted),
+        var deezer = deezerShare ?? options.Value.RandomDeezerShare;
+        if (deezer is < 0 or > 1 or double.NaN)
+            return BadRequest(new ApiErrorBody(new ApiError("invalid_share", "deezerShare must be between 0 and 1.")));
+
+        logger.ReturningRandom(count, share, deezer);
+        return Ok(this.Mapped(managerService.RandomResults(count, share, deezer, HttpContext.RequestAborted),
             options.Value, environment));
     }
 

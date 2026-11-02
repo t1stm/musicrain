@@ -79,20 +79,23 @@ public class ManagerService
     }
 
     /// <summary>
-    ///     <paramref name="count" /> results drawn from YouTube's cache and the library, YouTube's share being
-    ///     <paramref name="youTubeShare" />. Randomized rounding preserves the share over time while letting
-    ///     either source be picked for small requests (count=1 chooses YouTube 40% of the time at 0.4).
+    ///     <paramref name="count" /> results drawn from YouTube's cache, Deezer's cache and the library, YouTube's
+    ///     share being <paramref name="youTubeShare" /> and Deezer's <paramref name="deezerShare" />. Randomized
+    ///     rounding preserves each share over time while letting any source be picked for small requests
+    ///     (count=1 chooses YouTube 40% of the time at 0.4). The library backfills whatever the others are short of.
     /// </summary>
-    public IAsyncEnumerable<PlatformResult> RandomResults(int count, double youTubeShare,
+    public IAsyncEnumerable<PlatformResult> RandomResults(int count, double youTubeShare, double deezerShare,
         CancellationToken cancellationToken)
     {
-        var exactYouTubeCount = count * youTubeShare;
-        var youTubeCount = (int)Math.Floor(exactYouTubeCount);
-        if (Random.Shared.NextDouble() < exactYouTubeCount - youTubeCount)
-            youTubeCount++;
+        var youTubeCount = SharedOut(count, youTubeShare);
+
+        // Never more than YouTube leaves, so a client that asks for all YouTube still gets all YouTube. A
+        // metadata-only Deezer hands out IDs nothing plays, so then its share falls to the library.
+        var deezerCount = NeedsResolving(Prefix.Deezer) ? 0 : Math.Min(SharedOut(count, deezerShare), count - youTubeCount);
 
         var youTube = Pod(Prefix.YouTube)?.GetRandomResults(youTubeCount, cancellationToken)
                       ?? Array.Empty<PlatformResult>().AsAsync();
+        var deezer = deezerCount > 0 ? Pod(Prefix.Deezer)?.GetRandomResults(deezerCount, cancellationToken) : null;
 
         // ponytail: local is asked for the full count rather than the shortfall. It answers from an in-memory
         // shuffle, so over-asking is free, and whatever YouTube turns out to be short of is already on its
@@ -100,6 +103,17 @@ public class ManagerService
         var local = Pod(Prefix.Local)?.GetRandomResults(count, cancellationToken)
                     ?? Array.Empty<PlatformResult>().AsAsync();
 
-        return youTube.RandomMerge(youTubeCount, local, count, cancellationToken);
+        // Merged twice rather than three ways at once: the two caches first, then that against the library.
+        // Each merge places its sources at random, so the result is the same as one three-way shuffle.
+        var caches = deezer is null ? youTube : youTube.RandomMerge(youTubeCount, deezer, youTubeCount + deezerCount,
+            cancellationToken);
+        return caches.RandomMerge(youTubeCount + deezerCount, local, count, cancellationToken);
+
+        static int SharedOut(int total, double share)
+        {
+            var exact = total * share;
+            var whole = (int)Math.Floor(exact);
+            return Random.Shared.NextDouble() < exact - whole ? whole + 1 : whole;
+        }
     }
 }

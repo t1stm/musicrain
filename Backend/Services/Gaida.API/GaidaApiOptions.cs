@@ -13,6 +13,10 @@ public sealed class GaidaApiOptions
     [ConfigurationKeyName("Random:Shares:youtube")]
     public double RandomYouTubeShare { get; set; } = 0.4;
 
+    /// <summary>Deezer's share of a random mix when the request does not name one. Zero leaves it out.</summary>
+    [ConfigurationKeyName("Random:Shares:deezer")]
+    public double RandomDeezerShare { get; set; }
+
     /// <summary>Name lookups in flight at once when a playlist of names is resolved. At least one runs.</summary>
     [ConfigurationKeyName("Resolve:Concurrency")]
     public int ResolveConcurrency { get; set; } = 4;
