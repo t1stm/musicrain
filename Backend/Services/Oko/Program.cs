@@ -159,6 +159,18 @@ void MapPanel(RouteGroupBuilder group, Func<HttpContext, Caller> who)
         audit.Record(new AuditEntry(DateTimeOffset.UtcNow, op.Name, name, action,
             AuditLog.Describe(http.Request.Query), status, status < 400 ? null : body));
 
+        // A library song's names and cover are what every playlist holding it shows, so an edit to one has
+        // Dom rename it there now rather than at its daily refresh. Recorded like any other change, under
+        // whoever made the edit. Best effort: the edit stands either way, and the daily refresh catches up.
+        if (status < 400 && name == "gaida-local" && action is "edit-song" or "refresh-cover"
+            && http.Request.Query["id"].ToString() is { Length: > 0 } song)
+        {
+            var refresh = QueryString.Create("id", "audio://" + song);
+            var (followed, answer) = await fleet.ActAsync("dom", "refresh-tracks", refresh, cancellationToken);
+            audit.Record(new AuditEntry(DateTimeOffset.UtcNow, op.Name, "dom", "refresh-tracks",
+                $"id=audio://{song}", followed, followed < 400 ? null : answer));
+        }
+
         return Results.Content(body, "application/json", statusCode: status);
     });
 

@@ -1154,6 +1154,75 @@ public sealed class DomStore
         }
     }
 
+    /// <summary>Every track ID in every playlist, each once: what <see cref="PlaylistRefresh" /> asks about.</summary>
+    public List<string> TrackIds()
+    {
+        lock (_gate)
+            return [.. _playlists.Values.SelectMany(p => p.Tracks).Select(t => t.Id).Distinct(StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    ///     Brings every saved track up to what its ID plays as now. The ID and who added it stay; the name,
+    ///     artist, album, length and cover are taken from <paramref name="fresh" />, trimmed the way a save is.
+    ///     Neither <see cref="Playlist.Revision" /> nor <see cref="Playlist.UpdatedUtc" /> moves: nobody edited
+    ///     the list, so a page open on it is not told somebody did, and the card does not jump to the front.
+    /// </summary>
+    /// <remarks>
+    ///     ponytail: a save from a page loaded before a refresh writes its older names back, until the next
+    ///     refresh. Keep the stored fields for IDs already in the list in <see cref="Update" /> if that shows.
+    /// </remarks>
+    /// <param name="fresh">What each ID plays as now, keyed by the ID as saved. A missing ID keeps its snapshot.</param>
+    /// <returns>How many tracks changed.</returns>
+    public int RefreshTracks(IReadOnlyDictionary<string, TrackSnapshot> fresh)
+    {
+        // a result with no name is not one to rename a track to
+        var now = fresh.Where(pair => !string.IsNullOrWhiteSpace(pair.Value.Name) && pair.Value.Artist is not null)
+            .ToDictionary(pair => pair.Key, pair => Clean([pair.Value])[0], StringComparer.Ordinal);
+
+        lock (_gate)
+        {
+            var changed = new List<Playlist>();
+            var tracks = 0;
+
+            foreach (var playlist in _playlists.Values)
+            {
+                var before = tracks;
+                var next = new List<TrackSnapshot>(playlist.Tracks.Count);
+                foreach (var saved in playlist.Tracks)
+                {
+                    if (!now.TryGetValue(saved.Id, out var track)
+                        || (saved.Name, saved.Artist, saved.Album, saved.Duration, saved.ThumbnailUrl) ==
+                        (track.Name, track.Artist, track.Album, track.Duration, track.ThumbnailUrl))
+                    {
+                        next.Add(saved);
+                        continue;
+                    }
+
+                    tracks++;
+                    next.Add(new TrackSnapshot
+                    {
+                        Id = saved.Id,
+                        Name = track.Name,
+                        Artist = track.Artist,
+                        Album = track.Album,
+                        Duration = track.Duration,
+                        ThumbnailUrl = track.ThumbnailUrl,
+                        AddedBy = saved.AddedBy
+                    });
+                }
+
+                if (tracks == before) continue;
+
+                // a new list, not an edit in place: a response being written outside the lock may be walking the old one
+                playlist.Tracks = next;
+                changed.Add(playlist);
+            }
+
+            if (changed.Count > 0) SaveLocked(playlists: changed);
+            return tracks;
+        }
+    }
+
     /// <summary>
     ///     What a playlist has to be. There is no track cap; Kestrel's 30 MB request body limit is
     ///     the only ceiling on how big one save can be.

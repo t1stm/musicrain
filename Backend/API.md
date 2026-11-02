@@ -375,8 +375,11 @@ DELETE /Audio/Accounts/Staff/{username}   Bearer (owner)                 204
 `/Audio/Playlists/*` is served by Dom as well. A playlist is a named, ordered list of tracks that
 belongs to one account. Its `visibility` is `private` (the owner and its collaborators),
 `friends` (the owner's friends as well) or `public` (anybody). The tracks are **snapshots** taken when they
-were saved, not references — a playlist renders without a single call to the rest of the stack, and
-a track retagged in the library keeps the name it was saved under.
+were saved, not references — a playlist renders without a single call to the rest of the stack. Dom
+brings them up to date itself: once a day it asks [`/Audio/Resolve`](#resolving-many-ids) about every
+saved ID and takes the name, artist, album, length and cover from the answer, and an operator's edit to
+a library song through Oko reaches every playlist holding it straight away. Neither moves `revision` or
+`updatedUtc`. The ID and `addedBy` never change.
 
 ```
 GET    /Audio/Playlists/Public                                        200

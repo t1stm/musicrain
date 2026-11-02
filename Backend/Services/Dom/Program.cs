@@ -33,9 +33,13 @@ builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => poli
 
 builder.Services.AddSingleton(Log.Logger);
 
-// Dom's one outbound call: telling Moliv an account is gone (AccountCleanup). Moliv is on the
-// Docker network, so a slow answer is a down one.
+// Dom's two outbound calls: telling Moliv an account is gone (AccountCleanup), and asking gaida-api what
+// the playlists' tracks are called now (PlaylistRefresh). Moliv is on the Docker network, so a slow
+// answer is a down one; fifty Resolve lookups can each be a Deezer or YouTube call, so gaida-api gets longer.
 builder.Services.AddHttpClient(AccountCleanup.Moliv, http => http.Timeout = TimeSpan.FromSeconds(5));
+builder.Services.AddHttpClient(PlaylistRefresh.Gaida, http => http.Timeout = TimeSpan.FromMinutes(2));
+builder.Services.AddSingleton<PlaylistRefresh>();
+builder.Services.AddHostedService(services => services.GetRequiredService<PlaylistRefresh>());
 builder.Services.AddOptions<DomOptions>().Bind(builder.Configuration);
 builder.Services.AddSingleton<CoverFiles>();
 builder.Services.AddSingleton<AccountCleanup>();

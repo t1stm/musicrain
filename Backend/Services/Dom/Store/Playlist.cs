@@ -5,7 +5,8 @@ namespace Dom.Store;
 
 /// <summary>
 ///     A named, ordered list of tracks belonging to one account. The tracks are snapshots, not
-///     references: a playlist renders without asking Gaida anything.
+///     references: a playlist renders without asking Gaida anything. <see cref="PlaylistRefresh" />
+///     brings the snapshots up to date once a day.
 /// </summary>
 public sealed class Playlist
 {

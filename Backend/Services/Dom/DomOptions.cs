@@ -10,6 +10,10 @@ public sealed class DomOptions
     [ConfigurationKeyName("Dom:CoverDir")]
     public string CoverDir { get; set; } = "covers";
 
+    /// <summary>Gaida.API, asked once a day what every playlist's tracks are called now. Unset skips it.</summary>
+    [ConfigurationKeyName("Gaida:Url")]
+    public string? GaidaUrl { get; set; }
+
     /// <summary>Moliv, told when an account is deleted. Unset skips it.</summary>
     [ConfigurationKeyName("Moliv:Url")]
     public string? MolivUrl { get; set; }

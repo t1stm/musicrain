@@ -13,7 +13,7 @@ The frontend-facing contract is in [API.md](API.md), the room protocol in [MULTI
 | [Gaida.API](Services/Gaida.API) | The public front door. Fans a search out to every pod, resolves metadata-only results into playable ones, and transcodes on the way out. The only stateless service, so the only one worth scaling. |
 | [Dunav](Services/Dunav) | The fan-out download cache. One upstream fetch per key, an on-disk body served to every client that asked, LRU eviction against a disk budget. |
 | [Selo](Services/Selo) | Rooms. WebSocket sessions holding several listeners on one shared clock. |
-| [Dom](Services/Dom) | Accounts and playlists. Talks only to Moliv, to forget a deleted account's history. One of the two volumes that hold real user data. |
+| [Dom](Services/Dom) | Accounts and playlists. Tells Moliv to forget a deleted account's history, and asks Gaida.API once a day what the playlists' tracks are called now. One of the two volumes that hold real user data. |
 | [Moliv](Services/Moliv) | Listening history: every play on every device, as track IDs and how they were heard. Asks Dom who a token belongs to; the other volume of real user data. |
 | [Stih](Services/Stih) | Lyrics. The stack's only LRCLIB client: it fetches the words, writes them beside the audio and indexes what it has. |
 | [Snimka](Services/Snimka) | Images. Keeps the library's covers, fetches every other track thumbnail once and keeps that too, and serves both at whatever size a row or a card asks for. |

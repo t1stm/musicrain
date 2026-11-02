@@ -1,5 +1,6 @@
 using Dom.Store;
 using Gaida.Admin;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Dom;
 
@@ -15,6 +16,7 @@ internal static class Admin
         var store = app.Services.GetRequiredService<DomStore>();
         var covers = app.Services.GetRequiredService<CoverFiles>();
         var cleanup = app.Services.GetRequiredService<AccountCleanup>();
+        var refresh = app.Services.GetRequiredService<PlaylistRefresh>();
 
         var admin = app.MapAdmin(store.Snapshot);
         if (admin is null) return;
@@ -53,6 +55,11 @@ internal static class Admin
 
         admin.MapPost("/remove-track", (string id, int index) =>
             Answer(store.AdminUpdatePlaylist(id, null, null, index)));
+
+        // What Oko sends after an operator edits a library song: those tracks renamed in every playlist now,
+        // rather than at the next daily refresh. [FromQuery], because a POST reads an unmarked array from the body.
+        admin.MapPost("/refresh-tracks", async ([FromQuery] string[] id, CancellationToken ct) =>
+            Results.Ok(new { changed = await refresh.RefreshAsync(id, ct) }));
 
         admin.MapPost("/delete-playlist", (string id) =>
         {

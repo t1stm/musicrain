@@ -22,7 +22,7 @@ internal static class SelfCheck
 
     public static Task<bool> RunAsync()
     {
-        var ok = Accounts() & Tokens() & Persistence() & Expiry() & PlaylistsCheck() & StaffCheck();
+        var ok = Accounts() & Tokens() & Persistence() & Expiry() & PlaylistsCheck() & RefreshCheck() & StaffCheck();
 
         return Task.FromResult(ok);
     }
@@ -188,6 +188,48 @@ internal static class SelfCheck
             $"created={error ?? "ok"} unnamed={unnamed.Refusal?.Code} mineOnly={mineOnly} hidden={hidden} " +
             $"shared={shared} duration={duration} reloaded={survived} deleted={gone} " +
             $"strangerPatch={strangerPatch} strangerDeleted={strangerDelete}");
+
+        return ok;
+    }
+
+    /// <summary>
+    ///     A refresh renames a track everywhere it is saved, keeps its ID and who added it, leaves a track
+    ///     nothing resolved alone, and moves neither the revision nor the time — and it reloads that way.
+    /// </summary>
+    private static bool RefreshCheck()
+    {
+        using var scratch = new ScratchFile();
+        var store = new DomStore(scratch.Path, Quiet);
+        var kris = store.Register("kris", "correct horse battery").Value!.User;
+
+        var first = store.Create(kris, "One", Visibility.Private,
+            [new() { Id = "audio://1", Name = "Old", Artist = "B.T.R.", Duration = "00:03:00" },
+             new() { Id = "yt://2", Name = "Kept", Artist = "Someone", Duration = "00:02:00" }]).Value!;
+        var second = store.Create(kris, "Two", Visibility.Private,
+            [new() { Id = "audio://1", Name = "Old", Artist = "B.T.R.", Duration = "00:03:00" }]).Value!;
+        var (revision, updated) = (first.Revision, first.UpdatedUtc);
+
+        var ids = store.TrackIds();
+        var changed = store.RefreshTracks(new Dictionary<string, TrackSnapshot>
+        {
+            // the resolver may answer with another ID; the saved one stays
+            ["audio://1"] = new() { Id = "audio://9", Name = " New ", Artist = "Б.Т.Р", Duration = "0:03:01" },
+            ["yt://gone"] = new() { Id = "yt://gone", Name = "", Artist = "" }
+        });
+        var again = store.RefreshTracks(new Dictionary<string, TrackSnapshot>
+            { ["audio://1"] = new() { Id = "audio://1", Name = "New", Artist = "Б.Т.Р", Duration = "00:03:01" } });
+
+        var reloaded = new DomStore(scratch.Path, Quiet);
+        var one = reloaded.Visible(first.Id, kris)!;
+        var renamed = one.Tracks[0] is { Id: "audio://1", Name: "New", Artist: "Б.Т.Р", Duration: "00:03:01", AddedBy: null }
+                      && reloaded.Visible(second.Id, kris)!.Tracks[0].Name == "New";
+        var untouched = one.Tracks[1].Name == "Kept";
+        var unmoved = one.Revision == revision && one.UpdatedUtc == updated;
+
+        var ok = ids.Count == 2 && changed == 2 && again == 0 && renamed && untouched && unmoved;
+
+        Report(ok, "a refresh renames a track in every playlist and nothing else about it",
+            $"ids={ids.Count} changed={changed} again={again} renamed={renamed} untouched={untouched} unmoved={unmoved}");
 
         return ok;
     }
