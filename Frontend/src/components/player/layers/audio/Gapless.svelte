@@ -293,6 +293,14 @@
 		// track the sound is already playing.
 		history.end('finished');
 		queue.nextTrack('autoplay');
+		// already the track being played: without this the track-change effect reads
+		// the new id as a jump in the queue and `begin` stops the spliced node and
+		// starts it again — a click, and a skip of up to the output latency when the
+		// clamped position restarts it at `0 + latency()`. `begin` would also have
+		// set the two lines after it, through `hand` and `start`.
+		wanted = current.id;
+		audio.bufferedSeconds = current.lengthSeconds;
+		skipped.loaded();
 		// `setCurrent` zeroes the display, which the seek effect would otherwise
 		// read as someone dragging the bar back to the start of the new track.
 		audio.currentSeconds = position();
