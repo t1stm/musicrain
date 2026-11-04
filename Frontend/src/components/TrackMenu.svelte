@@ -9,12 +9,14 @@
 		ClipboardDocument,
 		EllipsisHorizontal,
 		Icon,
+		PencilSquare,
 		Plus,
 		QueueList,
 		User
 	} from 'svelte-hero-icons';
 	import { tick, untrack } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { heroArtist } from '$lib';
 	import Lift from '$components/Lift.svelte';
@@ -23,9 +25,11 @@
 	import type { PlaylistSummary } from '$requests/playlists';
 	import account from '$states/account.svelte';
 	import advanced from '$states/advanced.svelte';
+	import current from '$states/current.svelte';
 	import playlists, { toSnapshot } from '$states/playlists.svelte';
 	import type { SearchResult } from '$states/search.svelte';
 	import queue from '$states/queue.svelte';
+	import session from '$states/session.svelte';
 
 	// A track's menu. Bindable so a swipe on a row or a held press on a card can open it
 	// without the "…". `trigger={false}` leaves the "…" out for a caller that opens it itself.
@@ -77,6 +81,22 @@
 		open = false;
 	}
 
+	// The studio works on whatever is playing, so opening it for a track means playing that track.
+	// A row that is itself a queue entry jumps to it instead of queueing a copy.
+	//
+	// The page changes first, with the menu still up. Closing the menu spends its history entry on a
+	// back, which cancels a navigation under way, and playing a queue row's track unmounts the row,
+	// which closes it. The landing closes it without a back (dropAbove). No replaceState to tidy that
+	// entry away: SvelteKit would read the new page as a shallow state of the old one, and Back would
+	// change the URL and leave the studio on screen.
+	async function openInStudio() {
+		const track = result; // the row may be gone by the landing
+		await goto(resolve('/studio'));
+		if (current.id === track.id) return;
+		const queued = queue.items.indexOf(track);
+		if (queued === -1) queue.playNow(track);
+		else queue.playIndex(queued);
+	}
 
 	let copied = $state(false);
 	let settle: ReturnType<typeof setTimeout>;
@@ -250,6 +270,13 @@
 	<a href={artistUrl} class={item} onclick={close}>
 		<Icon src={User} mini {size} class="shrink-0 text-fog" /> Go to Artist
 	</a>
+	<!-- the permission /studio itself asks for, and only a library file can be aligned. A room
+	     only appends a track rather than playing it, so the studio would open on the wrong one. -->
+	{#if account.can('studio') && result.id.startsWith('audio://') && !session.inRoom}
+		<button type="button" class={item} onclick={openInStudio}>
+			<Icon src={PencilSquare} mini {size} class="shrink-0 text-fog" /> Open in Studio
+		</button>
+	{/if}
 {/snippet}
 
 <!-- Every row leads with a sleeve, the new one an empty dashed one, so the names line up. -->
