@@ -118,9 +118,8 @@
 		return () => clearTimeout(timer);
 	});
 
-	onDestroy(() => {
-		if (track) lyrics.showDraft(track, null);
-	});
+	// Whatever plays by now, even a track with no file: the draft must not outlive the studio.
+	onDestroy(() => lyrics.showDraft(track, null));
 
 	// A stem belongs to one track: the next one, and leaving the page, go back to the song.
 	$effect(() => {
@@ -204,6 +203,7 @@
 
 	async function loadTexts(id: string) {
 		loadedFor = id;
+		lrc = ''; // the last song's words must not become this song's draft, or its Save
 		busy = 'Looking for the words…';
 		note = '';
 		void loadStems(id);

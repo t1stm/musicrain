@@ -26,9 +26,8 @@ class LyricsState {
 	#inFlight: AbortController | null = null;
 	#loadedId = '';
 
-	/** The lyrics studio's draft (`/studio`, dev builds only): shown for its track instead of
-	 *  asking stih, so a hand edit is seen in the real pane as it is typed. Every use sits
-	 *  behind `import.meta.env.DEV`, which a production build folds to false and drops. */
+	/** The lyrics studio's draft (`/studio`): shown for its track instead of asking stih, so
+	 *  a hand edit is seen in the real pane as it is typed. */
 	#draft: { id: string; lyrics: Lyrics } | null = null;
 
 	/** How an answer that puts the pane on screen or takes it off is applied. The full
@@ -71,7 +70,7 @@ class LyricsState {
 		}
 
 		if (!this.#open) return;
-		if (import.meta.env.DEV && this.#draft?.id === id) {
+		if (this.#draft?.id === id) {
 			this.#cancel();
 			this.#loadedId = id;
 			this.lyrics = this.#draft.lyrics;
@@ -111,9 +110,8 @@ class LyricsState {
 			});
 	}
 
-	/** Shows `draft` for track `id` until it is replaced or cleared with `null`. Dev builds only. */
+	/** Shows `draft` for track `id` until it is replaced or cleared with `null`. */
 	showDraft(id: string, draft: Lyrics | null) {
-		if (!import.meta.env.DEV) return;
 		this.#draft = draft ? { id, lyrics: draft } : null;
 		this.#loadedId = '';
 		this.load();

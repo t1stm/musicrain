@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import lyrics from './lyrics.svelte';
 import current from './current.svelte';
 import { AudioApiError } from '$requests/songs';
+import type { Lyrics } from '$requests/lyrics';
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -158,6 +159,32 @@ describe('shown', () => {
 		lyrics.open = true;
 		expect(lyrics.shown).toBe(true);
 		expect(lyrics.status).toBe('none');
+	});
+});
+
+describe('showDraft', () => {
+	it('shows the studio draft in a release build, and the real words once it is cleared', async () => {
+		// The studio ships in the release, and vitest runs as a dev build, so this has to be said.
+		vi.stubEnv('DEV', false);
+		const fetcher = answering(200);
+		vi.stubGlobal('fetch', fetcher);
+		const draft: Lyrics = { type: 'Synchronized', source: 'Generated', lines: [{ at: 1, text: 'Draft' }], text: 'Draft', matched: null };
+
+		lyrics.open = true;
+		await flush();
+		expect(fetcher).toHaveBeenCalledTimes(1);
+
+		lyrics.showDraft(current.id, draft);
+		expect(lyrics.lyrics?.text).toBe('Draft');
+		expect(lyrics.status).toBe('ready');
+		expect(fetcher).toHaveBeenCalledTimes(1);
+
+		lyrics.showDraft(current.id, null);
+		await flush();
+		expect(lyrics.lyrics?.text).toBe('Alle warten');
+		expect(fetcher).toHaveBeenCalledTimes(2);
+
+		vi.unstubAllEnvs();
 	});
 });
 
