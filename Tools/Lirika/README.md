@@ -97,8 +97,8 @@ the library's `.lrc` files for changes and records the ones carrying Lirika's ta
 
 ## Lyrics studio
 
-The studio is musicrain's `/studio` page, for correcting lyrics by hand on Bulgarian library songs. It
-is for staff with the `studio` permission, and it uses the app's own player and lyrics pane as the
+The studio is musicrain's `/studio` page, for correcting lyrics by hand on library songs. It is for
+staff with the `studio` permission, and it uses the app's own player and lyrics pane as the
 preview. Its back end is `studio.py`, which runs as the `lirika` pod (`Backend/compose.yaml`) behind
 nginx at `/Audio/Lirika`. Every request carries the signed-in account's token, and `studio.py` asks Dom
 whether that account may use the studio, every time.
@@ -107,14 +107,18 @@ whether that account may use the studio, every time.
    playing.
 2. Pick a starting text: your last saved edit, a `.txt` beside the audio, or a textove.com match. If
    textove has the song under another name, paste its page link. Edit the text and press
-   **Regenerate**.
+   **Regenerate**. It shows each stage as it starts, with the time the finished ones took.
+
+   **Aligner** holds the settings for this song, which go back to their defaults on the next one: the
+   language, whether lines follow the singing or the text's order, which stem marks the sung parts and
+   which the words are timed on, what Whisper hears, and how strict the matching, filling and snapping
+   are. Each one says when to turn it.
 3. Open the full player. Every change to the LRC box shows in its lyrics pane straight away.
    - `Alt+Enter` sets the line under the cursor to the playhead.
    - `Alt+↑` and `Alt+↓` move it by 0.1 s.
    - Flagged lines are listed under the box. Click one to jump to it.
-   - **Listen to** plays a stem in the song's place, in step with the player: the lead vocal, which
-     decides where Whisper transcribes, or all voices, which the words are timed on. A song has stems
-     once Regenerate has separated it.
+   - **Listen to** plays a stem in the song's place, in step with the player: the lead vocal, or all
+     voices. A song has a stem once a Regenerate that uses it has separated it.
    - The bar at the bottom shows the line at the playhead. Click it to play from that line. On a
      narrow screen the source text and the LRC take turns, and the bar holds the timing buttons.
 4. **Save** writes the `.lrc` beside the audio, replacing any that is there, and stih shows it within a

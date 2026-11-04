@@ -31,6 +31,8 @@ RATE = 16_000
 CACHE = Path.home() / ".cache/lirika"
 SEPARATOR = "mel_band_roformer_karaoke_becruily.ckpt"  # lead vocal against everything else
 VOCALS = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"  # every voice against the instruments
+STEMS = {"lead": SEPARATOR, "vocals": VOCALS}
+HEARD = {"lead": "the lead vocal", "vocals": "all voices", "mix": "the song"}  # for what `stage` is told
 # The model's YAML asks for 8 overlapping passes. 2 is ~4x faster and the lead stem differs by -28 dB.
 # Autocast stays off: in fp16 this RoFormer produces non-finite samples.
 OVERLAP = 2
@@ -59,7 +61,10 @@ class Tuning:
     min_coverage: float = 0.7  # aligned lines must cover this much of the sung time
     min_sung_lines: int = 4  # transcribe mode: fewer lines than this is an instrumental, not a song
     instrumental_score: float = -3.0  # ...and so is a median line score below this
-    asr_input: str = "mix"  # "mix" or "lead" -- R4 in the plan
+    asr_input: str = "mix"  # "mix", "lead" or "vocals" -- R4 in the plan
+    # "lead" or "vocals": the stem that says where the song is sung, so which stretches Whisper transcribes and
+    # which gaps fill() tries. The karaoke split drops duet partners; every voice lets backing lines in.
+    gate: str = "lead"
     # Align mode: "lead", "vocals" or "mix". The karaoke split drops duet partners and second voices, whose
     # lines then get forced into the wrong place; on the corpus "vocals" had the fewest large misses.
     align_on: str = "vocals"
@@ -70,7 +75,7 @@ class Tuning:
     # The text's line order, missing repeats and other versions stop mattering; only its words are used.
     map_text: bool = True
     map_match: float = 0.55  # how alike a sung phrase and a lyrics line must be, romanized, to be that line
-    # Whisper drops repeats and whole lines. Lead singing no mapped line covers, if at least this long, is
+    # Whisper drops repeats and whole lines. Singing no mapped line covers, if at least this long, is
     # offered every lyrics line; the best one is kept when its mean word score reaches fill_score.
     settle_lines: bool = True
     fill_gaps: bool = True
@@ -164,6 +169,7 @@ class Models:
         self._override = (aligner, normalize)
         self.aligner_name = aligner or MMS
         self.normalize = bool(normalize)
+        self.loading = lambda name: None  # told before a model loads, which can take a while or a download
         self._aligners: dict[str, tuple] = {}
         self._separators: dict[str, object] = {}
         self._whisper: dict[str, tuple] = {}
@@ -174,6 +180,7 @@ class Models:
         if model not in self._separators:
             from audio_separator.separator import Separator
 
+            self.loading(model)
             (CACHE / "separating").mkdir(parents=True, exist_ok=True)
             separator = Separator(
                 output_dir=str(CACHE / "separating"), model_file_dir=str(CACHE / "models"),
@@ -189,6 +196,7 @@ class Models:
             import torch
             from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
+            self.loading(name)
             # One ASR model at a time: a mixed-language batch would otherwise hold two 3.4 GB models.
             self._whisper.clear()
             torch.cuda.empty_cache()
@@ -214,6 +222,7 @@ class Models:
         if self.aligner_name not in self._aligners:
             from ctc_forced_aligner import load_alignment_model
 
+            self.loading(self.aligner_name)
             where, dtype = device()
             model, tokenizer = load_alignment_model(where, model_path=self.aligner_name, dtype=dtype)
             alphabet = {key for key in tokenizer.get_vocab() if len(key) == 1 and key.isalpha()}
@@ -740,7 +749,7 @@ def settle(lines: list[Line], length: float, frames, stride: float, models: Mode
 def fill(lines: list[Line], lyrics: list[str], regions, frames, stride: float, models: Models, iso: str,
          tuning: Tuning, log=print) -> list[Line]:
     """
-    Lead singing no line covers gets the lyrics line that fits it best, if any fits well, again and again
+    Singing no line covers gets the lyrics line that fits it best, if any fits well, again and again
     until nothing more does: the repeats and lines Whisper never wrote. A filled line is flagged, so a
     reviewer knows the aligner chose it, not the transcription.
     """
@@ -922,75 +931,109 @@ def reference(song: Path, given: Path | None, force: bool) -> tuple[str | None, 
     return None, ""
 
 
-def _drafted(song: Path, audio: np.ndarray, spans, language: Language, models: Models, tuning: Tuning) -> list[Window]:
-    key = (str(song), language.asr, tuning.asr_input)
-    if key not in models.drafts:
+def _drafted(song: Path, audio: np.ndarray, spans, language: Language, models: Models, tuning: Tuning,
+             stage) -> list[Window]:
+    key = (str(song), language.asr, tuning.asr_input, tuple(spans))  # the gate and its threshold move the spans
+    if key in models.drafts:
+        stage("Already transcribed")
+    else:
+        models.whisper(language.asr)
+        stage(f"Transcribing {HEARD[tuning.asr_input]} with {language.asr}")
         models.drafts[key] = draft(audio, spans, language, models)
     return models.drafts[key]
 
 
 def generate(song: Path, language: Language, models: Models, tuning: Tuning = Tuning(), text: str | None = None,
              origin: str = "", lookup: bool = True, keep: bool = False, log=print, dump: Path | None = None,
-             by: str | None = None) -> Result:
-    """Everything but the writing. eval.py calls this directly. `dump` also writes the models' raw output there."""
+             by: str | None = None, stage=lambda label: None) -> Result:
+    """
+    Everything but the writing. eval.py calls this directly. `dump` also writes the models' raw output there.
+    `stage` is told what is starting, each step and each model load, for whoever is waiting on the result.
+    """
     models.use(language)
+    models.loading = lambda name: stage(f"Loading {name}")
     track = sources.track_of(song)
-    lead = pcm(stem(song, models, keep=keep))
-    length = len(lead) / RATE
-    regions = activity(lead, tuning)
+    decoded: dict[str, np.ndarray] = {}
+
+    def sound(kind: str) -> np.ndarray:
+        """The song as "lead", "vocals" or "mix": separated if it has to be, and decoded once."""
+        if kind not in decoded:
+            if kind == "mix":
+                decoded[kind] = pcm(song)
+            else:
+                if stem_file(song, STEMS[kind]).exists():
+                    stage(f"Already separated: {HEARD[kind]}")
+                else:
+                    models.separator(STEMS[kind])
+                    stage(f"Separating {HEARD[kind]}")
+                decoded[kind] = pcm(stem(song, models, STEMS[kind], keep))
+        return decoded[kind]
+
+    def transcribed() -> list[Window]:
+        return _drafted(song, sound(tuning.asr_input), windows(gated, gate), language, models, tuning, stage)
+
+    def read(heard: str, voice: np.ndarray, where) -> tuple:
+        """The note starts in `voice`, and the aligner's frames over `heard`."""
+        stage("Finding where the notes start")
+        found = onsets(voice, where)
+        models.mms()
+        stage(f"Reading {HEARD[heard]} with the aligner")
+        return (found, *emissions(sound(heard), models))
+
+    gate = sound(tuning.gate)
+    length = len(gate) / RATE
+    gated = regions = activity(gate, tuning)
 
     drafted = None
     if text is None and lookup:
-        asr_audio = pcm(song) if tuning.asr_input == "mix" else lead
-        drafted = _drafted(song, asr_audio, windows(regions, lead), language, models, tuning)
+        drafted = transcribed()
         hit = sources.lookup(track, language.sources, " ".join(window.text for window in drafted),
                              normalize, tuning.lookup_threshold, log)
         if hit:
             text, origin = hit.text, f"online:{hit.source}"
 
+    if text is not None:
+        # The mix has instruments all through it, so it can be timed on but cannot say where the song is sung.
+        voice = sound(tuning.gate if tuning.align_on == "mix" else tuning.align_on)
+        regions = activity(voice, tuning)
+        found_onsets, frames, stride = read(tuning.align_on, voice, regions)
+
     if text is not None and tuning.map_text:
         mode = f"mapped:{origin}"
-        voice = pcm(stem(song, models, VOCALS, keep))
-        regions = activity(voice, tuning)
-        found_onsets = onsets(voice, regions)
-        frames, stride = emissions(voice, models)
         if drafted is None:
-            asr_audio = pcm(song) if tuning.asr_input == "mix" else lead
-            drafted = _drafted(song, asr_audio, windows(activity(lead, tuning), lead), language, models, tuning)
+            drafted = transcribed()
         raw_words = []
+        stage("Aligning what Whisper heard")
         sung = [word for words in sung_words(drafted, frames, stride, regions, models, language.mms, raw_words)
                 for word in words]
+        stage("Matching what is sung to the text")
         lyrics = normalize(text)
         lines = [line for line in map_lines(sung, lyrics, tuning) if not signed_off(line, language)]
         if tuning.settle_lines:
+            stage("Re-placing each line by its own words")
             lines = settle(lines, len(voice) / RATE, frames, stride, models, language.mms, tuning)
         if tuning.fill_gaps:
-            lines = fill(lines, lyrics, activity(lead, tuning), frames, stride, models, language.mms, tuning, log)
+            stage("Filling the gaps")
+            lines = fill(lines, lyrics, gated, frames, stride, models, language.mms, tuning, log)
         lines = [part for line in lines for part in _stanza(line, frames, stride, models, language.mms, tuning)]
     elif text is not None:
         mode = origin
-        voice = lead if tuning.align_on != "vocals" else pcm(stem(song, models, VOCALS, keep))
-        if voice is not lead:
-            regions = activity(voice, tuning)
-        found_onsets = onsets(voice, regions)
-        frames, stride = emissions(pcm(song) if tuning.align_on == "mix" else voice, models)
         raw_words: list = []
+        stage("Aligning the text")
         lines = align_lines(normalize(text), frames, stride, models, language.mms, tuning, raw_words)
     else:
         mode = "transcribe"
-        found_onsets = onsets(lead, regions)
-        frames, stride = emissions(lead, models)
+        found_onsets, frames, stride = read(tuning.gate, gate, regions)
         if drafted is None:
-            asr_audio = pcm(song) if tuning.asr_input == "mix" else lead
-            drafted = _drafted(song, asr_audio, windows(regions, lead), language, models, tuning)
+            drafted = transcribed()
         raw_words = []
+        stage("Aligning what Whisper heard")
         lines = transcribe_lines(drafted, frames, stride, regions, models, language.mms, tuning, raw_words)
 
     asr = language.asr if drafted is not None else None  # align mode with no lookup never transcribes
     if dump is not None:
         if drafted is None:  # align mode had its words already; Whisper's take is still worth seeing
-            asr_audio = pcm(song) if tuning.asr_input == "mix" else lead
-            drafted = _drafted(song, asr_audio, windows(activity(lead, tuning), lead), language, models, tuning)
+            drafted = transcribed()
         _dump(dump, song, drafted, raw_words)
 
     flags = finish(lines, regions, found_onsets, tuning)

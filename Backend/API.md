@@ -601,18 +601,22 @@ with the `studio` permission. Not a listener-facing API.
 
 ```
 GET  /Audio/Lirika/health                    200 {"ok":true}
+GET  /Audio/Lirika/knobs                     200 [{"name","label","hint","needs","default","choices"|"min","max","step"}]
 GET  /Audio/Lirika/text?id=audio://…         200 {"song","candidates":[{"source","label","text","url?"}],"saved":"…"|null}
 GET  /Audio/Lirika/link?url=https://textove.com/…   200 one candidate, from a page found by hand
 GET  /Audio/Lirika/stems?id=audio://…        200 {"stems":["lead","vocals"]} — the ones already separated
 GET  /Audio/Lirika/stem?id=audio://…&kind=lead      200 audio/flac, the whole file
-POST /Audio/Lirika/generate {"id","text","by?"}     200 {"mode","lrc","songFlags","log","lines":[…]}
+POST /Audio/Lirika/generate {"id","text","settings?","by?"}   200 NDJSON: {"stage":"…"}…, then {"result":{"mode","lrc","songFlags","log","lines":[…]}} or {"error":{"code","message"}}
 POST /Audio/Lirika/save {"id","lrc","text"}         200 {"lrc","text"}: the .lrc beside the audio, the text in the cache
 ```
 
 - Every request but a CORS preflight carries `Authorization: Bearer <Dom token>`, and the pod asks Dom's
   `Me` each time, so a revoked token or a lost permission is refused on the next request.
 - Every track is resolved through `library.db`, so no request can name a file outside the library.
-- `generate` holds the request while the models load (15–25 s) and a song is separated and aligned.
+- `generate` streams while the models load (15–25 s) and a song is separated and aligned, one object per
+  line as each stage starts. `settings` sets any of `knobs` by name; the rest keep their defaults. A bad
+  setting, an unknown track or an unresolvable text is a plain 4xx before the stream starts. A failure after
+  that is the `error` line, under the 200 already sent.
   The models unload `LIRIKA_IDLE_SECONDS` after the last one.
 
 | Status | `code` | When |

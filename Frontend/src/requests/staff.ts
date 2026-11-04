@@ -43,7 +43,7 @@ export async function staffCall<T>(
 	}
 
 	if (response.status === 204) return null as T;
-	// 'body' hands over the stream itself, for a response that never ends: an SSE feed
+	// 'body' hands over the stream itself, for a response read as it arrives: an SSE feed, Lirika's stages
 	if (as === 'body') return response.body as T;
 	return (as === 'blob' ? response.blob() : response.json()) as Promise<T>;
 }

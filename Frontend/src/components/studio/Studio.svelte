@@ -2,7 +2,7 @@
 	/*
 	 * The lyrics studio, for staff with the studio permission. The back end is the lirika pod at
 	 * /Audio/Lirika (Tools/Lirika's studio.py), which asks Dom who the token belongs to. Pick a library song, start from textove's words (or your last edit),
-	 * edit them, regenerate in map mode, then fix lines by hand. Every keystroke in the LRC goes to the
+	 * edit them, set the aligner for the song, regenerate, then fix lines by hand. Every keystroke in the LRC goes to the
 	 * real lyrics pane through lyrics.showDraft, so the full player shows exactly what a listener would.
 	 * The stems Lirika separated can be heard in the song's place, following the player's clock.
 	 */
@@ -14,6 +14,7 @@
 	import type { SearchResult } from '$states/search.svelte';
 	import { getSearch } from '$requests/search';
 	import { staffCall } from '$requests/staff';
+	import { streamJson } from '$lib/streamJson';
 	import { audioApi } from '$lib/discord';
 	import type { Lyrics, LyricLine } from '$requests/lyrics';
 	import { seekTo } from '$lib/seek';
@@ -23,12 +24,27 @@
 	type Candidate = { source: string; label: string; text: string; url?: string };
 	type Flagged = { start: number; end: number; text: string; flags: string[] };
 	type Ear = 'song' | 'lead' | 'vocals';
+	type Generated = { lrc: string; lines: Flagged[]; songFlags: string[] };
+	type Generation = { stage: string } | { result: Generated } | { error: { message: string } };
+	type Setting = string | number | boolean;
+	// One row of studio.py's KNOBS: choices draw a select, the rest a range from min to max.
+	type Knob = {
+		name: string;
+		label: string;
+		hint: string;
+		needs: string[];
+		default: Setting;
+		choices?: { value: Setting; label: string }[];
+		min?: number;
+		max?: number;
+		step?: number;
+	};
 
-	// What each stem is to map mode (studio.py's STEMS): what to listen for when a line lands wrong.
+	// What each stem is: what to listen for when a line lands wrong.
 	const EARS: { kind: Ear; label: string; role: string }[] = [
 		{ kind: 'song', label: 'Song', role: 'The song as listeners hear it.' },
-		{ kind: 'lead', label: 'Lead vocal', role: 'Marks where the song is sung. Whisper transcribes those stretches.' },
-		{ kind: 'vocals', label: 'All voices', role: 'The aligner times every word on this.' }
+		{ kind: 'lead', label: 'Lead vocal', role: 'The singer out front, without backing voices or duet partners.' },
+		{ kind: 'vocals', label: 'All voices', role: 'Every voice, without the instruments.' }
 	];
 
 	let server = $state<'checking' | 'up' | 'down'>('checking');
@@ -40,6 +56,8 @@
 	let lrc = $state('');
 	let flagged = $state<Flagged[]>([]);
 	let busy = $state('');
+	// The stages of this Regenerate that are over, with the seconds each took. `busy` is the one under way.
+	let steps = $state<{ label: string; took: number }[]>([]);
 	let note = $state('');
 	let link = $state('');
 	let loadedFor = '';
@@ -48,6 +66,13 @@
 	let editor = $state<HTMLTextAreaElement | null>(null);
 	// Below lg the two boxes take turns; side by side above it.
 	let pane = $state<'source' | 'lrc'>('source');
+
+	let knobs = $state<Knob[]>([]);
+	let settings = $state<Record<string, Setting>>({});
+	const defaults = () => Object.fromEntries(knobs.map((knob) => [knob.name, knob.default]));
+	// Closed, the settings still say the language (the table's first knob) and whether others are turned.
+	let language = $derived(knobs[0]?.choices?.find((choice) => choice.value === settings[knobs[0].name])?.label ?? '');
+	let turned = $derived(knobs.filter((knob) => settings[knob.name] !== knob.default).length);
 
 	let stems = $state<string[]>([]);
 	let ear = $state<Ear>('song');
@@ -65,7 +90,7 @@
 	);
 	let role = $derived(
 		stems.length ? EARS.find((option) => option.kind === ear)!.role
-			: 'The lead vocal and all voices arrive with the first Regenerate, which separates them.'
+			: 'Stems arrive with Regenerate, which separates the ones its settings use.'
 	);
 
 	// ── For the sheet's decoration only: none of it writes to the text or the logic above ──────
@@ -79,7 +104,7 @@
 			stamps.some((at) => flagged.some((line) => Math.abs(line.start - at) < 0.006)) ? [index] : []))
 	);
 	let backdrop = $state<HTMLDivElement | null>(null);
-	// How long the current wait has run: a minute of aligning reads as work, not as a hang.
+	// How long the current wait or stage has run: a minute of separating reads as work, not as a hang.
 	let waited = $state(0);
 	$effect(() => {
 		if (!busy) return;
@@ -94,7 +119,8 @@
 	// or nginx answering 502 for it.
 	onMount(async () => {
 		try {
-			await call('/health');
+			knobs = await call<Knob[]>('/knobs');
+			settings = defaults();
 			server = 'up';
 		} catch {
 			server = 'down';
@@ -204,6 +230,8 @@
 	async function loadTexts(id: string) {
 		loadedFor = id;
 		lrc = ''; // the last song's words must not become this song's draft, or its Save
+		settings = defaults(); // nor its settings this song's
+		steps = [];
 		busy = 'Looking for the words…';
 		note = '';
 		void loadStems(id);
@@ -256,20 +284,43 @@
 
 	async function regenerate() {
 		if (!track || !source.trim()) return;
-		busy = 'Aligning… (the first run of a song also separates it, about half a minute)';
+		const id = track;
+		const asking = 'Asking the lyrics service…';
+		busy = asking;
+		steps = [];
 		note = '';
+		let finished = false;
 		try {
-			const result = await call<{ lrc: string; lines: Flagged[]; songFlags: string[] }>('/generate', { id: track, text: source });
-			lrc = result.lrc;
-			untouched = lrc;
-			flagged = result.lines.filter((line) => line.flags.length);
-			note = result.songFlags.join('; ');
-			pane = 'lrc';
-			void loadStems(track);
+			const body = await staffCall<ReadableStream<Uint8Array>>(
+				`${LIRIKA}/generate`,
+				{ method: 'POST', body: { id, text: source, settings } },
+				'body'
+			);
+			for await (const event of streamJson<Generation>(body)) {
+				if (id !== track) return; // another song by now: this one's words must not become its draft
+				if ('stage' in event) {
+					if (busy !== asking) steps = [...steps, { label: busy, took: waited }];
+					busy = event.stage;
+				} else if ('error' in event) {
+					throw new Error(`${busy}: ${event.error.message}`);
+				} else {
+					finished = true;
+					lrc = event.result.lrc;
+					untouched = lrc;
+					flagged = event.result.lines.filter((line) => line.flags.length);
+					note = event.result.songFlags.join('; ');
+					pane = 'lrc';
+					void loadStems(id);
+				}
+			}
+			if (!finished) throw new Error(`${busy}: the lyrics service stopped answering.`);
 		} catch (error) {
-			note = (error as Error).message;
+			if (id === track) note = (error as Error).message;
 		} finally {
-			busy = '';
+			if (id === track) {
+				busy = '';
+				steps = [];
+			}
 		}
 	}
 
@@ -378,6 +429,16 @@
 
 <div class="-mt-3 min-h-6" aria-live="polite">
 	{#if busy}
+		{#if steps.length}
+			<ol class="studio-steps">
+				{#each steps as step, index (index)}
+					<li>
+						<span class="min-w-0">{step.label}</span>
+						<span class="font-mono">{elapsed(step.took)}</span>
+					</li>
+				{/each}
+			</ol>
+		{/if}
 		<p class="studio-busy" aria-busy="true">
 			<span class="studio-busy-gauge" aria-hidden="true"><span class="rain-streak"></span></span>
 			<span class="min-w-0 flex-1">{busy}</span>
@@ -426,6 +487,39 @@
 		</div>
 		<p class="min-w-0 text-xs text-fog sm:flex-1">{role}</p>
 	</section>
+
+	<details class="studio-knobs">
+		<summary>
+			<span class="eyebrow">Aligner</span>
+			<span class="text-xs text-fog">{language}{turned ? ` · ${turned} changed` : ''}</span>
+		</summary>
+		<div class="studio-knob-grid">
+			{#each knobs as knob (knob.name)}
+				{@const off = knob.needs.some((name) => settings[name] === false)}
+				<div class="studio-knob" data-off={off || undefined}>
+					<label class="flex items-baseline justify-between gap-2 text-sm text-chalk" for="knob-{knob.name}">
+						{knob.label}
+						{#if !knob.choices}<span class="font-mono text-xs text-fog">{settings[knob.name]}</span>{/if}
+					</label>
+					{#if knob.choices}
+						<select class="studio-field" id="knob-{knob.name}" aria-describedby="knob-{knob.name}-hint"
+							disabled={off} bind:value={settings[knob.name]}>
+							{#each knob.choices as choice (choice.label)}
+								<option value={choice.value}>{choice.label}</option>
+							{/each}
+						</select>
+					{:else}
+						<input type="range" id="knob-{knob.name}" aria-describedby="knob-{knob.name}-hint"
+							min={knob.min} max={knob.max} step={knob.step} disabled={off} bind:value={settings[knob.name]} />
+					{/if}
+					<p class="text-xs leading-relaxed text-fog" id="knob-{knob.name}-hint">{knob.hint}</p>
+				</div>
+			{/each}
+		</div>
+		<button type="button" class="studio-button mt-3" disabled={!turned} onclick={() => (settings = defaults())}>
+			Reset to defaults
+		</button>
+	</details>
 
 	<div class="studio-switch flex lg:hidden" role="group" aria-label="Text to edit">
 		<button type="button" aria-pressed={pane === 'source'} onclick={() => (pane = 'source')}>Source text</button>
@@ -554,6 +648,58 @@
 		overflow: hidden;
 		border-radius: 2px;
 		background: var(--color-haze);
+	}
+
+	.studio-steps {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+		margin-bottom: 0.375rem;
+		/* under the busy line's text, past its gauge */
+		padding-left: calc(4px + 0.75rem);
+		font-size: 0.75rem;
+		color: var(--color-fog);
+	}
+
+	.studio-steps li {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.75rem;
+	}
+
+	.studio-knobs {
+		border-radius: var(--radius-panel);
+		border: 1px solid var(--color-haze);
+		background: var(--color-surface-0);
+		padding: 0.625rem 0.875rem;
+	}
+
+	.studio-knobs summary {
+		cursor: pointer;
+		color: var(--color-fog);
+	}
+
+	.studio-knob-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+		gap: 0.875rem;
+		margin-top: 0.75rem;
+	}
+
+	.studio-knob {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		min-width: 0;
+	}
+
+	.studio-knob[data-off] {
+		opacity: 0.5;
+	}
+
+	.studio-knob input {
+		min-height: 2rem;
+		accent-color: var(--color-primary-0);
 	}
 
 	.studio-field {
@@ -810,6 +956,7 @@
 	}
 
 	.studio-button:focus-visible,
+	.studio-knobs summary:focus-visible,
 	.studio-row:focus-visible,
 	.studio-now:focus-visible,
 	.studio-switch button:focus-visible {

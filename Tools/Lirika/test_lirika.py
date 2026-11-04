@@ -243,8 +243,140 @@ def test_gate():
     assert studio.who({"Authorization": "Bearer studio"})[0] == 503
 
 
+def test_the_knobs_take_only_what_they_offer():
+    import studio
+
+    chosen = studio.settings_of({})
+    assert chosen.pop("language") == "bg" and lirika.Tuning(**chosen) == Tuning(), "the defaults are the pipeline's own"
+    changed = studio.settings_of({"language": "en", "gate": "vocals", "map_text": False, "max_words": 20.0})
+    assert (changed["language"], changed["gate"], changed["map_text"]) == ("en", "vocals", False)
+    assert changed["max_words"] == 20 and isinstance(changed["max_words"], int)
+    for bad in ({"language": "fr"}, {"gate": "drums"}, {"low_score": -1}, {"activity_db": True}, {"activity_db": 999},
+                {"activity_db": None}, {"activity_db": float("nan")}, ["gate"]):
+        try:
+            studio.settings_of(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"{bad} must be refused")
+
+
+def _run_pipeline(tuning: Tuning, models, text: str | None = "едно две") -> tuple[list[str], list[str]]:
+    """lirika.generate with every model stubbed out: the stages it told, and the stems it decoded."""
+    from unittest.mock import patch
+
+    rate = lirika.RATE
+    audio = np.zeros(rate * 10, np.float32)
+    audio[rate * 2:rate * 4] = 0.5  # sung
+    audio[rate * 6:rate * 8] = 0.005  # sung quietly: 46 dB down, under the threshold unless it is raised
+    told, decoded = [], []
+
+    def stem(song, stubbed, model, keep):
+        decoded.append(model)
+        return Path(model)
+
+    with (patch.object(sources, "track_of", lambda song: None),
+          patch.object(lirika, "stem_file", lambda song, model: Path("/nonexistent") / model),
+          patch.object(lirika, "stem", stem),
+          patch.object(lirika, "pcm", lambda path: audio),
+          patch.object(lirika, "onsets", lambda voice, regions: np.array([2.0])),
+          patch.object(lirika, "emissions", lambda voice, stubbed: (np.zeros((500, 4)), 0.02)),
+          patch.object(lirika, "draft", lambda audio, spans, language, stubbed: [
+              lirika.Window(start, end, "едно две", "едно две") for start, end in spans]),
+          patch.object(lirika, "sung_words", lambda *args: [_sung("едно две", 2.0)]),
+          patch.object(lirika, "align_lines", lambda *args: [Line("едно две", 2.0, 3.0, -0.2)]),
+          patch.object(lirika, "settle", lambda lines, *args: lines),
+          patch.object(lirika, "fill", lambda lines, *args: lines)):
+        lirika.generate(Path("song.flac"), lirika.LANGUAGES["bg"], models, tuning, text=text, origin="edited",
+                        lookup=False, log=lambda message: None, stage=told.append)
+    return told, decoded
+
+
+class _NoModels(lirika.Models):
+    def separator(self, model):
+        self.loading(model)
+
+    def mms(self):
+        self.loading(self.aligner_name)
+
+    def whisper(self, name):
+        self.loading(name)
+
+
+def test_a_generation_tells_each_stage_in_order():
+    told, decoded = _run_pipeline(Tuning(), _NoModels())
+    assert decoded == [lirika.SEPARATOR, lirika.VOCALS]
+    assert told == [f"Loading {lirika.SEPARATOR}", "Separating the lead vocal",
+                    f"Loading {lirika.VOCALS}", "Separating all voices",
+                    "Finding where the notes start",
+                    f"Loading {lirika.BULGARIAN}", "Reading all voices with the aligner",
+                    "Loading BuzzASR/bulgarian", "Transcribing the song with BuzzASR/bulgarian",
+                    "Aligning what Whisper heard", "Matching what is sung to the text",
+                    "Re-placing each line by its own words", "Filling the gaps"], told
+
+
+def test_the_knobs_reach_the_pipeline():
+    told, decoded = _run_pipeline(Tuning(gate="vocals"), _NoModels())
+    assert decoded == [lirika.VOCALS], "nothing here needs the lead vocal, so it is not separated"
+    told, decoded = _run_pipeline(Tuning(map_text=False), _NoModels())
+    assert not any("Whisper" in label or "Transcribing" in label for label in told), told
+    assert "Aligning the text" in told
+    told, decoded = _run_pipeline(Tuning(fill_gaps=False, settle_lines=False, align_on="lead"), _NoModels())
+    assert decoded == [lirika.SEPARATOR], "the song is transcribed as it is, and timed on the lead"
+    assert "Filling the gaps" not in told and "Re-placing each line by its own words" not in told
+    told, decoded = _run_pipeline(Tuning(gate="vocals"), _NoModels(), text=None)
+    assert decoded == [lirika.VOCALS] and "Reading all voices with the aligner" in told, "with no text, the gate is timed on"
+
+
+def test_a_transcription_is_reused_only_for_the_same_stretches():
+    models = _NoModels()
+    transcribing = "Transcribing the song with BuzzASR/bulgarian"
+    assert transcribing in _run_pipeline(Tuning(), models)[0]
+    again = _run_pipeline(Tuning(map_match=0.7), models)[0]
+    assert transcribing not in again and "Already transcribed" in again
+    assert transcribing in _run_pipeline(Tuning(activity_db=50.0), models)[0], "a lower gate finds more to transcribe"
+    assert "Transcribing the lead vocal with BuzzASR/bulgarian" in _run_pipeline(Tuning(asr_input="lead"), models)[0]
+
+
+def test_generate_streams_stages_then_the_result_and_refuses_up_front():
+    import multiprocessing
+    from concurrent.futures import ThreadPoolExecutor
+    from unittest.mock import patch
+
+    import studio
+
+    def works(song, language, models, tuning, text, origin, log, by, stage):
+        assert language is lirika.LANGUAGES["en"] and tuning.gate == "vocals"
+        stage("first")
+        stage("second")
+        return lirika.Result([], "mapped:edited", "the lrc", [])
+
+    def fails(*args, **kwargs):
+        raise RuntimeError("out of memory")
+
+    settings = {"language": "en", "gate": "vocals"}
+    studio._stages = multiprocessing.get_context("spawn").SimpleQueue()
+    with (ThreadPoolExecutor(1) as pool, patch.object(studio, "_pool", pool), patch.object(lirika, "Models", lambda: None),
+          patch.object(studio, "song_of", lambda track: Path("song.flac"))):
+        with patch.object(lirika, "generate", works):
+            events = list(studio.generate("audio://x", "едно", settings))
+        assert [event.get("stage") for event in events[:2]] == ["first", "second"], events
+        assert events[2:] == [{"result": {"mode": "mapped:edited", "lrc": "the lrc", "songFlags": [], "log": [], "lines": []}}]
+
+        with patch.object(lirika, "generate", fails), patch.object(studio.traceback, "print_exc"):
+            assert list(studio.generate("audio://x", "едно", settings)) == [
+                {"error": {"code": "failed", "message": "out of memory"}}]
+        assert not studio.gpu.locked()
+
+        for text, asked in (("едно\n(x2)", {}), ("Припев:", {}), ("едно", {"gate": "drums"})):
+            try:
+                studio.generate("audio://x", text, asked)  # not a generator: the refusal comes before any status
+            except ValueError:
+                continue
+            raise AssertionError(f"{text!r} with {asked} must be refused up front")
+
+
 if __name__ == "__main__":
-    tests = [value for name, value in sorted(globals().items()) if name.startswith("test_")]
+    tests =[value for name, value in sorted(globals().items()) if name.startswith("test_")]
     for test in tests:
         test()
     print(f"{len(tests)} passed")
